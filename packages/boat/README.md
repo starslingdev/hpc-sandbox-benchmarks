@@ -11,15 +11,18 @@ The driver is written against the vendor port (ADR-0023):
     with a per-call init override; no other SDK call gets it (a real-SDK wire test asserts that).
   - Create is idempotent under the marker's spelling, `sandbox-benchmarks-<uuid>`: a lost or
     transient response is retried with the same key (2 s apart, a 429 a fresh minute later, five
-    attempts). Create takes no name, so `attach` (which the kit runs straight after create, tearing
-    the allocation down by id if it fails) renames the sandbox to that spelling.
+    attempts). Create takes no name, so `attach` (which the kit runs on its post-create path,
+    tearing the allocation down, and keeping its cleanup, by id if it fails) renames the sandbox to
+    that spelling.
   - Statuses become phases: `ready`/`idle`/`running` are ready; `error`, `archiving` and `archived`
     fail a boot. A stopped (`archived`) row holds no compute, so a foreign one is not counted, but an
     owned one still holds the benchmark's disk and is deleted.
   - Teardown is `deleteSandbox`, never stop: boat snapshots every running sandbox about once a
     minute and `stop` archives the sandbox with that snapshot chain. A delete conflicting with a
-    running operation is asked again (5 s apart, six attempts); its operation settles at `blocked`
-    rather than `completed`, so removal is the sandbox's 404, observed by the kit.
+    running operation (409), timing out, rate limited or hitting an outage is `transient`, so the
+    kit asks it again at every removal read; a refused delete's error names boat's code. Its
+    operation settles at `blocked` rather than `completed`, so removal is the sandbox's 404,
+    observed by the kit.
   - `prepare` waits for outbound network (exec is accepted before it is up: DNS plus a TCP connect
     to boat.dev) and checks the allocation's reported vCPU and memory.
 - `src/index.ts` binds the SDK in `defineVendorDriver`: the default SKU (the target size, refused

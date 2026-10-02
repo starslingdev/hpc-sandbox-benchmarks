@@ -16,10 +16,12 @@ The driver is written against the vendor port (ADR-0023):
   `destroyed` as one the host gave up on (the per-sandbox rootfs build corrupts under concurrent
   load), so the failed create is retryable once teardown is proven, while `stopped` is not; the
   vendor's `last_error` in the boot failure (redacted by the bridge); the allocation's reported CPU
-  and memory; and WebSocket exec. Calls inside create are raced against a 30 s bound and the caller.
+  and memory; a timed-out, conflicting, rate-limited or 5xx call as `transient`, so a refused
+  DELETE is asked again at every removal read; and WebSocket exec. Calls inside create are raced
+  against a 30 s bound and the caller.
 - `src/index.ts` binds the SDK in `defineVendorDriver`. Readiness and removal are read every 2 s
   (20 minutes for a cold image pull, 50 s for a delete, inside the harness's 60 s destroy timeout);
-  the disk quota is proven with 1.2 GiB (3 % of the target) of filesystem overhead allowed; the
+  the disk quota is proven with 3 % of the request allowed for filesystem overhead; the
   inventory reads the raw 200-row envelope, because the SDK's `list` drops its cursor, under a
   1,000-page cap. `recovery.provesAbsence: false`: a timed-out POST can land after every lookup, so
   only removing the allocation its name finds releases the attempt. Cost evidence records honestly

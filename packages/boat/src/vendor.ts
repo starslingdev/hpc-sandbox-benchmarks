@@ -7,8 +7,9 @@
 // allocation's disk behind on the account forever. Delete removes the sandbox and its snapshots.
 //
 // Create takes no name. The allocation is renamed to the marker's spelling on attach, which the kit
-// runs straight after create and tears down by id if it fails; until then no listing can find it,
-// so the module declares that a lookup cannot prove an ambiguous create absent.
+// runs on its post-create path and so tears down, and holds cleanup, by id if it fails; until then
+// no listing can find it, so the module declares that a lookup cannot prove an ambiguous create
+// absent.
 //
 // Create pins the bare-metal machine provider. The SDK's CreateSandboxRequest serializer drops
 // fields it does not know, so machineProvider is merged into create's body by an init override;
@@ -20,7 +21,7 @@ import type { ExecOptions } from "@sandbox-benchmarks/driver";
 import { DriverError, isDriverError, pollUntilReady } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import { abortableDelay, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export type BoatClient = Pick<
@@ -42,9 +43,6 @@ export const BOAT_CREATE_RETRY_MS = 2_000;
  * needs a fresh minute window; the ordinary 2s transient retry is too soon.
  */
 export const BOAT_CREATE_RATE_LIMIT_RETRY_MS = 60_000;
-/** A delete conflicting with a running operation (an automatic snapshot) is asked again. */
-export const BOAT_DELETE_ATTEMPTS = 6;
-export const BOAT_DELETE_RETRY_MS = 5_000;
 // Exec is accepted before the guest's outbound network is up: a clone issued ~1s after boot was
 // refused in 6ms on one of 30 sandboxes. Preparation therefore waits for DNS plus a TCP connect.
 export const BOAT_EGRESS_PROBE_HOST = "boat.dev";
@@ -114,6 +112,7 @@ function boatHttpStatus(error: unknown): number | undefined {
 /** A 4xx other than a timeout or conflict refused the create before anything was allocated. */
 const definitive = (status: number | undefined) =>
 	status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 409;
+/** A delete can conflict with a running operation, an automatic snapshot included: asked again. */
 const transient = (status: number | undefined) =>
 	status === 408 || status === 409 || status === 429 || (status !== undefined && status >= 500);
 
@@ -127,21 +126,6 @@ async function errorDetail(error: ResponseError): Promise<{ code?: string; messa
 	}
 }
 
-function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
-	if (signal?.aborted) return Promise.reject(signal.reason);
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			"abort",
-			() => {
-				clearTimeout(timer);
-				reject(signal.reason);
-			},
-			{ once: true },
-		);
-	});
-}
-
 /** One call's request init: the caller's signal, bounded by the control-plane timeout. */
 const init = (signal?: AbortSignal): RequestInit => ({
 	signal: AbortSignal.any([
@@ -151,7 +135,7 @@ const init = (signal?: AbortSignal): RequestInit => ({
 });
 
 export interface BoatVendorOptions {
-	/** The wait between create and delete retries (test seam). */
+	/** The wait between create retries (test seam). */
 	readonly delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
 	readonly egressPollMs?: number;
 }
@@ -251,29 +235,25 @@ export function boatVendor(
 				}
 			},
 			get: (id, { signal }) => get(id, signal),
-			// Accepted only: the sandbox is observed gone (404) by the kit.
+			// Accepted only: the sandbox is observed gone (404) by the kit, which also asks a
+			// transient refusal again. A refusal names boat's error code, so it is diagnosable.
 			remove: async (id, { signal }) => {
-				for (let attempt = 1; ; attempt++) {
-					try {
-						const accepted = deletionResponse.assert(
-							await client.deleteSandbox({ sandboxId: id, xAsciiConfirmDelete: id }, init(signal)),
-						);
-						if (accepted.operation.targetId !== id)
-							throw new Error(`boat deletion ${accepted.operation.id} targets another sandbox`);
-						return "accepted";
-					} catch (error) {
-						const status = boatHttpStatus(error);
-						if (status === 404) return "removed";
-						if (!transient(status) || attempt >= BOAT_DELETE_ATTEMPTS) {
-							if (error instanceof ResponseError) {
-								const { code } = await errorDetail(error);
-								const named = code && /^[a-z0-9_]{1,80}$/i.test(code) ? ` ${code}` : "";
-								console.error(`boat delete HTTP ${status}${named}; removal unconfirmed`);
-							}
-							throw error;
-						}
-						await delay(BOAT_DELETE_RETRY_MS, signal);
-					}
+				try {
+					const accepted = deletionResponse.assert(
+						await client.deleteSandbox({ sandboxId: id, xAsciiConfirmDelete: id }, init(signal)),
+					);
+					if (accepted.operation.targetId !== id)
+						throw new Error(`boat deletion ${accepted.operation.id} targets another sandbox`);
+					return "accepted";
+				} catch (error) {
+					if (!(error instanceof ResponseError)) throw error;
+					const status = error.response.status;
+					if (status === 404) return "removed";
+					const { code } = await errorDetail(error);
+					const named = code && /^[a-z0-9_]{1,80}$/i.test(code) ? ` ${code}` : "";
+					throw new Error(`boat delete HTTP ${status}${named}; removal unconfirmed`, {
+						cause: error,
+					});
 				}
 			},
 			page: async (cursor, { signal }) => {
@@ -288,6 +268,7 @@ export function boatVendor(
 				const status = boatHttpStatus(error);
 				return definitive(status) ? { retryable: status === 429 } : undefined;
 			},
+			transient: (error) => transient(boatHttpStatus(error)),
 		},
 		data: {
 			// The rename that makes the allocation attributable: the kit deletes it by id on failure.

@@ -21,6 +21,7 @@ import {
 	coverage,
 	DISK_PROBE,
 	defineVendorDriver,
+	drainPages,
 	instanceOfAny,
 	MARKER_PREFIX,
 	mapped,
@@ -385,6 +386,67 @@ describe("cleanup confirmation, continued", () => {
 	});
 });
 
+describe("a refused removal request", () => {
+	class ConflictError extends Error {}
+	/** The memory vendor whose deletes are refused `refusals` times with `error` first. */
+	const refusingDeletes = (refusals: number, error: () => Error, extra: Partial<Spec> = {}) => {
+		const world = memoryVendor();
+		let left = refusals;
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				remove: async (id, op) => {
+					world.calls.push("remove");
+					if (left-- > 0) throw error();
+					return world.vendor.control.remove(id, op);
+				},
+				transient: instanceOfAny(ConflictError),
+			},
+		};
+		return { ...world, driver: moduleOver(() => vendor, extra).driver(context) };
+	};
+
+	test("a transient refusal is asked again after the next read, at the cleanup cadence", async () => {
+		const { driver, calls, allocations } = refusingDeletes(
+			2,
+			() => new ConflictError("snapshot in progress"),
+			{ timing: { pollMs: 0, deletePollMs: 20, readyTimeoutMs: 1_000, deleteTimeoutMs: 1_000 } },
+		);
+		const session = await driver.create(request);
+		calls.length = 0;
+		const started = performance.now();
+		await session.destroy();
+		expect(performance.now() - started).toBeGreaterThanOrEqual(35);
+		// The memory vendor's own remove logs a second "remove" for the accepted request.
+		expect(calls).toEqual(["remove", "get", "get", "remove", "get", "remove", "remove", "get"]);
+		expect(allocations()).toBe(0);
+	});
+
+	test("a definitive refusal ends teardown at once", async () => {
+		const { driver, calls, allocations } = refusingDeletes(1, () => new Error("forbidden"));
+		const session = await driver.create(request);
+		calls.length = 0;
+		const failure = await session.destroy().catch((caught: unknown) => caught);
+		expect(failure).toMatchObject({ code: "destroy-failed" });
+		expect(describeDriverFailure(failure)).toContain("forbidden");
+		expect(calls).toEqual(["remove"]);
+		expect(allocations()).toBe(1);
+	});
+
+	test("a budget that ends on a transient refusal reports the vendor's refusal", async () => {
+		const { driver, allocations } = refusingDeletes(
+			1_000,
+			() => new ConflictError("snapshot in progress"),
+			{ timing: { pollMs: 0, deletePollMs: 5, readyTimeoutMs: 1_000, deleteTimeoutMs: 40 } },
+		);
+		const session = await driver.create(request);
+		const failure = await session.destroy().catch((caught: unknown) => caught);
+		expect(describeDriverFailure(failure)).toContain("snapshot in progress");
+		expect(allocations()).toBe(1);
+	});
+});
+
 describe("inventory", () => {
 	test("drains every page and partitions owned from foreign sandboxes", async () => {
 		const { driver } = bind({ pageSize: 1, foreign: 2 });
@@ -398,6 +460,29 @@ describe("inventory", () => {
 	test("fails closed on a repeated cursor instead of reporting a partial account", async () => {
 		const { driver } = bind({ pageSize: 1, foreign: 3, faults: { pageRepeatsCursor: true } });
 		await expect(driver.inventory?.list()).rejects.toThrow();
+	});
+
+	test("a sandbox listed twice fails closed: the listing shifted under its cursor", async () => {
+		const world = memoryVendor({ pageSize: 1, foreign: 2 });
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				page: async (cursor, op) => {
+					const page = await world.vendor.control.page(cursor, op);
+					return { ...page, records: page.records.map((record) => ({ ...record, id: "mem-1" })) };
+				},
+			},
+		};
+		const op = { signal: new AbortController().signal };
+		await expect(
+			moduleOver(() => vendor)
+				.driver(context)
+				.inventory?.list(),
+		).rejects.toThrow();
+		await expect(
+			drainPages("novita", (cursor) => vendor.control.page(cursor, op), op),
+		).rejects.toThrow("novita listing returned a duplicate sandbox id");
 	});
 
 	test("a listing longer than the vendor's page cap fails closed", async () => {
@@ -576,28 +661,72 @@ describe("ambiguous-create recovery", () => {
 		expect(refused.calls).toEqual(["create"]);
 	});
 
-	test("an allocation whose attach and teardown both failed stays held where absence is unprovable", async () => {
-		const world = memoryVendor();
+	test("a step after create whose teardown also fails keeps its cleanup by the vendor's id", async () => {
+		// Attach is what would make the allocation findable (a rename), so no marker lookup can.
+		for (const step of ["attach", "admit", "prepare"] as const) {
+			const world = memoryVendor();
+			let refuseDeletes = true;
+			const vendor: Vendor<MemoryRow, MemoryRow> = {
+				control: {
+					...world.vendor.control,
+					remove: async (id, op) => {
+						if (refuseDeletes) throw new Error("delete refused");
+						return world.vendor.control.remove(id, op);
+					},
+					page: async () => ({ records: [] }),
+					...(step === "admit" && { admit: () => "wrong revision" }),
+				},
+				data: {
+					...world.vendor.data,
+					attach: (record, op) => {
+						if (step === "attach") throw new Error("rename failed");
+						return world.vendor.data.attach(record, op);
+					},
+					...(step === "prepare" && {
+						prepare: async () => {
+							throw new Error("keepalive never started");
+						},
+					}),
+				},
+			};
+			const failure = await moduleOver(() => vendor, {
+				recovery: { absenceConfirmationMs: 1, provesAbsence: false },
+			})
+				.driver(context)
+				.create(request)
+				.catch((caught) => caught);
+			expect(failure).toBeInstanceOf(FailedCreateCleanupError);
+			expect(failure.locator).toEqual({ kind: "id", value: "mem-1" });
+			expect(isRetryableDriverCreate(failure)).toBe(false);
+			expect(world.allocations()).toBe(1);
+			refuseDeletes = false;
+			await (failure as FailedCreateCleanupError).cleanup();
+			expect(world.allocations()).toBe(0);
+		}
+	});
+
+	test("a boot the host gave up on whose teardown fails is a held cleanup, not a retry", async () => {
+		const world = memoryVendor({ readyAfterGets: 1, faults: { failsDuringReadiness: true } });
 		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
 			control: {
 				...world.vendor.control,
+				get: async (id, op) => {
+					const record = await world.vendor.control.get(id, op);
+					return record?.phase === "failed" ? { ...record, retryCreate: true } : record;
+				},
 				remove: async () => {
 					throw new Error("delete refused");
 				},
-				// The attach step is what would have made the allocation findable (a rename).
-				page: async () => ({ records: [] }),
-			},
-			data: {
-				...world.vendor.data,
-				attach: () => {
-					throw new Error("rename failed");
-				},
 			},
 		};
-		const driver = moduleOver(() => vendor, {
-			recovery: { absenceConfirmationMs: 1, provesAbsence: false },
-		}).driver(context);
-		await expect(driver.create(request)).rejects.toBeInstanceOf(FailedCreateCleanupError);
+		const failure = await moduleOver(() => vendor)
+			.driver(context)
+			.create(request)
+			.catch((caught) => caught);
+		expect(failure).toBeInstanceOf(FailedCreateCleanupError);
+		expect(isRetryableDriverCreate(failure)).toBe(false);
+		expect(world.allocations()).toBe(1);
 	});
 
 	test("a refusal before allocation skips recovery and carries retryability", async () => {
@@ -765,8 +894,26 @@ describe("request proof", () => {
 			code: "invalid-create-request",
 		});
 		expect(short.allocations()).toBe(0);
+		// The allowance can scale with the request instead (1% of 40 GiB covers the 0.4 GiB gap).
+		const relative = (allowanceRatio: number) =>
+			bind(
+				{ mounts: { "/mnt/benchmark-volume": 39.6 } },
+				{ coverage: mapped(), diskProof: { path: "/mnt/benchmark-volume", allowanceRatio } },
+			);
+		await (await relative(0.01).driver.create(request)).destroy();
+		await expect(relative(0.005).driver.create(request)).rejects.toMatchObject({
+			code: "invalid-create-request",
+		});
 		// A mapped disk without a declared proof is trusted to the create, whatever the root reports.
 		await (await bind({ diskGb: 10 }, { coverage: mapped() }).driver.create(request)).destroy();
+	});
+
+	test("a zero capacity reading is a broken probe, not a small disk", async () => {
+		const { driver, allocations } = bind({ diskGb: 0 });
+		const failure = await driver.create(request).catch((caught) => caught);
+		expect(failure).toMatchObject({ code: "create-failed" });
+		expect(describeDriverFailure(failure)).toContain("disk capacity probe failed");
+		expect(allocations()).toBe(0);
 	});
 
 	test("an exit the vendor never reported stays unknown", async () => {

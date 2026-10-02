@@ -54,6 +54,8 @@ function runcloudAccount(
 		readonly bootsTo?: { readonly state: string; readonly lastError?: string };
 		readonly removalAfterGets?: number;
 		readonly diskGb?: number;
+		/** DELETE refusals, in order, before the account accepts one. */
+		readonly destroyErrors?: RunCloudError[];
 		/** Create outcomes in order: a refusal, or a response lost after (hidden) allocation. */
 		readonly creates?: Array<RunCloudError | { readonly lost: true; readonly hidden?: boolean }>;
 	} = {},
@@ -109,6 +111,8 @@ function runcloudAccount(
 		},
 		destroy: async (id: string) => {
 			calls.push({ name: "destroy", input: id });
+			const refusal = options.destroyErrors?.shift();
+			if (refusal) throw refusal;
 			const row = rows.get(id);
 			if (!row || row.state === "destroyed") throw new RunCloudError(404, "sandbox not found");
 			row.state = "destroying";
@@ -336,8 +340,25 @@ describe("run.cloud end to end through its module", () => {
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
 	});
 
-	test("an allocation short of the request is refused and destroyed", async () => {
-		const account = runcloudAccount({ diskGb: 30 });
+	test("a DELETE refused by an outage or conflict is asked again; a definitive one is not", async () => {
+		const account = runcloudAccount({
+			destroyErrors: [new RunCloudError(503, "unavailable"), new RunCloudError(409, "busy")],
+		});
+		const session = await driverOver(account).create(request);
+		await session.destroy();
+		expect(account.names("destroy")).toHaveLength(3);
+		expect(account.rows.get(session.sandboxRef.id)?.state).toBe("destroyed");
+
+		const { transient } = vendorOver(account).control;
+		for (const code of [408, 429, 500])
+			expect(transient?.(new RunCloudError(code, "x"))).toBe(true);
+		for (const code of [400, 403, 404])
+			expect(transient?.(new RunCloudError(code, "x"))).toBe(false);
+	});
+
+	test("an allocation short of the request by more than 3% is refused and destroyed", async () => {
+		// 38.7 GiB of a 40 GiB quota is short of the 38.8 GiB the formatting allowance permits.
+		const account = runcloudAccount({ diskGb: 38.7 });
 		await expect(driverOver(account).create(request)).rejects.toMatchObject({
 			code: "invalid-create-request",
 			provider: "runcloud",

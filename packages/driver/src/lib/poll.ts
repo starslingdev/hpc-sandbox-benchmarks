@@ -30,7 +30,8 @@ function subscribeToAbort(signal: AbortSignal | undefined, listener: () => void)
 	return () => signal.removeEventListener("abort", listener);
 }
 
-function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+/** Wait `ms`, or reject with the abort reason as soon as `signal` aborts. */
+export function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 	if (signal?.aborted) return Promise.reject(abortReason(signal));
 	return new Promise((resolve, reject) => {
 		let unsubscribe = () => {};

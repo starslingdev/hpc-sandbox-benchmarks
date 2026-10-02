@@ -3,9 +3,10 @@
 
 import { createRequire } from "node:module";
 import { defineVendorDriver, pinned } from "@sandbox-benchmarks/driver/vendor";
+import { E2B_ATTEMPT_KEY } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
 import { NOVITA_PROVENANCE } from "./provenance.ts";
 import type { NovitaSdk } from "./vendor.ts";
-import { NOVITA_ATTEMPT_KEY, NOVITA_DOMAIN, NOVITA_SANDBOX_ID, novitaVendor } from "./vendor.ts";
+import { NOVITA_DOMAIN, NOVITA_SANDBOX_ID, novitaVendor } from "./vendor.ts";
 
 export { NOVITA_DOMAIN, NOVITA_SANDBOX_ID };
 
@@ -23,6 +24,6 @@ export default defineVendorDriver("novita", {
 	// E2B protocol: the baked template pins 4 vCPU / 8 GiB; disk is proven after boot.
 	coverage: pinned(4, 8),
 	execution: { syncCapMs: 60_000, durable: "native-launch" },
-	markerKey: NOVITA_ATTEMPT_KEY,
+	markerKey: E2B_ATTEMPT_KEY,
 	vendor: (context) => novitaVendor(loadSdk(), context),
 });

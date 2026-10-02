@@ -84,10 +84,10 @@ export default defineVendorDriver("runcloud", {
 	provenance: RUNCLOUD_PROVENANCE,
 	sandboxId: RUNCLOUD_SANDBOX_ID,
 	// The requested disk is a block-device quota the guest formats; its filesystem then reports the
-	// device minus its own metadata (a 40 GiB request exposed 39.30 GiB live), so the proof allows
-	// 3% of the 40 GiB target and nothing more.
+	// device minus its own metadata (a 40 GiB request exposed 39.30 GiB live, 1.75%), so the proof
+	// allows 3% of the request and nothing more.
 	coverage: mapped(),
-	diskProof: { allowanceGb: 1.2 },
+	diskProof: { allowanceRatio: 0.03 },
 	createBudget: { owner: "harness", timeoutMs: RUNCLOUD_CREATE_CEILING_MS },
 	costEvidence: runcloudCostEvidence,
 	timing: {

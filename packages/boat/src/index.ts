@@ -9,8 +9,6 @@ import {
 	BOAT_CONTROL_TIMEOUT_MS,
 	BOAT_CREATE_ATTEMPTS,
 	BOAT_CREATE_RATE_LIMIT_RETRY_MS,
-	BOAT_DELETE_ATTEMPTS,
-	BOAT_DELETE_RETRY_MS,
 	BOAT_EGRESS_TIMEOUT_MS,
 	BOAT_NAME,
 	BOAT_SANDBOX_ID,
@@ -21,11 +19,11 @@ export { BOAT_PROVENANCE, BOAT_SANDBOX_ID };
 
 export const BOAT_API_BASE = "https://boat.dev/api/v1";
 export const BOAT_READY_TIMEOUT_MS = 8 * 60_000;
-/** A delete that conflicts with a snapshot is asked again, then the sandbox is watched to its 404. */
-export const BOAT_DELETE_TIMEOUT_MS =
-	BOAT_DELETE_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +
-	(BOAT_DELETE_ATTEMPTS - 1) * BOAT_DELETE_RETRY_MS +
-	60_000;
+/**
+ * A delete that conflicts with a snapshot is asked again at every read, then the sandbox is watched
+ * to its 404: six bounded requests with 5s between them, then a minute.
+ */
+export const BOAT_DELETE_TIMEOUT_MS = 6 * BOAT_CONTROL_TIMEOUT_MS + 5 * 5_000 + 60_000;
 /** Every bound one create can spend: the retried create, readiness, egress, rename, disk probe, teardown. */
 export const BOAT_CREATE_CEILING_MS =
 	BOAT_CREATE_ATTEMPTS * BOAT_CONTROL_TIMEOUT_MS +

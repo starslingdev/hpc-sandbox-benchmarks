@@ -7,6 +7,12 @@ import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import {
+	E2B_ATTEMPT_KEY,
+	E2B_CONTROL_TIMEOUT_MS,
+	E2B_LIVE_STATES,
+	E2B_SANDBOX_LIFETIME_MS,
+} from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
 import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
 import {
 	AuthenticationError,
@@ -19,13 +25,7 @@ import {
 } from "e2b";
 import e2b, { E2B_PROVENANCE, E2B_SANDBOX_ID } from "./index.ts";
 import type { E2bSdk } from "./vendor.ts";
-import {
-	E2B_ATTEMPT_METADATA_KEY,
-	E2B_CONTROL_PLANE_TIMEOUT_MS,
-	E2B_INVENTORY_STATES,
-	E2B_SANDBOX_LIFETIME_MS,
-	e2bVendor,
-} from "./vendor.ts";
+import { e2bVendor } from "./vendor.ts";
 
 const KEY = "e2b_test-key";
 const context: DriverContext<"e2b"> = {
@@ -220,7 +220,7 @@ describe("E2B translation", () => {
 			template: context.resolvedArtifact.ref,
 			apiKey: KEY,
 			timeoutMs: E2B_SANDBOX_LIFETIME_MS,
-			metadata: { [E2B_ATTEMPT_METADATA_KEY]: "benchmark-x" },
+			metadata: { [E2B_ATTEMPT_KEY]: "benchmark-x" },
 			signal,
 		});
 	});
@@ -228,7 +228,7 @@ describe("E2B translation", () => {
 	test("a paused sandbox is live but not ready; an unknown state still owns resources", async () => {
 		const stub = stubE2b();
 		const { control } = e2bVendor(stub.sdk, context);
-		const paused = stub.allocate({ [E2B_ATTEMPT_METADATA_KEY]: "benchmark-y" }, "paused");
+		const paused = stub.allocate({ [E2B_ATTEMPT_KEY]: "benchmark-y" }, "paused");
 		expect(await control.get(paused, op())).toMatchObject({
 			phase: "pending",
 			marker: "benchmark-y",
@@ -246,11 +246,11 @@ describe("E2B translation", () => {
 		const signal = new AbortController().signal;
 		await control.page(undefined, { signal });
 		await control.find?.("benchmark-z", undefined, { signal });
-		const bound = { apiKey: KEY, requestTimeoutMs: E2B_CONTROL_PLANE_TIMEOUT_MS };
+		const bound = { apiKey: KEY, requestTimeoutMs: E2B_CONTROL_TIMEOUT_MS };
 		expect(stub.calls.map((call) => call.options)).toEqual([
-			{ ...bound, query: { state: [...E2B_INVENTORY_STATES] } },
+			{ ...bound, query: { state: [...E2B_LIVE_STATES] } },
 			{ ...bound, signal },
-			{ ...bound, query: { metadata: { [E2B_ATTEMPT_METADATA_KEY]: "benchmark-z" } } },
+			{ ...bound, query: { metadata: { [E2B_ATTEMPT_KEY]: "benchmark-z" } } },
 			{ ...bound, signal },
 		]);
 	});
@@ -338,7 +338,7 @@ describe("E2B end to end through its module", () => {
 		expect(await readTextFile(session, "/tmp/done")).toBe("done\n");
 
 		// A paused benchmark sandbox is still an allocation: inventoried and torn down.
-		const paused = stub.allocate({ [E2B_ATTEMPT_METADATA_KEY]: `${MARKER_PREFIX}p` }, "paused");
+		const paused = stub.allocate({ [E2B_ATTEMPT_KEY]: `${MARKER_PREFIX}p` }, "paused");
 		expect(await driver.probes?.observe({ provider: "e2b", id: paused })).toEqual({
 			state: "running",
 		});
@@ -355,7 +355,7 @@ describe("E2B end to end through its module", () => {
 				name: "kill",
 				options: {
 					apiKey: KEY,
-					requestTimeoutMs: E2B_CONTROL_PLANE_TIMEOUT_MS,
+					requestTimeoutMs: E2B_CONTROL_TIMEOUT_MS,
 					signal: expect.any(AbortSignal),
 				},
 			},
@@ -378,7 +378,7 @@ describe("E2B end to end through its module", () => {
 
 	test("an ambiguous create is found by its exact marker and killed", async () => {
 		const stub = stubE2b({ ambiguousFirstCreate: true });
-		const other = stub.allocate({ [E2B_ATTEMPT_METADATA_KEY]: `${MARKER_PREFIX}other` });
+		const other = stub.allocate({ [E2B_ATTEMPT_KEY]: `${MARKER_PREFIX}other` });
 		const failure = await driverOver(stub)
 			.create(request)
 			.catch((caught) => caught);
@@ -417,7 +417,7 @@ describe("E2B's production binding", () => {
 			expect((failure as Error).message).not.toContain(KEY);
 			expect(kill).toHaveBeenCalledWith(session.sandboxRef.id, {
 				apiKey: KEY,
-				requestTimeoutMs: E2B_CONTROL_PLANE_TIMEOUT_MS,
+				requestTimeoutMs: E2B_CONTROL_TIMEOUT_MS,
 				signal: expect.any(AbortSignal),
 			});
 		} finally {

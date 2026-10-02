@@ -112,9 +112,10 @@ export interface ControlPlane<Raw = unknown> {
 	/** The vendor refused before allocating; `retryable` marks a capacity or rate refusal. */
 	refused?(error: unknown): { readonly retryable: boolean } | undefined;
 	/**
-	 * A transient create failure the harness may retry once the kit has proven nothing remains
-	 * allocated (a gateway or rate error that is not proof of refusal). Independent of `refused`:
-	 * a transient failure is still reconciled.
+	 * A transient failure (a gateway, rate or conflict error that is not proof of refusal). A create
+	 * the harness may retry once the kit has proven nothing remains allocated; independent of
+	 * `refused`, it is still reconciled. A removal the kit asks again at its next read while the
+	 * delete budget remains.
 	 */
 	transient?(error: unknown): boolean;
 	/** A post-readiness invariant beyond the request axes; returns a reason to reject. */
@@ -134,6 +135,11 @@ export type Verification =
 	| { readonly status: "unsupported"; readonly detail: string };
 
 export interface DataPlane<Raw, Native> {
+	/**
+	 * Bind the create's record to a native handle, before readiness. The vendor has returned an id
+	 * by then, so a throw (a failed rename that would have made the allocation findable) is torn
+	 * down, and its cleanup retained, by that id.
+	 */
 	attach(record: VendorRecord<Raw>, op: Op): Native | Promise<Native>;
 	/**
 	 * Post-readiness preparation the vendor requires (a keepalive) and proof of mapped request axes
@@ -243,6 +249,8 @@ export interface DiskProof {
 	readonly path?: string;
 	/** Capacity a formatted filesystem legitimately loses to its own metadata (default 0). */
 	readonly allowanceGb?: number;
+	/** The same allowance as a fraction of the requested capacity (default 0). */
+	readonly allowanceRatio?: number;
 }
 
 /** The create-time prefix every kit-minted ownership marker carries. */
@@ -325,6 +333,9 @@ export const instanceOfAny =
 
 /* ------------------------------------ mechanics ------------------------------------ */
 
+/** The kit's abortable wait, for an adapter that paces its own vendor retries. */
+export { abortableDelay } from "./lib/poll.ts";
+
 /** The disk-capacity probe of `path`; exported so test vendors answer the command the kit runs. */
 export const diskProbe = (path = "/") =>
 	`df -Pk ${path === "/" ? path : shellQuote(path)} | awk 'NR==2 {print $2}'`;
@@ -346,8 +357,9 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 /**
- * Drain a paged listing; a repeated, omitted, or runaway cursor fails closed, never empty.
- * `inspect` sees each page before it is accepted, so a caller can refuse a record mid-listing.
+ * Drain a paged listing; a repeated, omitted, or runaway cursor, or a sandbox listed twice (a
+ * listing that shifted under its cursor), fails closed, never empty. `inspect` sees each page
+ * before it is accepted, so a caller can refuse a record mid-listing.
  */
 export async function drainPages<Raw>(
 	provider: ProviderId,
@@ -361,12 +373,17 @@ export async function drainPages<Raw>(
 	const cap = options.pageCap ?? DEFAULT_PAGE_CAP;
 	const records: VendorRecord<Raw>[] = [];
 	const seen = new Set<string>();
+	const ids = new Set<string>();
 	let cursor: string | undefined;
 	for (let pages = 0; ; pages++) {
 		op.signal.throwIfAborted();
 		if (pages >= cap) throw new Error(`${provider} listing exceeded ${cap} pages`);
 		const page = await fetchPage(cursor);
 		options.inspect?.(page.records);
+		for (const { id } of page.records) {
+			if (ids.has(id)) throw new Error(`${provider} listing returned a duplicate sandbox id`);
+			ids.add(id);
+		}
 		records.push(...page.records);
 		if (page.next === undefined) return records;
 		if (page.next === "" || seen.has(page.next))
@@ -381,13 +398,14 @@ export async function verifyDisk(
 	provider: ProviderId,
 	requestedGb: number,
 	exec: (command: string) => Promise<ExecOutcome>,
-	{ path = "/", allowanceGb = 0 }: DiskProof = {},
+	{ path = "/", allowanceGb = 0, allowanceRatio = 0 }: DiskProof = {},
 ): Promise<Verification> {
 	const result = await exec(diskProbe(path));
-	if (result.exitCode !== 0 || !/^\d+$/.test(result.stdout.trim()))
+	// A mounted filesystem has capacity: a zero reading is a broken probe, not a small disk.
+	if (result.exitCode !== 0 || !/^[1-9]\d*$/.test(result.stdout.trim()))
 		throw new Error(`${provider} disk capacity probe failed`);
 	const capacityGb = Number(result.stdout.trim()) / 1024 / 1024;
-	return capacityGb + allowanceGb >= requestedGb
+	return capacityGb + allowanceGb + requestedGb * allowanceRatio >= requestedGb
 		? { status: "honored" }
 		: {
 				status: "unsupported",
@@ -409,6 +427,19 @@ function executionOf(
 }
 
 /* ------------------------------------ lowering ------------------------------------ */
+
+/** A created allocation, whose native handle attach binds on the bridge's post-create path. */
+class Allocation<Raw, Native> implements VendorHandle<Raw, Native> {
+	#native?: { readonly value: Native };
+	constructor(readonly record: VendorRecord<Raw>) {}
+	get native(): Native {
+		if (this.#native === undefined) throw new Error(`sandbox ${this.record.id} is not attached`);
+		return this.#native.value;
+	}
+	attach(native: Native): void {
+		this.#native = { value: native };
+	}
+}
 
 /** Lower one bound vendor onto the ComputeSDK bridge. */
 export function vendorSpec<P extends ProviderId, Raw, Native>(
@@ -440,13 +471,6 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	// page and find, and marker-based recovery refuses anything it cannot attribute.
 	const owned = (record: VendorRecord<Raw>) =>
 		dedicated || (record.marker?.startsWith(MARKER_PREFIX) ?? false);
-	// Failures after the vendor allocated are never refusals, whatever `refused` would say of them.
-	const allocatedFailures = new WeakSet<object>();
-	const afterAllocation = (error: unknown) =>
-		matchesAnyCause(
-			error,
-			(link) => typeof link === "object" && link !== null && allocatedFailures.has(link),
-		);
 
 	/** One control-plane call outside a poll, bounded by `controlTimeoutMs`. */
 	async function call<T>(
@@ -480,7 +504,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		deadlineMs: number,
 		outer: AbortSignal | undefined,
 		poll: (o: Op) => Promise<T | null>,
-		expired: () => Error,
+		expired: () => unknown,
 		intervalMs = timing.pollMs,
 	): Promise<T> {
 		const o = op(bounded(deadlineMs, outer));
@@ -514,11 +538,12 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const observedGone = new Set<string>();
 
 	/**
-	 * Cleanup confirmation: request removal once, then observe removal; an acknowledged delete is
-	 * not removal. `observe-first` (destroy-by-id, recovery: no proof the allocation is live) looks
+	 * Cleanup confirmation: request removal, then observe removal; an acknowledged delete is not
+	 * removal. `observe-first` (destroy-by-id, recovery: no proof the allocation is live) looks
 	 * before it deletes and never sends a delete to a record already observed gone. `remove-first`
-	 * (a session the kit created and holds) requests removal straight away. Resolves whether this
-	 * teardown requested the removal (false: the sandbox was already gone or going).
+	 * (a session the kit created and holds) requests removal straight away. A transient refusal of
+	 * the request is asked again after the next read, while the delete budget remains. Resolves
+	 * whether this teardown requested the removal (false: the sandbox was already gone or going).
 	 */
 	async function destroy(
 		id: string,
@@ -526,26 +551,39 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		order: "observe-first" | "remove-first" = "observe-first",
 	): Promise<boolean> {
 		let requested = false;
+		let accepted = false;
+		// The last transient refusal: if the budget ends on it, it is the diagnostic, not the timeout.
+		let refusal: { readonly error: unknown } | undefined;
+		const request = async (o: Op) => {
+			requested = true;
+			try {
+				const outcome = await control.remove(id, o);
+				accepted = true;
+				refusal = undefined;
+				return outcome === "removed" ? true : null;
+			} catch (error) {
+				if (!transient?.(error)) throw error;
+				refusal = { error };
+				return null;
+			}
+		};
 		await within(
 			timing.deleteTimeoutMs,
 			signal,
 			async (o) => {
-				if (order === "remove-first" && !requested) {
-					requested = true;
-					if ((await control.remove(id, o)) === "removed") return true;
-				}
+				const first = order === "remove-first" && !requested;
+				if (first && (await request(o))) return true;
 				const record = await control.get(id, o);
 				if (isGone(record)) return true;
-				if (!requested && record?.phase !== "deleting") {
-					requested = true;
-					if ((await control.remove(id, o)) === "removed") return true;
-				}
+				if (!first && !accepted && record?.phase !== "deleting") return request(o);
 				return null;
 			},
 			() =>
-				new Error(
-					`${provider} sandbox ${id} was not observed removed within ${timing.deleteTimeoutMs}ms`,
-				),
+				refusal
+					? refusal.error
+					: new Error(
+							`${provider} sandbox ${id} was not observed removed within ${timing.deleteTimeoutMs}ms`,
+						),
 			timing.deletePollMs,
 		);
 		observedGone.add(id);
@@ -606,45 +644,30 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 	const release = (id: string, signal?: AbortSignal) =>
 		destroy(id, signal, observedGone.has(id) ? "observe-first" : "remove-first");
 
+	// Create is only the vendor call: once it returns an id, every later step (attach, readiness,
+	// admission, preparation, the disk proof) runs on the bridge's post-create path, which tears the
+	// allocation down by that id and, if teardown fails, retains a cleanup that retries by id.
 	const compute = nativeSdkCompute(
-		async (attempt: CreateAttempt, operation): Promise<VendorHandle<Raw, Native>> => {
-			const o = op(operation.signal);
-			const record = await control.create(attempt, o).catch((error: unknown) => {
-				if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
-				throw error;
-			});
-			try {
-				o.signal.throwIfAborted();
-				return { record, native: await data.attach(record, o) };
-			} catch (error) {
-				// The vendor allocated: tear the known record down before reporting. Teardown runs on
-				// its own budget (the attempt may be what aborted); if it fails, marker recovery,
-				// which this failure always triggers, finds the record again.
-				const failure = new Error(
-					`${provider} sandbox ${record.id} was allocated but not attached`,
-					{
-						cause: error,
-					},
-				);
-				allocatedFailures.add(failure);
-				await release(record.id).catch(() => {
-					if (!provesAbsence) unresolved.add(attempt.marker);
-				});
-				throw failure;
-			}
-		},
-		({ record, native }) => ({
-			sandboxId: record.id,
-			runCommand: (command: string, options?: ExecOptions) => data.exec(native, command, options),
-			destroy: () => release(record.id),
+		async (attempt: CreateAttempt, operation) =>
+			new Allocation<Raw, Native>(
+				await control.create(attempt, op(operation.signal)).catch((error: unknown) => {
+					if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
+					throw error;
+				}),
+			),
+		(handle) => ({
+			sandboxId: handle.record.id,
+			runCommand: (command: string, options?: ExecOptions) =>
+				data.exec(handle.native, command, options),
+			destroy: () => release(handle.record.id),
 			...(files && {
 				filesystem: {
-					readFile: (path: string) => files.read(native, path),
+					readFile: (path: string) => files.read(handle.native, path),
 					exists: async (path: string) =>
 						files.exists
-							? files.exists(native, path)
-							: (await data.exec(native, `test -e ${shellQuote(path)}`)).exitCode === 0,
-					writeFile: (path: string, text: string) => files.write(native, path, text),
+							? files.exists(handle.native, path)
+							: (await data.exec(handle.native, `test -e ${shellQuote(path)}`)).exitCode === 0,
+					writeFile: (path: string, text: string) => files.write(handle.native, path, text),
 				},
 			}),
 		}),
@@ -689,13 +712,9 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				value: spelling.toVendor(attempt.marker),
 			}),
 			...((refused || transient) && {
-				isDefinitive: (error: unknown) =>
-					refused !== undefined && !afterAllocation(error) && refused(error) !== undefined,
+				isDefinitive: (error: unknown) => refused?.(error) !== undefined,
 				isRetryableCreate: (error: unknown) =>
-					(refused !== undefined &&
-						!afterAllocation(error) &&
-						refused(error)?.retryable === true) ||
-					transient?.(error) === true,
+					refused?.(error)?.retryable === true || transient?.(error) === true,
 			}),
 			cleanup: async (_compute, locator, operation) => {
 				const marker = spelling.fromVendor(locator.value);
@@ -728,6 +747,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			},
 		},
 		prepareAndVerifyCreatedRequest: async (_sandbox, handle, request, operation) => {
+			handle.attach(await data.attach(handle.record, op(operation.signal)));
 			const ready = await awaitReady(handle.record, operation.signal);
 			const reason = control.admit?.(ready);
 			if (reason) throw new Error(`${provider} rejected the allocation: ${reason}`);

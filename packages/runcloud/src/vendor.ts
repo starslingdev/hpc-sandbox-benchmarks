@@ -104,6 +104,11 @@ const definitive = (error: unknown) => {
 	const code = status(error);
 	return code !== undefined && code >= 400 && code < 500 && code !== 408 && code !== 409;
 };
+/** A timeout, conflict, rate limit or outage: a DELETE refused this way is asked again. */
+const transient = (error: unknown) => {
+	const code = status(error);
+	return code === 408 || code === 409 || code === 429 || (code !== undefined && code >= 500);
+};
 
 /** One SDK call raced against its bound and the caller: the SDK's create and list take no signal. */
 function bounded<T>(label: string, work: () => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -214,6 +219,7 @@ export function runcloudVendor(
 				records: (await named(RUNCLOUD_NAME.toVendor(marker), signal)).map(record),
 			}),
 			refused: (error) => (definitive(error) ? { retryable: status(error) === 429 } : undefined),
+			transient,
 		},
 		data: {
 			attach: ({ raw }) => raw,

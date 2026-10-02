@@ -790,6 +790,8 @@ export default defineComputeSdkDriver("e2b", {
 });
 ```
 
+(Amended: E2B has since moved onto the vendor port, ADR-0023; the excerpt records this ADR's proof.)
+
 The complete E2B proof module is a few hundred lines, not the composition excerpt
 above. Roughly half is provider-specific safety work the generic wrapper cannot truthfully infer: structural
 nonzero-exit decoding across vendored SDK copies, root command execution, canonical-id teardown,

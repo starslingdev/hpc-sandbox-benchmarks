@@ -17,6 +17,7 @@
     "./errors": "./src/errors.ts",
     "./vendor": "./src/vendor.ts",
     "./vendor/testing": "./src/vendor-testing.ts",
+    "./vendor/e2b-protocol": "./src/vendor-e2b-protocol.ts",
     "./artifact": "./src/artifact.ts"
   },
   "scripts": {

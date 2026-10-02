@@ -8,10 +8,11 @@ import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate, launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
+import { E2B_ATTEMPT_KEY } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
 import { vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
 import novita, { NOVITA_DOMAIN, NOVITA_SANDBOX_ID } from "./index.ts";
 import type { NovitaSdk } from "./vendor.ts";
-import { NOVITA_ATTEMPT_KEY, novitaVendor } from "./vendor.ts";
+import { novitaVendor } from "./vendor.ts";
 
 const KEY = "nvta_sentinel-credential";
 const context: DriverContext<"novita"> = {
@@ -218,9 +219,9 @@ describe("Novita translation", () => {
 		expect(created).toMatchObject({ phase: "ready", marker: "benchmark-x" });
 		expect(stub.calls[0]?.options).toMatchObject({
 			template: "toolchain-test",
-			metadata: { [NOVITA_ATTEMPT_KEY]: "benchmark-x" },
+			metadata: { [E2B_ATTEMPT_KEY]: "benchmark-x" },
 		});
-		const paused = stub.allocate({ [NOVITA_ATTEMPT_KEY]: "benchmark-y" }, "paused");
+		const paused = stub.allocate({ [E2B_ATTEMPT_KEY]: "benchmark-y" }, "paused");
 		expect(await control.get(paused, op())).toMatchObject({
 			phase: "pending",
 			marker: "benchmark-y",
@@ -253,8 +254,36 @@ describe("Novita translation", () => {
 			{
 				apiKey: KEY,
 				domain: NOVITA_DOMAIN,
-				query: { metadata: { [NOVITA_ATTEMPT_KEY]: "benchmark-z" } },
+				query: { metadata: { [E2B_ATTEMPT_KEY]: "benchmark-z" } },
 			},
+		]);
+	});
+
+	test("the SDK takes no signal: guest calls are bounded by request timeouts and check the signal first", async () => {
+		const stub = stubNovita();
+		const { control, data } = novitaVendor(stub.sdk, context);
+		const native = await data.attach(await control.create({ request, marker: "m" }, op()), op());
+		await data.exec(native, "id -u", op());
+		await data.launch?.(native, "daemon", op());
+		await data.files?.read(native, "/tmp/missing").catch(() => undefined);
+		const aborted = AbortSignal.abort(new Error("caller gave up"));
+		await expect(data.exec(native, "id -u", { signal: aborted })).rejects.toThrow("caller gave up");
+		const guest = { user: "root", requestTimeoutMs: 5_000 };
+		expect(stub.calls.map(({ name, options }) => ({ name, options }))).toEqual([
+			{
+				name: "create",
+				options: {
+					template: "toolchain-test",
+					apiKey: KEY,
+					domain: NOVITA_DOMAIN,
+					requestTimeoutMs: 300_000,
+					timeoutMs: 3 * 60 * 60_000,
+					metadata: { [E2B_ATTEMPT_KEY]: "m" },
+				},
+			},
+			{ name: "commands.run", options: { ...guest, background: false, timeoutMs: 60_000 } },
+			{ name: "commands.run", options: { ...guest, background: true, timeoutMs: 0 } },
+			{ name: "files.read", options: guest },
 		]);
 	});
 
@@ -295,7 +324,7 @@ describe("Novita end to end through its module", () => {
 		expect(await readTextFile(session, "/tmp/done")).toBe("done\n");
 
 		// A paused benchmark sandbox still owns resources: it is inventoried and torn down.
-		const paused = stub.allocate({ [NOVITA_ATTEMPT_KEY]: `${MARKER_PREFIX}paused` }, "paused");
+		const paused = stub.allocate({ [E2B_ATTEMPT_KEY]: `${MARKER_PREFIX}paused` }, "paused");
 		expect(await driver.probes?.observe({ provider: "novita", id: paused })).toEqual({
 			state: "running",
 		});
@@ -327,7 +356,7 @@ describe("Novita end to end through its module", () => {
 	test("a sandbox in an unknown state is observed running, described in full, and killed", async () => {
 		const stub = stubNovita();
 		const driver = driverOver(stub);
-		const id = stub.allocate({ [NOVITA_ATTEMPT_KEY]: `${MARKER_PREFIX}odd` }, "snapshotting");
+		const id = stub.allocate({ [E2B_ATTEMPT_KEY]: `${MARKER_PREFIX}odd` }, "snapshotting");
 		const ref = { provider: "novita" as const, id };
 		expect(await driver.probes?.observe(ref)).toEqual({ state: "running" });
 		expect(await driver.probes?.describe?.(ref)).toMatchObject({
@@ -353,12 +382,12 @@ describe("Novita end to end through its module", () => {
 
 	test("recovery rejects a row another attempt owns and never kills it", async () => {
 		const stub = stubNovita({ ambiguousFirstCreate: true, looseLookup: true });
-		const other = stub.allocate({ [NOVITA_ATTEMPT_KEY]: `${MARKER_PREFIX}other-attempt` });
+		const other = stub.allocate({ [E2B_ATTEMPT_KEY]: `${MARKER_PREFIX}other-attempt` });
 		const failure = await driverOver(stub)
 			.create(request)
 			.catch((caught) => caught);
 		// The double fault keeps the locator under Novita's own metadata key.
-		expect(failure.locator).toMatchObject({ kind: "marker", key: NOVITA_ATTEMPT_KEY });
+		expect(failure.locator).toMatchObject({ kind: "marker", key: E2B_ATTEMPT_KEY });
 		expect(stub.count("kill")).toBe(0);
 		expect(stub.rows.has(other)).toBe(true);
 	});

@@ -296,7 +296,8 @@ export function vendorContract<Raw, Native>(
 		const { vendor, account } = make();
 		const marker = mint();
 		const created = await create(vendor, marker);
-		// The kit attaches every create's record at once, so a vendor may mark it there (a rename).
+		// The kit attaches every create's record before readiness, so a vendor may mark it there (a
+		// rename).
 		await vendor.data.attach(created, op);
 		const observed = await vendor.control.get(created.id, op);
 		expect(observed?.id).toBe(created.id);

@@ -2,9 +2,10 @@
 // nowhere else. Tests lower the same module over a stub SDK through `specFor`.
 
 import { defineVendorDriver, pinned } from "@sandbox-benchmarks/driver/vendor";
+import { E2B_ATTEMPT_KEY } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
 import * as sdk from "e2b";
 import { E2B_PROVENANCE } from "./provenance.ts";
-import { E2B_ATTEMPT_METADATA_KEY, E2B_SANDBOX_ID, e2bVendor } from "./vendor.ts";
+import { E2B_SANDBOX_ID, e2bVendor } from "./vendor.ts";
 
 export { E2B_PROVENANCE, E2B_SANDBOX_ID };
 
@@ -15,6 +16,6 @@ export default defineVendorDriver("e2b", {
 	coverage: pinned(4, 8),
 	// Commands budgeted at or past the 60s synchronous cap launch natively in the background.
 	execution: { syncCapMs: 60_000, durable: "native-launch" },
-	markerKey: E2B_ATTEMPT_METADATA_KEY,
+	markerKey: E2B_ATTEMPT_KEY,
 	vendor: (context) => e2bVendor(sdk, context),
 });

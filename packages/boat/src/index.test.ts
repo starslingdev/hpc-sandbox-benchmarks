@@ -3,7 +3,7 @@
 // (convergence, deadlines, the inventory partition, recovery mechanics) is tested once in the
 // driver package.
 
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { Sandbox } from "@boatdev/sdk";
 import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
@@ -17,7 +17,6 @@ import type { BoatClient, BoatVendorOptions } from "./vendor.ts";
 import {
 	BOAT_CREATE_RATE_LIMIT_RETRY_MS,
 	BOAT_CREATE_RETRY_MS,
-	BOAT_DELETE_RETRY_MS,
 	BOAT_MACHINE_PROVIDER,
 	BOAT_MACHINE_TYPE,
 	BOAT_NAME,
@@ -260,27 +259,24 @@ describe("boat translation", () => {
 		expect(control.refused?.(new Error("HTTP 400"))).toBeUndefined();
 	});
 
-	test("a delete conflict is asked again; a refused delete is diagnosed by boat's code", async () => {
-		delays.length = 0;
-		const conflicted = boatAccount({ deleteErrors: [vendorError(409, "snapshot_in_progress")] });
-		const id = conflicted.allocate("x");
-		expect(await boatVendor(conflicted.client, fast).control.remove(id, op())).toBe("accepted");
-		expect(delays).toEqual([BOAT_DELETE_RETRY_MS]);
-
-		const diagnostic = spyOn(console, "error").mockImplementation(() => undefined);
-		try {
-			const denied = boatAccount({ deleteErrors: [vendorError(403, "delete_denied")] });
-			const kept = denied.allocate("x");
-			await expect(
-				boatVendor(denied.client, fast).control.remove(kept, op()),
-			).rejects.toBeInstanceOf(ResponseError);
-			expect(denied.names("deleteSandbox")).toHaveLength(1);
-			expect(diagnostic).toHaveBeenCalledWith(
-				"boat delete HTTP 403 delete_denied; removal unconfirmed",
-			);
-		} finally {
-			diagnostic.mockRestore();
+	test("a refused delete names boat's code; only a conflict or outage is transient", async () => {
+		const account = boatAccount({
+			deleteErrors: [vendorError(409, "snapshot_in_progress"), vendorError(403, "delete_denied")],
+		});
+		const { control } = boatVendor(account.client, fast);
+		const id = account.allocate("x");
+		for (const [message, transient] of [
+			["boat delete HTTP 409 snapshot_in_progress; removal unconfirmed", true],
+			["boat delete HTTP 403 delete_denied; removal unconfirmed", false],
+		] as const) {
+			const refusal = await control.remove(id, op()).catch((caught) => caught);
+			expect(refusal).toMatchObject({ message });
+			expect(control.transient?.(refusal)).toBe(transient);
 		}
+		expect(await control.remove(id, op())).toBe("accepted");
+		for (const status of [408, 429, 500])
+			expect(control.transient?.(vendorError(status))).toBe(true);
+		expect(control.transient?.(new TypeError("socket hang up"))).toBe(false);
 	});
 });
 
@@ -359,6 +355,36 @@ describe("boat end to end through its module", () => {
 			expect(account.names("deleteSandbox")).toHaveLength(1);
 			expect(account.rows.size).toBe(0);
 		}
+	});
+
+	test("a delete that conflicts with a snapshot is asked again until boat accepts it", async () => {
+		const account = boatAccount({
+			deleteErrors: [
+				vendorError(409, "snapshot_in_progress"),
+				vendorError(409, "snapshot_in_progress"),
+			],
+		});
+		const session = await driverOver(account.client).create(request);
+		await session.destroy();
+		expect(account.names("deleteSandbox")).toHaveLength(3);
+		expect(account.rows.size).toBe(0);
+	});
+
+	test("a failed rename whose delete also fails keeps a cleanup that deletes by id", async () => {
+		const account = boatAccount({
+			renameFails: true,
+			deleteErrors: [vendorError(403, "delete_denied")],
+		});
+		const failure = await driverOver(account.client)
+			.create(request)
+			.catch((caught) => caught);
+		expect(failure).toBeInstanceOf(FailedCreateCleanupError);
+		const [id] = account.rows.keys();
+		// Never renamed, so no listing could attribute it: only the id the create returned finds it.
+		expect(failure.locator).toEqual({ kind: "id", value: id });
+		expect(isRetryableDriverCreate(failure)).toBe(false);
+		await (failure as FailedCreateCleanupError).cleanup();
+		expect(account.rows.size).toBe(0);
 	});
 
 	test("an ambiguous create stays held: no lookup can find a sandbox that was never renamed", async () => {
