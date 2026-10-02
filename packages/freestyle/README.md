@@ -57,6 +57,8 @@ so the runtime user can resolve every pinned profile without a fresh OpenBenchma
 
 Promotion reads the candidate ID from the bake reports (`--bake-reports`), never by name, then
 revalidates and snapshots that exact candidate without reinstalling; it rejects a changed recipe.
+A local promote rerun therefore first downloads the release run's `bake-*-<run_id>` artifacts into
+one flat directory and passes it as `--bake-reports <dir>`.
 Snapshots carry no name aliases: every candidate and version is addressed by its immutable ID, and
 earlier IDs remain available for pinned experiments.
 Use the returned ID for `FREESTYLE_SNAPSHOT_ID` and the frozen planner's `BENCH_ARTIFACT_FREESTYLE`.

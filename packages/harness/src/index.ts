@@ -100,6 +100,7 @@ export {
 	cleanupOwnedSandboxes,
 	createOwnedSandbox,
 	exitAfterSandboxCleanup,
+	ownedSandboxShutdownSignal,
 	releaseOwnedSandbox,
 	shutdownOwnedSandboxes,
 	withCleanupPreservingPrimaryError,

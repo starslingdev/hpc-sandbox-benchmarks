@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import type { SandboxSession } from "@sandbox-benchmarks/driver";
 import type {
 	OciArtifactBuildRequest,
+	OwnBuildSandbox,
 	SnapshotArtifactBuildRequest,
 } from "@sandbox-benchmarks/driver/artifact";
 import {
@@ -96,6 +97,13 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 			stockBase: () => "freestyle/ubuntu",
 			...(bootedBase !== undefined && { bootedBase: async () => bootedBase }),
 		});
+		// A stand-in for the release lane's process owner: it records what it was handed to own.
+		const owned: string[] = [];
+		const own: OwnBuildSandbox = async (create) => {
+			const session = await create(new AbortController().signal);
+			owned.push(session.sandboxRef.id);
+			return session;
+		};
 		const request = (
 			overrides: Partial<SnapshotArtifactBuildRequest<"freestyle">> = {},
 		): SnapshotArtifactBuildRequest<"freestyle"> => ({
@@ -106,13 +114,14 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 			prepare: async (session: SandboxSession) => {
 				await session.exec("sh -c 'echo prepared > /etc/prepared'");
 			},
+			own,
 			...overrides,
 		});
-		return { world, builder, request, booted, captured, deleted, retentions };
+		return { world, builder, request, booted, captured, deleted, retentions, owned };
 	}
 
 	test("a candidate build boots the stock base, prepares, captures durably, and destroys", async () => {
-		const { world, builder, request, booted, captured, retentions } = bake({
+		const { world, builder, request, booted, captured, retentions, owned } = bake({
 			bootedBase: "sh-stock",
 		});
 		const prepared: { id: string; base: string }[] = [];
@@ -125,6 +134,8 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 		);
 		expect(builder).toMatchObject({ provider: "freestyle", bakes: "native-snapshot" });
 		expect(booted).toEqual(["freestyle/ubuntu"]);
+		// The build sandbox is booted under the release lane's process ownership.
+		expect(owned).toEqual(captured);
 		// The preparation is told the immutable identity the vendor resolved the stock alias to.
 		expect(prepared).toEqual(captured.map((id) => ({ id, base: "sh-stock" })));
 		// A release artifact must outlive the build; a lifecycle snapshot may expire.
@@ -160,6 +171,44 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 				}),
 			),
 		).rejects.toBe(failure);
+		expect(captured).toEqual([]);
+		expect(world.allocations()).toBe(0);
+	});
+
+	test("the release lane stopping during preparation destroys the build sandbox", async () => {
+		const { world, builder, request, captured } = bake();
+		const stop = new AbortController();
+		const stopped = new Error("release lane draining");
+		await expect(
+			builder.build(
+				request({
+					signal: stop.signal,
+					prepare: (_session, { signal }) =>
+						new Promise((_resolve, reject) => {
+							signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+							stop.abort(stopped);
+						}),
+				}),
+			),
+		).rejects.toBe(stopped);
+		expect(captured).toEqual([]);
+		expect(world.allocations()).toBe(0);
+	});
+
+	test("an owner cancellation reaches the build sandbox's create", async () => {
+		const { world, builder, request, captured } = bake();
+		const drained = new Error("drain began during create");
+		await expect(
+			builder.build(
+				request({
+					own: (create) => {
+						const owner = new AbortController();
+						owner.abort(drained);
+						return create(owner.signal);
+					},
+				}),
+			),
+		).rejects.toMatchObject({ cause: drained });
 		expect(captured).toEqual([]);
 		expect(world.allocations()).toBe(0);
 	});

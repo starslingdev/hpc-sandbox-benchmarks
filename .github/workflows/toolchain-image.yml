@@ -786,6 +786,9 @@ jobs:
           image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           base-image: ${{ needs.build.outputs.base-digest-ref || needs.plan.outputs.image-source }}
           size-tier: ${{ needs.plan.outputs.size-tier }}
-          verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }}${{ inputs.force_republish && ' --force' || '' }}
+          # Rerunning it locally first needs this run's `bake-*-${{ github.run_id }}` artifacts
+          # downloaded into one flat `bake-reports/` directory, as the download step above does:
+          # without them a native snapshot's candidate fails revalidation as unresolved.
+          verify: bun apps/cli/src/bin/bake.ts --promote --require ${{ needs.plan.outputs.required }} --provider ${{ needs.plan.outputs.providers }} --bake-reports bake-reports${{ inputs.force_republish && ' --force' || '' }}
           published: ${{ needs.plan.outputs.publish-target }}
           diagnostics: promote-payload-${{ github.run_id }}

@@ -66,6 +66,8 @@ test("a Freestyle build records the immutable snapshot and destroys its sandbox"
 		replace: "allowed",
 		log: () => {},
 		signal: new AbortController().signal,
+		// No process owner here: the release lane's binding is proven in apps/cli.
+		own: (create) => create(new AbortController().signal),
 		prepare: async (session, { base }) => {
 			prepared.push({ id: session.sandboxRef.id, base });
 			await session.exec("true");

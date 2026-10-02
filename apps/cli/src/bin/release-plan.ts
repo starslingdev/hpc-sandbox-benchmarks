@@ -1,4 +1,23 @@
 #!/usr/bin/env bun
+// `release-plan` — the FIRST job of the toolchain release. Resolve the toolchain identity from the
+// arktype-validated release config, decide the release mode, and emit ONE machine-checkable release
+// plan that every downstream job (build, the provider bake matrix, promote) consumes instead of
+// re-deriving the refs and gates from the raw workflow inputs (the "make the plan an artifact"
+// contract).
+//
+// Two outputs, one invocation:
+//   • the full plan as pretty JSON, written to the path in argv[1] (uploaded as the release-plan.json
+//     diagnostic artifact), and
+//   • the consumed `key=value` lines written straight to $GITHUB_OUTPUT (skip, mode, matrix, refs, …)
+//     via emitStepOutputs — never a stdout redirect, so no subprocess chatter can corrupt them.
+//
+// Credential posture: importing `releaseConfig`/`validatedPins` validates env + pins with NO cloud
+// creds (the fail-fast gate). The one privileged call is the immutability probe
+// (`imageExistsInRegistry`, a `docker manifest inspect` that needs the GHCR login the plan job does
+// first). That probe is only a best-effort EARLY skip — the authoritative immutable-version guard
+// lives in `promote` (which REFUSES on an uncertain check), so an inconclusive probe here proceeds
+// rather than blocks.
+
 import type {
 	MirroredProviderId,
 	ProviderArtifact,
@@ -15,22 +34,6 @@ import { validatedPins } from "@sandbox-benchmarks/templates/pins";
 import { imageExistsInRegistry, imageName, imageRepo, releaseBaseTag } from "../lib/bake/image.ts";
 import { emitStepOutputs } from "../lib/gha-output.ts";
 import { isPartialScope, selectProviders } from "../lib/matrix.ts";
-// `release-plan` — the FIRST job of the toolchain release. Resolve the toolchain identity from the
-// arktype-validated release config, decide the release mode, and emit ONE machine-checkable release plan that
-// every downstream job (build, the provider bake matrix, promote) consumes instead of re-deriving the
-// refs and gates from the raw workflow inputs (the "make the plan an artifact" contract).
-//
-// Two outputs, one invocation:
-//   • the full plan as pretty JSON, written to the path in argv[1] (uploaded as the release-plan.json
-//     diagnostic artifact), and
-//   • the consumed `key=value` lines written straight to $GITHUB_OUTPUT (skip, mode, matrix, refs, …)
-//     via emitStepOutputs — never a stdout redirect, so no subprocess chatter can corrupt them.
-//
-// Credential posture: importing `releaseConfig`/`validatedPins` validates env + pins with NO cloud creds
-// (the fail-fast gate). The one privileged call is the immutability probe (`imageExistsInRegistry`,
-// a `docker manifest inspect` that needs the GHCR login the plan job does first). That probe is only
-// a best-effort EARLY skip — the authoritative immutable-version guard lives in `promote` (which
-// REFUSES on an uncertain check), so an inconclusive probe here proceeds rather than blocks.
 import { releaseConfig } from "../lib/release-config.ts";
 import type { ReleaseBuildMode } from "../lib/release-inputs.ts";
 import { isBuildMode } from "../lib/release-inputs.ts";

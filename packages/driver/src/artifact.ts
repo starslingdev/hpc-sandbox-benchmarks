@@ -10,7 +10,8 @@
 // - A native-snapshot baker has no OCI base: it boots a sandbox, has the release lane prepare it
 //   (install recipe and smoke, injected so a provider package never imports harness or templates
 //   code) and captures it. `snapshotArtifactBuilder` derives that from the driver's own snapshot
-//   capability, so such a provider needs no `./artifact` of its own.
+//   capability, so such a provider needs no `./artifact` of its own. The release lane also injects
+//   process ownership of the build sandbox, so an interrupt during the build destroys it.
 //
 // Either way the builder returns exactly the ref its driver boots. Nothing else crosses the seam.
 
@@ -39,6 +40,7 @@ interface ArtifactBuildCommon<Env> {
 	 */
 	readonly replace: "allowed" | "forbidden";
 	readonly log: (line: string) => void;
+	/** Aborted when the release lane stops: its process-signal drain has begun. */
 	readonly signal: AbortSignal;
 }
 
@@ -62,8 +64,21 @@ export interface OciArtifactBuildRequest<Env> extends ArtifactBuildCommon<Env> {
 	readonly dockerConfig: string;
 }
 
+/**
+ * The release lane's process ownership of a build sandbox. It registers the create before invoking
+ * it, so a signal drain destroys the sandbox whether it is pending or live and reclaims a create
+ * that lands late; the returned session's destroy is the owner's idempotent one. `create` receives
+ * the owner's cancellation, which a drain aborts. Injected so a provider package never imports the
+ * harness.
+ */
+export type OwnBuildSandbox = <S extends SandboxSession>(
+	create: (signal: AbortSignal) => Promise<S>,
+) => Promise<S>;
+
 /** What the release lane's preparation of a native-snapshot build sandbox is told. */
 export interface SnapshotPreparation extends DriverOperationOptions {
+	/** The build's own signal: aborted when the release lane stops. */
+	readonly signal: AbortSignal;
 	/**
 	 * The immutable identity the build sandbox booted: the candidate on a version build, else the
 	 * stock base as the vendor resolved it. The recipe's provenance records it.
@@ -88,6 +103,8 @@ export interface SnapshotArtifactBuildRequest<P extends ProviderId>
 	 * candidate build, provenance verification on a version build. Rejecting fails the build.
 	 */
 	readonly prepare: (session: SandboxSession, preparation: SnapshotPreparation) => Promise<void>;
+	/** Boots the build sandbox under the release lane's process ownership. */
+	readonly own: OwnBuildSandbox;
 }
 
 export type ArtifactBuildRequest<P extends ProviderId> =
@@ -169,7 +186,7 @@ export function defineArtifactBuilder<P extends ProviderId, Env = EnvOf<P>>(
 /** The create budget for the build sandbox; the release lane's signal can end it sooner. */
 const SNAPSHOT_BUILD_CREATE_DEADLINE_MS = 15 * 60_000;
 
-/** Destroy, retrying once: a build sandbox must not outlive the build. */
+/** Destroy, retrying once: a build sandbox must not outlive the build (nor, owned, the process). */
 async function converge(session: SandboxSession): Promise<void> {
 	try {
 		await session.destroy();
@@ -224,13 +241,16 @@ export function snapshotArtifactBuilder<P extends ProviderId, Handle>(
 		if (snapshots === undefined)
 			throw new Error(`${provider} exposes no snapshot capability to build ${request.name} with`);
 		request.log(`${provider} native snapshot ${request.name}: booting ${ref}`);
-		const session = await driver.create(
-			{
-				spec: request.spec,
-				artifact: resolvedArtifact,
-				deadlineMs: SNAPSHOT_BUILD_CREATE_DEADLINE_MS,
-			},
-			{ signal: request.signal },
+		request.signal.throwIfAborted();
+		const session = await request.own((owner) =>
+			driver.create(
+				{
+					spec: request.spec,
+					artifact: resolvedArtifact,
+					deadlineMs: SNAPSHOT_BUILD_CREATE_DEADLINE_MS,
+				},
+				{ signal: AbortSignal.any([owner, request.signal]) },
+			),
 		);
 		let snapshotId: string | undefined;
 		let failure: { readonly error: unknown } | undefined;

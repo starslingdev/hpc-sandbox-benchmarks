@@ -5,9 +5,10 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ArtifactBuildResult } from "@sandbox-benchmarks/driver/artifact";
+import type { ArtifactBuildResult, OwnBuildSandbox } from "@sandbox-benchmarks/driver/artifact";
 import { parseDriverEnv } from "@sandbox-benchmarks/driver/env";
 import { loadArtifactBuilder } from "@sandbox-benchmarks/drivers";
+import { createOwnedSandbox, ownedSandboxShutdownSignal } from "@sandbox-benchmarks/harness";
 import type {
 	ArtifactPhase,
 	BakedProviderId,
@@ -30,6 +31,20 @@ import type { Log } from "./types.ts";
 /** The toolchain images directory an OCI builder assembles a remote build context from. */
 const IMAGES_DIR = join(import.meta.dir, "../../../../../packages/templates/images");
 const DIGEST_PINNED = /@sha256:[a-f0-9]{64}$/;
+
+/**
+ * The release lane's process ownership of a build, bound to the harness: a build sandbox registers
+ * with the SIGINT/SIGTERM drain before its create is invoked, so an interrupt destroys it whether
+ * pending or live and a create that lands late is reclaimed; the build's signal aborts once that
+ * drain begins.
+ */
+export const releaseBuildOwnership: {
+	readonly own: OwnBuildSandbox;
+	readonly signal: AbortSignal;
+} = {
+	own: (create) => createOwnedSandbox(create, { destroy: (destroy, options) => destroy(options) }),
+	signal: ownedSandboxShutdownSignal(),
+};
 
 export interface ArtifactBuildInputs {
 	readonly phase: ArtifactPhase;
@@ -60,7 +75,7 @@ export async function buildProviderArtifact(
 		spec: releaseConfig.targetSpec,
 		replace: "allowed",
 		log,
-		signal: new AbortController().signal,
+		signal: releaseBuildOwnership.signal,
 	} as const;
 	if (isNativeSnapshotProviderId(id)) {
 		if (phase === "version" && inputs.candidate === undefined)
@@ -75,6 +90,7 @@ export async function buildProviderArtifact(
 				? { candidate: { ref: inputs.candidate } }
 				: {}),
 			prepare: nativeSnapshotPreparation(id, phase, name),
+			own: releaseBuildOwnership.own,
 		});
 	}
 	const base = inputs.base;

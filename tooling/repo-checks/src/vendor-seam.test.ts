@@ -89,7 +89,7 @@ function fixture(
 		"node_modules/acme-sdk/package.json": json({ peerDependencies: { "acme-peer": "^1" } }),
 		"packages/drivers/package.json": json({
 			name: "@sandbox-benchmarks/drivers",
-			dependencies: { "@sandbox-benchmarks/acme": "workspace:*" },
+			dependencies: { "@sandbox-benchmarks/acme": "workspace:*", arktype: "catalog:" },
 		}),
 		"packages/drivers/src/index.ts": `export const load = () => import(${q}@sandbox-benchmarks/acme${q});`,
 		"apps/cli/package.json": json({ name: "@sandbox-benchmarks/cli", dependencies: {} }),
@@ -167,6 +167,53 @@ describe("vendor seam: planted violations", () => {
 		});
 		expect(vendorSeamViolations(fixture({ "packages/acme/package.json": acme }))).toEqual([
 			"packages/acme pins acme-sdk outside the catalogs; a vendor library belongs in catalogs.vendors",
+		]);
+	});
+
+	it("catches a vendor SDK passed off through the default catalog", () => {
+		const root = JSON.parse(fixture().files.get("package.json") ?? "{}");
+		root.workspaces.catalog["acme-extra"] = "1.0.0";
+		const acme = JSON.parse(fixture().files.get("packages/acme/package.json") ?? "{}");
+		acme.dependencies["acme-extra"] = "catalog:";
+		expect(
+			vendorSeamViolations(
+				fixture({
+					"package.json": JSON.stringify(root),
+					"packages/acme/package.json": JSON.stringify(acme),
+				}),
+			),
+		).toEqual([
+			"packages/acme takes acme-extra from the default catalog, but no non-provider member uses it; a vendor library belongs in catalogs.vendors",
+		]);
+		// The same entry is provider-neutral once a non-provider member also takes it.
+		const cli = JSON.stringify({
+			name: "@sandbox-benchmarks/cli",
+			dependencies: { "acme-extra": "catalog:" },
+		});
+		expect(
+			vendorSeamViolations(
+				fixture({
+					"package.json": JSON.stringify(root),
+					"packages/acme/package.json": JSON.stringify(acme),
+					"apps/cli/package.json": cli,
+				}),
+			),
+		).toEqual([]);
+	});
+
+	it("catches a relative path into a provider package from outside it", () => {
+		expect(
+			vendorSeamViolations(
+				fixture({
+					"apps/cli/src/lib/leak.ts": from("../../../../packages/acme/src/index.ts"),
+					"packages/drivers/src/leak.ts": `export * from ${q}../../acme${q};`,
+					"packages/acme/src/inner.ts": from("./index.ts"),
+					"packages/acme-tools/src/near.ts": from("../../acme-tools/src/near.ts"),
+				}),
+			),
+		).toEqual([
+			"apps/cli/src/lib/leak.ts reaches into provider package packages/acme by relative path ../../../../packages/acme/src/index.ts",
+			"packages/drivers/src/leak.ts reaches into provider package packages/acme by relative path ../../acme",
 		]);
 	});
 

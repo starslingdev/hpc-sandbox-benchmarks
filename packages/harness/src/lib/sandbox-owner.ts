@@ -56,6 +56,7 @@ const DEFAULT_CLEANUP_RETRY_MS = 250;
 
 let handlersInstalled = false;
 let stopping = false;
+const shutdown = new AbortController();
 let signalCleanup: Promise<void> | undefined;
 let beforeExitCleanup: Promise<void> | undefined;
 
@@ -235,9 +236,19 @@ function logCleanupFailures(context: string, failures: readonly unknown[]): void
 /** Stop new creates and drain all owned sandboxes before an ordinary CLI exit. */
 export async function shutdownOwnedSandboxes(context = "process exit"): Promise<unknown[]> {
 	stopping = true;
+	shutdown.abort(new Error(`Sandbox owner shutting down (${context})`));
 	const failures = await cleanupOwnedSandboxes();
 	logCleanupFailures(context, failures);
 	return failures;
+}
+
+/**
+ * Aborted once this process starts draining its owned sandboxes (a SIGINT/SIGTERM or an ordinary
+ * CLI exit), for work that runs beside an owned sandbox, such as a release build, to stop early
+ * while the drain destroys the sandbox itself.
+ */
+export function ownedSandboxShutdownSignal(): AbortSignal {
+	return shutdown.signal;
 }
 
 /** Exit only after the process has made its bounded cleanup attempts. */

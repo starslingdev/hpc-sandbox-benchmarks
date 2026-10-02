@@ -1,8 +1,4 @@
 #!/usr/bin/env bun
-import type { StagedCandidates } from "../lib/bake/image.ts";
-import { buildAndPushCandidate, imageDigest } from "../lib/bake/image.ts";
-import type { Log } from "../lib/bake/types.ts";
-import { emitStepOutputs } from "../lib/gha-output.ts";
 // `build-candidate` — the BUILD phase of the toolchain release: build the base image (+ variants) and
 // push the mutable candidate base to GHCR ONCE, then resolve and record its immutable digest. Split
 // from the provider bake so the image is built a single time here and every provider cell fans out
@@ -19,6 +15,11 @@ import { emitStepOutputs } from "../lib/gha-output.ts";
 //     `bun … >> "$GITHUB_OUTPUT"` redirect would splice build.sh's progress into the outputs file and
 //     GitHub would reject it. stdout is left to carry the (inherited) build log, and
 //   • argv[1] (optional): a build-metadata.json diagnostic artifact with the same facts.
+
+import type { StagedCandidates } from "../lib/bake/image.ts";
+import { buildAndPushCandidate, imageDigest } from "../lib/bake/image.ts";
+import type { Log } from "../lib/bake/types.ts";
+import { emitStepOutputs } from "../lib/gha-output.ts";
 import { releaseConfig } from "../lib/release-config.ts";
 
 if (import.meta.main) {

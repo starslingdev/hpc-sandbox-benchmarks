@@ -3,7 +3,15 @@
 // whose vendor CLI is a recording stand-in on PATH.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bakedArtifactName, REGISTRY } from "@sandbox-benchmarks/schema/providers";
@@ -91,6 +99,43 @@ describe("buildProviderArtifact", () => {
 		await expect(
 			buildProviderArtifact("freestyle", { phase: "version", log: () => {} }),
 		).rejects.toThrow("needs the revalidated candidate");
+	});
+});
+
+describe("a native-snapshot build under the release lane's process ownership", () => {
+	/** Run the fixture build, SIGTERM it once it logs `ready`, and return its exit and log. */
+	async function interrupt(mode: "prepare" | "late", ready: string) {
+		const root = mkdtempSync(join(tmpdir(), "bake-signal-"));
+		roots.push(root);
+		const logFile = join(root, "build.log");
+		const lines = () =>
+			existsSync(logFile) ? readFileSync(logFile, "utf8").trim().split("\n") : [];
+		const proc = Bun.spawn(
+			["bun", join(import.meta.dir, "provider-artifacts.signal.fixture.ts"), logFile, mode],
+			{ stdout: "pipe", stderr: "pipe" },
+		);
+		try {
+			const deadline = Date.now() + 5_000;
+			while (!lines().includes(ready)) {
+				if (Date.now() >= deadline) throw new Error(`fixture never logged ${ready}`);
+				await Bun.sleep(10);
+			}
+			proc.kill("SIGTERM");
+			return { exit: await proc.exited, lines: lines() };
+		} finally {
+			proc.kill();
+		}
+	}
+
+	test("a signal during preparation aborts the build and the drain destroys its sandbox", async () => {
+		expect(await interrupt("prepare", "prepare")).toEqual({
+			exit: 143,
+			lines: ["create", "prepare", "aborted", "destroy"],
+		});
+	});
+
+	test("a signal while the create is in flight reclaims the sandbox when it lands late", async () => {
+		expect(await interrupt("late", "create")).toEqual({ exit: 143, lines: ["create", "destroy"] });
 	});
 });
 

@@ -8,13 +8,15 @@
 //   - no file outside the owner references the library, and the owner references it itself (or
 //     declares it only to satisfy another of its vendor libraries' peer dependencies);
 //   - a provider package takes third-party libraries only from the catalogs, so a vendor SDK cannot
-//     enter through an inline pin and escape the vendor set;
+//     enter through an inline pin and escape the vendor set; and takes one from the default catalog
+//     only when a non-provider member also does, so a vendor SDK cannot pass as provider-neutral;
 //   - only `@sandbox-benchmarks/drivers` and the allowlisted named subpaths import a provider package
-//     from outside it;
+//     from outside it, and nothing outside it reaches into its directory by relative path;
 //   - the dissolved `packages/providers` does not come back.
 // A reference is any module specifier in source: static, type-only and side-effect imports,
 // re-exports, dynamic `import()` (including `typeof import()` types), and `require` /
 // `require.resolve` / `createRequire(...)(...)` string specifiers.
+import { posix } from "node:path";
 import { stripComments } from "./workspace.ts";
 
 /**
@@ -155,9 +157,27 @@ export function vendorSeamViolations({ files, providerDirectories }: RepositoryS
 			owners.set(vendor, providerDeclarers[0]);
 		}
 	}
+	// A default-catalog library is provider-neutral only if something besides a provider uses it.
+	const neutral = new Set(
+		members
+			.filter((member) => !providerDirectories.has(member.dir))
+			.flatMap((member) =>
+				Object.entries(member.dependencies)
+					.filter(([, specifier]) => specifier === "catalog:")
+					.map(([dependency]) => dependency),
+			),
+	);
 	for (const provider of providers.values()) {
 		for (const [dependency, specifier] of Object.entries(provider.dependencies)) {
-			if (specifier.startsWith("workspace:") || specifier === "catalog:") continue;
+			if (specifier.startsWith("workspace:")) continue;
+			if (specifier === "catalog:") {
+				if (!neutral.has(dependency)) {
+					violations.push(
+						`${provider.dir} takes ${dependency} from the default catalog, but no non-provider member uses it; a vendor library belongs in catalogs.vendors`,
+					);
+				}
+				continue;
+			}
 			if (specifier !== VENDOR_CATALOG) {
 				violations.push(
 					`${provider.dir} pins ${dependency} outside the catalogs; a vendor library belongs in catalogs.vendors`,
@@ -173,6 +193,18 @@ export function vendorSeamViolations({ files, providerDirectories }: RepositoryS
 		if (!SOURCE_FILE.test(path) || path.includes("node_modules/")) continue;
 		const member = memberOf(path);
 		for (const specifier of moduleSpecifiers(source)) {
+			if (specifier.startsWith(".")) {
+				const resolved = posix.join(posix.dirname(path), specifier);
+				const entered = [...providerDirectories].find(
+					(dir) => resolved === dir || resolved.startsWith(`${dir}/`),
+				);
+				if (entered !== undefined && member?.dir !== entered) {
+					violations.push(
+						`${path} reaches into provider package ${entered} by relative path ${specifier}`,
+					);
+				}
+				continue;
+			}
 			const target = packageOf(specifier);
 			if (target === null) continue;
 			const owner = owners.get(target);
