@@ -17,11 +17,10 @@ ensure_pts || true
 run_task benchmark:network:pts:loopback
 run_task benchmark:network:pts:fast-cli
 
-# Tolerant probes (raw JSON provenance, no catalogued metrics): where does this sandbox's traffic
-# actually go, and how fast? fast-cli above is the sustained real-world transfer; these probes retain
-# endpoint-specific connection timings and a small GitHub control transfer for diagnosis.
-run_task benchmark:network:latency
+# Catalogued non-headline probes (external endpoint weather). DNS runs before the latency
+# curls because those curls would warm the stub cache for the shared names.
 run_task benchmark:network:dns
+run_task benchmark:network:latency
 run_task benchmark:network:download
 
 summary
