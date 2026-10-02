@@ -116,12 +116,6 @@ export function microsandboxVendor(
 			: { kind: "cloud", url: env.MSB_API_URL, apiKey: env.MSB_API_KEY };
 	const { Sandbox } = sdk;
 	const inBackend = <T>(work: () => Promise<T>) => sdk.withDefaultBackend(backend, work);
-	const lookup = (name: string) =>
-		inBackend(async () => {
-			const handle = await Sandbox.get(name);
-			if (handle.name !== name) throw new Error("Microsandbox returned an unrelated sandbox");
-			return handle;
-		});
 
 	/**
 	 * The create returns a connected agent session. A connection that dies mid-run must not silently
@@ -223,7 +217,7 @@ export function microsandboxVendor(
 					return record({ name, status: "running", sandbox: await builder.create() });
 				});
 			},
-			get: async (name) => record(await lookup(name)),
+			get: async (name) => record(await inBackend(() => Sandbox.get(name))),
 			/**
 			 * Stop, then remove. Microsandbox Cloud can persist a status=error record before create
 			 * rejects, remove() is documented for STOPPED sandboxes only, and transitional or
@@ -233,8 +227,10 @@ export function microsandboxVendor(
 			 * converges on the SDK's typed absence: an ephemeral record disappears the moment its stop
 			 * completes, so any step can be the one that first sees not-found.
 			 */
-			remove: async (name) => {
-				const handle = await lookup(name);
+			remove: async (name, { current }) => {
+				// The kit's read is this adapter's `get`, whose record is the SDK's own handle.
+				const handle = (await current())?.raw as MsbSandboxHandle | undefined;
+				if (handle === undefined) return "removed";
 				await inBackend(async () => {
 					if (handle.status !== "stopped") {
 						if (handle.status !== "draining") await handle.requestStop();

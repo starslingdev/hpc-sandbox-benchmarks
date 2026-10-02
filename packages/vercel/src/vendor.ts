@@ -12,6 +12,7 @@ import { Buffer } from "node:buffer";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import {
+	bounded,
 	httpStatus,
 	LEAK_EXPIRY_MS,
 	markerSpelling,
@@ -37,7 +38,7 @@ export const VERCEL_OWNER_VALUE = "vercel";
 export const VERCEL_SANDBOX_ID = type(
 	/^sandbox-benchmarks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
 );
-/** Per-call ceiling on control-plane requests, independent of the operation signal. */
+/** Per-call ceiling on control-plane requests: the kit bounds each read by it. */
 export const VERCEL_CONTROL_TIMEOUT_MS = 20_000;
 /** Vercel derives memory at a fixed 2048 MB per vCPU; the target's 4 vCPU × 8 GiB is that ratio. */
 export const VERCEL_MEMORY_GB_PER_VCPU = 2;
@@ -124,10 +125,6 @@ export function vercelVendor(
 	{ env, resolvedArtifact }: Pick<DriverContext<"vercel">, "env" | "resolvedArtifact">,
 ): Vendor<VercelRow, Sandbox> {
 	const credentials = vercelCredentials(env.VERCEL_OIDC_TOKEN);
-	const bounded = (signal: AbortSignal) =>
-		AbortSignal.any([signal, AbortSignal.timeout(VERCEL_CONTROL_TIMEOUT_MS)]);
-	const getByName = (name: string, signal: AbortSignal) =>
-		sdk.get({ ...credentials, name, resume: false, signal: bounded(signal) });
 
 	return {
 		control: {
@@ -145,14 +142,16 @@ export function vercelVendor(
 						signal,
 					}),
 				),
-			get: async (name, { signal }) => fromSandbox(await getByName(name, signal)),
+			get: async (name, { signal }) =>
+				fromSandbox(await sdk.get({ ...credentials, name, resume: false, signal })),
 			// `stop()` only ends the current VM session and leaves the named record resumable;
 			// `delete()` removes the record with all its sessions and snapshots, whatever its status.
-			remove: async (name, { signal }) => {
-				const sandbox = await getByName(name, signal);
-				if (sandbox.name !== name)
-					throw new Error("Vercel returned a sandbox other than the one requested");
-				await sandbox.delete({ signal: bounded(signal) });
+			remove: async (_name, { signal, current }) => {
+				const sandbox = (await current())?.raw.sandbox;
+				if (sandbox === undefined) return "removed";
+				await bounded(signal, VERCEL_CONTROL_TIMEOUT_MS, (bound) =>
+					sandbox.delete({ signal: bound }),
+				);
 				return "accepted";
 			},
 			// Only the API's 404 proves removal.
@@ -162,7 +161,7 @@ export function vercelVendor(
 				const page = await sdk.list({
 					...credentials,
 					...(cursor !== undefined && { cursor }),
-					signal: bounded(signal),
+					signal,
 				});
 				const records = page.sandboxes.map(record);
 				return page.pagination.next === null

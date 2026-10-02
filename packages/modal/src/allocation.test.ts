@@ -85,7 +85,9 @@ describe("GPU allocation teardown", () => {
 			async () => listings-- > 0,
 		);
 		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "ready" });
-		expect(await vendor.control.remove("sb-1", op)).toBe("accepted");
+		expect(await vendor.control.remove("sb-1", { ...op, current: async () => null })).toBe(
+			"accepted",
+		);
 		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "deleting" });
 		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "deleting" });
 		expect(await vendor.control.get("sb-1", op)).toMatchObject({ phase: "gone" });

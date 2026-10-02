@@ -187,13 +187,42 @@ describe("Daytona translation", () => {
 
 	test("a get or remove by id refuses the sandbox the SDK resolved by that name instead", async () => {
 		const org = daytonaOrg();
-		const { control } = vendorOver(org);
+		const { control } = kitPort(vendorOver(org), { provider: "daytona-vm" });
 		const id = randomUUID();
 		const namesake = org.allocate(id); // the SDK's get resolves this sandbox's name, not an id
-		await expect(control.get(id, op())).rejects.toThrow("Daytona returned an unrelated sandbox");
-		await expect(control.remove(id, op())).rejects.toThrow("Daytona returned an unrelated sandbox");
+		await expect(control.get(id, op())).rejects.toThrow("returned an unrelated sandbox");
+		await expect(control.remove(id, op())).rejects.toThrow("returned an unrelated sandbox");
 		expect(org.names("delete")).toHaveLength(0);
 		expect(org.rows.get(namesake.id)?.state).toBe("started");
+	});
+
+	test("a delete that finds the sandbox gone drops its handle, so a later remove reads afresh", async () => {
+		const org = daytonaOrg();
+		const { control } = kitPort(vendorOver(org));
+		const created = await control.create({ request, marker: marker() }, op());
+		org.rows.delete(created.id); // gone behind the held handle
+		expect(await control.remove(created.id, op())).toBe("removed");
+		expect(await control.remove(created.id, op())).toBe("removed");
+		// The second remove looked the id up (not found) instead of deleting through a stale handle.
+		expect(org.names("delete")).toHaveLength(1);
+		expect(org.names("get").map((call) => call.input)).toEqual([created.id]);
+	});
+
+	test("absence is only the SDK's typed not-found: never auth, outage or transport failures", () => {
+		const { absent } = vendorOver(daytonaOrg()).control;
+		expect(absent?.(new DaytonaNotFoundError("sandbox not found", 404))).toBe(true);
+		expect(absent?.(new Error("wrapped", { cause: new DaytonaNotFoundError("gone", 404) }))).toBe(
+			true,
+		);
+		for (const error of [
+			new DaytonaAuthenticationError("bad key", 401),
+			new DaytonaError("forbidden", 403),
+			new DaytonaError("not found, untyped", 404),
+			new DaytonaError("internal", 500),
+			new DaytonaError("unavailable", 503),
+			new TypeError("fetch failed"),
+		])
+			expect(absent?.(error)).toBe(false);
 	});
 
 	test("an inactive snapshot is activated and its refusal is retryable; other refusals are not", async () => {

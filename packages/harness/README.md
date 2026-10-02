@@ -1,6 +1,6 @@
 # @sandbox-benchmarks/harness
 
-For providers with a cost capability, suite orchestration snapshots the ComputeSDK sandbox id,
+For providers with a cost capability, suite orchestration snapshots the session's sandbox id,
 awaits teardown, invokes the hook with a 30-second bound, and atomically writes validated
 `provider-cost-evidence.json` into the suite results directory. Capture/write failures never mask an
 existing suite error; persistence failure does fail an otherwise successful cell.

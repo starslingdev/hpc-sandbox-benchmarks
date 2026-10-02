@@ -233,7 +233,9 @@ describe("E2B translation", () => {
 		expect(control.absent?.(await control.get("imissing", op()).catch((error) => error))).toBe(
 			true,
 		);
-		expect(await control.remove("imissing", op())).toBe("removed");
+		expect(await control.remove("imissing", { ...op(), current: async () => null })).toBe(
+			"removed",
+		);
 	});
 
 	test("lists live states for inventory and queries the marker server-side, each bounded", async () => {

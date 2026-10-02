@@ -295,7 +295,7 @@ describe("Microsandbox Cloud translation", () => {
 			return 0;
 		}) as unknown as typeof setTimeout);
 		try {
-			await microsandboxVendor(wedged.sdk, context).control.remove(draining, op());
+			await kitPort(microsandboxVendor(wedged.sdk, context)).control.remove(draining, op());
 			expect(timers.mock.calls[0]?.[1]).toBe(MICROSANDBOX_STOP_WAIT_MS);
 		} finally {
 			timers.mockRestore();

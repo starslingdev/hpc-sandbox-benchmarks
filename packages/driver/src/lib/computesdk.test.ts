@@ -24,7 +24,8 @@ const request: CreateRequest = {
 
 function fakeCompute<TSandbox extends ComputeSdkSandboxLike>(sandbox: TSandbox) {
 	const createOptionsSeen: object[] = [];
-	const compute: ComputeSdkLike<TSandbox> = {
+	const compute: ComputeSdkLike<TSandbox> & { readonly fixture: TSandbox } = {
+		fixture: sandbox,
 		sandbox: {
 			create: async (options) => {
 				createOptionsSeen.push(options ?? {});
@@ -37,7 +38,45 @@ function fakeCompute<TSandbox extends ComputeSdkSandboxLike>(sandbox: TSandbox) 
 
 const nativeSandbox = { commands: { run: async () => "native-result" } };
 
-const baseSandbox: ComputeSdkSandboxLike<typeof nativeSandbox> = {
+/** A fixture sandbox: the bridge's structural slice plus the teardown its lifecycle calls. */
+type FixtureSandbox<TNative = unknown> = ComputeSdkSandboxLike<TNative> & {
+	destroy?(): Promise<unknown>;
+};
+
+const FIXTURE_LOCATOR = { kind: "marker", key: "name", value: "benchmark-fixture" } as const;
+const recovered = new WeakSet<FixtureSandbox>();
+
+/** The spec members the vendor kit always declares, as inert fixtures a test overrides. */
+const kitMembers = {
+	lifecycle: {
+		destroy: async (sandbox: unknown) => {
+			await (sandbox as FixtureSandbox).destroy?.();
+		},
+	},
+	// Recovery finds a fake compute's one allocation by its marker and destroys it once.
+	createRecovery: {
+		absenceConfirmationMs: 1,
+		maxAttempts: 2,
+		locator: () => FIXTURE_LOCATOR,
+		cleanup: async (compute: unknown) => {
+			const fixture = (compute as { readonly fixture?: FixtureSandbox }).fixture;
+			if (fixture?.destroy === undefined || recovered.has(fixture))
+				return { status: "absent" } as const;
+			await fixture.destroy();
+			recovered.add(fixture);
+			return { status: "destroyed" } as const;
+		},
+	},
+	probes: {
+		observe: async () => ({ state: "running" }) as const,
+		list: async () => [],
+		describe: async () => undefined,
+	},
+	inventory: { list: async () => ({ owned: [], foreignCount: 0 }) },
+	destroyById: async () => {},
+};
+
+const baseSandbox: FixtureSandbox<typeof nativeSandbox> = {
 	sandboxId: "i2f3k4abc",
 	getInstance: () => nativeSandbox,
 	runCommand: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
@@ -122,6 +161,7 @@ function bridge<TSandbox extends ComputeSdkSandboxLike>(
 				sandboxId: sandboxId ?? e2bSandboxId,
 				createOptions: createRequestMapper(createOptions, requestCoverage),
 				hasWorkingFilesystem: false,
+				...kitMembers,
 				...rest,
 			};
 		},
@@ -311,7 +351,11 @@ describe("computeSdkDriver", () => {
 			createRecovery: {
 				absenceConfirmationMs: 5,
 				maxAttempts: 2,
-				locator: () => ({ kind: "name", value: "benchmark-00000000-0000-4000-8000-000000000001" }),
+				locator: () => ({
+					kind: "marker",
+					key: "name",
+					value: "benchmark-00000000-0000-4000-8000-000000000001",
+				}),
 				cleanup: async () => ({ status: "destroyed" }),
 				isRetryableCreate: (caught) =>
 					caught instanceof Error &&
@@ -577,6 +621,7 @@ describe("computeSdkDriver", () => {
 					artifactCoverage,
 				),
 				hasWorkingFilesystem: false,
+				...kitMembers,
 			}),
 		});
 		const driver = module_.driver({
@@ -611,6 +656,7 @@ describe("computeSdkDriver", () => {
 					artifactCoverage,
 				),
 				hasWorkingFilesystem: false,
+				...kitMembers,
 			}),
 		});
 		const driver = module_.driver({
@@ -641,7 +687,7 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
 		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expect(error.locator).toEqual({ kind: "native-handle" });
+		expect(error.locator).toEqual(FIXTURE_LOCATOR);
 		expect(error.message).not.toContain(invalidId);
 	});
 
@@ -654,9 +700,9 @@ describe("computeSdkDriver", () => {
 			createRecovery: {
 				absenceConfirmationMs: 5,
 				maxAttempts: 3,
-				locator: () => ({ kind: "name", value: "benchmark-stable" }),
+				locator: () => ({ kind: "marker", key: "name", value: "benchmark-stable" }),
 				cleanup: async (_compute, locator) => {
-					expect(locator).toEqual({ kind: "name", value: "benchmark-stable" });
+					expect(locator).toEqual({ kind: "marker", key: "name", value: "benchmark-stable" });
 					recoveryCalls += 1;
 					return recoveryCalls === 1 ? { status: "absent" } : { status: "destroyed" };
 				},
@@ -710,13 +756,13 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught)) as FailedCreateCleanupError;
 		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expect(error.locator).toEqual({ kind: "native-handle" });
+		expect(error.locator).toEqual(FIXTURE_LOCATOR);
 		expect(error.suppressed).toMatchObject({
 			code: "vendor-contract-violation",
 			provider: "e2b",
 		});
 		expectOmitted(error.suppressed, "vendor-contract-violation");
-		expectRedacted(error.error, "destroy-failed");
+		expectCredentialSafe(error.error, "destroy-failed");
 		await error.cleanup();
 		expect(destroys).toBe(2);
 	});
@@ -956,7 +1002,7 @@ describe("computeSdkDriver", () => {
 		});
 	});
 
-	test("projects explicitly implemented probes and snapshots without inventing absent ones", async () => {
+	test("projects probes and snapshots through the canonical id boundary", async () => {
 		const { compute } = fakeCompute(baseSandbox);
 		const calls: string[] = [];
 		const driver = bridge(compute, {
@@ -1067,9 +1113,6 @@ describe("computeSdkDriver", () => {
 			.catch((caught: unknown) => caught);
 		expect(destroyError).toMatchObject({ code: "destroy-failed", provider: "e2b" });
 		expect(String((destroyError as Error).cause)).not.toContain(secret);
-		const bare = bridge(compute, { hasWorkingFilesystem: false });
-		expect(bare.inventory).toBeUndefined();
-		expect(bare.destroyById).toBeUndefined();
 	});
 
 	test("normalizes successful probe and snapshot envelopes before they escape", async () => {
@@ -1077,6 +1120,7 @@ describe("computeSdkDriver", () => {
 		const { compute } = fakeCompute(baseSandbox);
 		const driver = bridge(compute, {
 			probes: {
+				...kitMembers.probes,
 				observe: async () =>
 					new Proxy(
 						{ state: "running" as const },
@@ -1123,6 +1167,7 @@ describe("computeSdkDriver", () => {
 				canonical: e2bSandboxId,
 			},
 			probes: {
+				...kitMembers.probes,
 				observe: async (_compute, ref) => {
 					observedId = ref.id;
 					return { state: "running" };
@@ -1160,6 +1205,7 @@ describe("computeSdkDriver", () => {
 		const driver = bridge(compute, {
 			sandboxId: { fromVendor: e2bSandboxId, canonical },
 			probes: {
+				...kitMembers.probes,
 				observe: async () => {
 					observations += 1;
 					return { state: "running" };
@@ -1188,7 +1234,7 @@ describe("computeSdkDriver", () => {
 			.catch((caught: unknown) => caught);
 		expectRedacted(createError);
 
-		const wrapper = (overrides: Partial<ComputeSdkSandboxLike> = {}) =>
+		const wrapper = (overrides: Partial<FixtureSandbox> = {}) =>
 			fakeCompute({ ...baseSandbox, ...overrides }).compute;
 		const execSession = await bridge(
 			wrapper({ runCommand: async () => Promise.reject(new Error(`exec echoed ${leaked}`)) }),
@@ -1415,7 +1461,7 @@ describe("computeSdkDriver", () => {
 			noteDestroyStarted = resolve;
 		});
 		let destroyStarted = false;
-		const accepted: ComputeSdkSandboxLike = {
+		const accepted: FixtureSandbox = {
 			...baseSandbox,
 			destroy: async () => {
 				destroyStarted = true;
@@ -1423,7 +1469,9 @@ describe("computeSdkDriver", () => {
 				await destroyResult;
 			},
 		};
-		const compute: ComputeSdkLike = {
+		// The abort lands before the id is parsed, so recovery finds the allocation by its marker.
+		const compute: ComputeSdkLike & { readonly fixture: FixtureSandbox } = {
+			fixture: accepted,
 			sandbox: {
 				create: async () => {
 					noteCreateStarted();
@@ -1472,34 +1520,11 @@ describe("computeSdkDriver", () => {
 		expect(error).toBeInstanceOf(SuppressedError);
 		expect((error.error as DriverError).code).toBe("destroy-failed");
 		expect((error.suppressed as DriverError).code).toBe("vendor-contract-violation");
-		expect(error).toMatchObject({ provider: "e2b", locator: { kind: "native-handle" } });
+		expect(error).toMatchObject({ provider: "e2b", locator: FIXTURE_LOCATOR });
 
 		await error[Symbol.asyncDispose]();
 		await error[Symbol.asyncDispose]();
 		expect(destroyCalls).toBe(2);
-	});
-
-	test("a lifecycle projection replaces a wrapper destroy that would swallow teardown failures", async () => {
-		let wrapperDestroys = 0;
-		let projectedDestroys = 0;
-		const sandbox = {
-			...baseSandbox,
-			destroy: async () => {
-				wrapperDestroys += 1;
-			},
-		};
-		const { compute } = fakeCompute(sandbox);
-		const session = await bridge(compute, {
-			lifecycle: {
-				destroy: async (received) => {
-					expect(received).toBe(sandbox);
-					projectedDestroys += 1;
-				},
-			},
-		}).create(request);
-		await session.destroy();
-		expect(projectedDestroys).toBe(1);
-		expect(wrapperDestroys).toBe(0);
 	});
 
 	test("a lifecycle projection receives the canonical id without rereading mutable wrapper identity", async () => {
@@ -1617,7 +1642,7 @@ describe("computeSdkDriver", () => {
 			createRecovery: {
 				absenceConfirmationMs: 5,
 				maxAttempts: 3,
-				locator: () => ({ kind: "name", value: "attempt-definitive" }),
+				locator: () => ({ kind: "marker", key: "name", value: "attempt-definitive" }),
 				isDefinitive: (caught) => caught === rejection,
 				cleanup: async () => {
 					cleanupCalls += 1;
@@ -1652,7 +1677,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 3,
-					locator: () => ({ kind: "name", value: "attempt-definitive-capacity" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-definitive-capacity" }),
 					isDefinitive: (caught) => caught === refused,
 					isRetryableCreate: (caught) => caught === refused,
 					cleanup: async () => {
@@ -1687,7 +1712,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 3,
-					locator: () => ({ kind: "name", value: "attempt-marked" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-marked" }),
 					cleanup: async () => {
 						cleanupCalls += 1;
 						return { status: "destroyed" };
@@ -1718,7 +1743,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 3,
-					locator: () => ({ kind: "name", value: "attempt-rate-limit" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-rate-limit" }),
 					isRetryableCreate: (caught) => caught === rateLimited,
 					cleanup: async () => {
 						cleanupCalls += 1;
@@ -1745,7 +1770,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 3,
-					locator: () => ({ kind: "name", value: "attempt-prose" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-prose" }),
 					cleanup: async () => {
 						cleanupCalls += 1;
 						return { status: "destroyed" };
@@ -1773,7 +1798,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 3,
-					locator: () => ({ kind: "name", value: "attempt-classifier-throw" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-classifier-throw" }),
 					isRetryableCreate: () => {
 						throw new Error("classifier exploded");
 					},
@@ -1807,7 +1832,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 3,
-					locator: () => ({ kind: "name", value: "attempt-ambiguous" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-ambiguous" }),
 					isDefinitive,
 					cleanup: async () => {
 						cleanupCalls += 1;
@@ -1891,7 +1916,8 @@ describe("computeSdkDriver", () => {
 				absenceConfirmationMs: 5,
 				maxAttempts: 2,
 				locator: (options) => ({
-					kind: "name",
+					kind: "marker",
+					key: "name",
 					value: String("name" in options ? options.name : undefined),
 				}),
 				cleanup: async (_compute, locator) => {
@@ -1903,7 +1929,7 @@ describe("computeSdkDriver", () => {
 			.create(request)
 			.catch((caught: unknown) => caught);
 		expect(error).toMatchObject({ code: "create-failed", provider: "e2b" });
-		expect(cleanupLocator).toEqual({ kind: "name", value: originalName });
+		expect(cleanupLocator).toEqual({ kind: "marker", key: "name", value: originalName });
 	});
 
 	test("ambiguous create absence needs two horizon-separated observations", async () => {
@@ -1921,7 +1947,7 @@ describe("computeSdkDriver", () => {
 			createRecovery: {
 				absenceConfirmationMs: 10,
 				maxAttempts: 3,
-				locator: () => ({ kind: "name", value: "attempt-absent" }),
+				locator: () => ({ kind: "marker", key: "name", value: "attempt-absent" }),
 				cleanup: async () => {
 					cleanupCalls += 1;
 					return { status: "absent" };
@@ -1951,7 +1977,7 @@ describe("computeSdkDriver", () => {
 			createRecovery: {
 				absenceConfirmationMs: 5,
 				maxAttempts: 2,
-				locator: () => ({ kind: "name", value: "attempt-signal" }),
+				locator: () => ({ kind: "marker", key: "name", value: "attempt-signal" }),
 				cleanup: async (_compute, _locator, options) => {
 					receivedSignal = options.signal;
 					return { status: "destroyed" };
@@ -1978,7 +2004,7 @@ describe("computeSdkDriver", () => {
 			createRecovery: {
 				absenceConfirmationMs: 1,
 				maxAttempts: 3,
-				locator: () => ({ kind: "name", value: "attempt-loop" }),
+				locator: () => ({ kind: "marker", key: "name", value: "attempt-loop" }),
 				cleanup: async () => {
 					cleanupCalls += 1;
 					return { status: "absent", contradictedPriorAbsence: true };
@@ -2019,7 +2045,7 @@ describe("computeSdkDriver", () => {
 				createRecovery: {
 					absenceConfirmationMs: 5,
 					maxAttempts: 1,
-					locator: () => ({ kind: "name", value: "attempt-one" }),
+					locator: () => ({ kind: "marker", key: "name", value: "attempt-one" }),
 					cleanup: async () => ({ status: "absent" }),
 				},
 			}),

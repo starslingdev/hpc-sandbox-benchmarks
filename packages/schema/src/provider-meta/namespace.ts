@@ -24,7 +24,7 @@ export default defineProviderMeta("namespace", {
 		class: "microVM",
 		technology: "microVM (dedicated instance)",
 		notes:
-			"Namespace runs each instance on its own hardware/network (namespace.so/docs/architecture/compute). The @computesdk/namespace wrapper deploys one container workload per instance via the Compute API's `containers` shape, and defines no template/snapshot managers (unexposed, same clean skip as novita) — and, unlike every other provider here, no filesystem manager either.",
+			"Namespace runs each instance on its own hardware/network (namespace.so/docs/architecture/compute). The driver's adapter, over the official @namespacelabs/sdk clients, deploys one container workload per instance via the Compute API's `containers` shape; it binds no template or snapshot capture (unexposed, same clean skip as novita) and no native files: the kit's shell fallback serves files over exec.",
 	},
 	pricing: {
 		model: "published",
@@ -90,7 +90,7 @@ export default defineProviderMeta("namespace", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Validated live end-to-end once the exec transport was corrected: system 3/3 metrics, and realworld-better-auth 10/10 metrics with zero gaps on a 570s benchmark step (2.2x the ~4m19s synchronous ceiling). The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (a truthy stub whose every op throws). This note previously claimed that made realworld suites skip here; the better-auth run above disproves it — nothing outside StepRunner.runDetached's done-file poll uses `sandbox.filesystem`, and that degrades to `cat` over exec, so no suite is gated on it. Should a real filesystem ever be needed, the official @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped key + username + endpoint); not wired, since it means managing keys and bypassing the @computesdk/* wrapper this repo standardizes on.",
+			"Validated live end-to-end once the exec transport was corrected: system 3/3 metrics, and realworld-better-auth 10/10 metrics with zero gaps on a 570s benchmark step (2.2x the ~4m19s synchronous ceiling). The adapter exposes no native files, so the session claims no filesystem and StepRunner.runDetached's done-file poll reads over exec (`cat`); no suite is gated on a filesystem. Should one ever be needed, @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped key + username + endpoint); not wired, since it means managing per-instance keys.",
 	},
 	// virtualCpu/memoryMegabytes are independent, uncoupled knobs on the factory config (unlike
 	// blaxel's memory-derived cpu/disk), so the 4 vCPU / 8 GiB target spec is exactly expressible.

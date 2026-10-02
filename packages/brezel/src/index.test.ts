@@ -6,7 +6,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
-import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import brezel, { BREZEL_SANDBOX_ID } from "./index.ts";
 import { brezelPhase, brezelVendor } from "./vendor.ts";
@@ -211,16 +211,27 @@ describe("Brezel translation", () => {
 		expect(phase("failed", "backend_capacity_unavailable")).toBe("gone");
 	});
 
+	/** The SDK's own error for a create the fake API answers with `status` (0: transport loss). */
+	const failure = (status: number) => {
+		const server = brezelServer(
+			status ? { refuseFirstCreate: status } : { ambiguousFirstCreate: true },
+		);
+		return brezelVendor(context, server.fetch)
+			.control.create({ request, marker: "m" }, op())
+			.catch((caught: unknown) => caught);
+	};
+
+	test("absence is only the API's 404: never auth, outage or transport failures", async () => {
+		const { control } = brezelVendor(context, brezelServer().fetch);
+		const missing = await control.get("sbx_missing", op()).catch((caught: unknown) => caught);
+		expect(control.absent?.(missing)).toBe(true);
+		expect(control.absent?.(await failure(404))).toBe(true);
+		for (const status of [0, 401, 403, 500, 503])
+			expect(control.absent?.(await failure(status))).toBe(false);
+		expect(control.absent?.(new Error("404 not found"))).toBe(false);
+	});
+
 	test("classifies refusals by status; only a rate limit is retryable", async () => {
-		/** The SDK's own error for a create the fake API answers with `status` (0: transport loss). */
-		const failure = (status: number) => {
-			const server = brezelServer(
-				status ? { refuseFirstCreate: status } : { ambiguousFirstCreate: true },
-			);
-			return brezelVendor(context, server.fetch)
-				.control.create({ request, marker: "m" }, op())
-				.catch((caught: unknown) => caught);
-		};
 		const { refused } = brezelVendor(context, brezelServer().fetch).control;
 		for (const status of [400, 401, 403, 404])
 			expect(refused?.(await failure(status))).toEqual({ retryable: false });
@@ -238,7 +249,7 @@ describe("Brezel translation", () => {
 
 	test("maps the create, delete, listing and exec requests and keeps the token in Authorization", async () => {
 		const server = brezelServer();
-		const { control, data } = brezelVendor(context, server.fetch);
+		const { control, data } = kitPort(brezelVendor(context, server.fetch));
 		// A running create acknowledgement is still not readiness evidence.
 		const created = await control.create({ request, marker: "benchmark-key" }, op());
 		expect(created.phase).toBe("pending");

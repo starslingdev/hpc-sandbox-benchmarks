@@ -43,7 +43,7 @@ import type {
 	ComputeSdkSandboxIdSchema,
 } from "./lib/computesdk.ts";
 import { defineComputeSdkDriver } from "./lib/computesdk.ts";
-import { kitPort } from "./lib/vendor-port.ts";
+import { CONTROL_TIMEOUT_MS, kitPort, untilAborted } from "./lib/vendor-port.ts";
 
 /* ------------------------------------ the ports ------------------------------------ */
 
@@ -55,13 +55,24 @@ export type Phase = "pending" | "ready" | "failed" | "deleting" | "gone";
 
 /**
  * Every port call receives a signal. `create`, `attach` and `prepare` carry the create attempt's
- * signal (the harness owns that budget); every other call's signal also aborts when the kit's own bound for
- * it expires: the readiness or delete budget inside a poll, `controlTimeoutMs` for a single
- * control-plane call, `snapshotTimeoutMs` for a snapshot. The kit stops waiting at that bound even
- * if the adapter ignores the signal, and rejects a response that arrives after it.
+ * signal (the harness owns that budget); every other call's signal also aborts when the kit's own
+ * bound for it expires: `controlTimeoutMs` for each control-plane read (`get`, `page`, `find`) and
+ * for a probe, the readiness or delete budget for a `settle` or `remove` inside a poll, and
+ * `snapshotTimeoutMs` for a snapshot. The kit stops waiting at that bound even if the adapter
+ * ignores the signal, and rejects a response that arrives after it, so an adapter states no
+ * per-call bound of its own on those calls.
  */
 export interface Op {
 	readonly signal: AbortSignal;
+}
+
+/**
+ * A removal's operation. `current` is the kit's own `get` of the id being removed (bounded,
+ * identity-checked, the vendor's not-found read as `null`), for a vendor that deletes through a
+ * handle it must look up first.
+ */
+export interface RemoveOp<Raw = unknown> extends Op {
+	current(): Promise<VendorRecord<Raw> | null>;
 }
 
 /** One control-plane record, parsed by the adapter (Tier 2) into provider-neutral facts. */
@@ -100,7 +111,10 @@ export interface CreateAttempt {
 export interface ControlPlane<Raw = unknown> {
 	/** May resolve `phase: "ready"` only when the response itself proves readiness. */
 	create(attempt: CreateAttempt, op: Op): Promise<VendorRecord<Raw>>;
-	/** `null` only on the vendor's own not-found; every other failure throws. */
+	/**
+	 * `null` only on the vendor's own not-found; every other failure throws. The kit refuses a
+	 * record with another id (an SDK whose read also resolves a name).
+	 */
 	get(id: string, op: Op): Promise<VendorRecord<Raw> | null>;
 	/**
 	 * The vendor's server-side readiness wait (a long poll): `get`'s contract, but the call may stay
@@ -111,7 +125,7 @@ export interface ControlPlane<Raw = unknown> {
 	 */
 	settle?(id: string, op: Op): Promise<VendorRecord<Raw> | null>;
 	/** `removed`: the vendor proved removal (or reported not-found). `accepted`: acknowledgement only. */
-	remove(id: string, op: Op): Promise<"removed" | "accepted">;
+	remove(id: string, op: RemoveOp<Raw>): Promise<"removed" | "accepted">;
 	/**
 	 * The vendor's own not-found. Declared, the kit reads such an error from `get` or `settle` as
 	 * `null` and from `remove` as `"removed"`, so the adapter states the rule once instead of in
@@ -329,7 +343,7 @@ const DEFAULT_TIMING: VendorTiming = {
 	pollMs: 250,
 	readyTimeoutMs: 180_000,
 	deleteTimeoutMs: 60_000,
-	controlTimeoutMs: 30_000,
+	controlTimeoutMs: CONTROL_TIMEOUT_MS,
 	snapshotTimeoutMs: 600_000,
 };
 const DEFAULT_PAGE_CAP = 100;
@@ -432,6 +446,12 @@ export function httpClassifiers(status: (error: unknown) => number | undefined) 
 
 /** The kit's abortable wait, for an adapter that paces its own vendor retries. */
 export { abortableDelay } from "./lib/poll.ts";
+/**
+ * One vendor call bounded by a timeout and the caller's signal, for a call the kit does not bound
+ * itself (a create attempt, a removal step, a data-plane request): raced, so an SDK that takes no
+ * signal still settles at the bound.
+ */
+export { bounded } from "./lib/vendor-port.ts";
 
 /** The disk-capacity probe of `path`; exported so test vendors answer the command the kit runs. */
 export const diskProbe = (path = "/") =>
@@ -439,18 +459,8 @@ export const diskProbe = (path = "/") =>
 /** The root filesystem's disk-capacity probe. */
 export const DISK_PROBE = diskProbe();
 
-function bounded(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+function budget(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 	return AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
-}
-
-/** Settle with `work`, or reject as soon as `signal` aborts whether or not the adapter honours it. */
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-	if (signal.aborted) return Promise.reject(signal.reason);
-	return new Promise((resolve, reject) => {
-		const abort = () => reject(signal.reason);
-		signal.addEventListener("abort", abort, { once: true });
-		work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-	});
 }
 
 /**
@@ -543,11 +553,15 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 	traits: VendorTraits,
 	vendor: Vendor<Raw, Native>,
 ) {
-	const { control, data, snapshots } = kitPort(vendor, traits.recovery?.lookup);
+	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
+	const { control, data, snapshots } = kitPort(vendor, {
+		provider,
+		...(traits.recovery?.lookup && { lookup: traits.recovery.lookup }),
+		controlTimeoutMs: timing.controlTimeoutMs,
+	});
 	const { files, launch } = data;
 	const { refused, transient } = control;
 	const spelling = traits.markerSpelling ?? VERBATIM_MARKER;
-	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
 	const dedicated = traits.account === "dedicated";
 	const provesAbsence = traits.recovery?.provesAbsence ?? true;
 	// Markers of attempts whose allocation may exist although no lookup can show it yet.
@@ -579,7 +593,7 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 		timeoutMs = timing.controlTimeoutMs,
 	): Promise<T> {
 		const deadline = Date.now() + timeoutMs;
-		const o = op(bounded(timeoutMs, outer));
+		const o = op(budget(timeoutMs, outer));
 		const expired = () => !outer?.aborted && (o.signal.aborted || Date.now() >= deadline);
 		try {
 			const result = await untilAborted(
@@ -606,7 +620,7 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 		expired: () => unknown,
 		intervalMs = timing.pollMs,
 	): Promise<T> {
-		const o = op(bounded(deadlineMs, outer));
+		const o = op(budget(deadlineMs, outer));
 		try {
 			return await pollUntilReady({
 				provider,
@@ -770,7 +784,6 @@ function vendorSpec<P extends ProviderId, Raw, Native>(
 							options?.background ? detachedShellCommand(command) : command,
 							options?.signal ? { signal: options.signal } : undefined,
 						),
-					destroy: () => release(handle.record.id),
 					...(files && {
 						filesystem: {
 							readFile: (path: string) => files.read(handle.native, path),
@@ -987,8 +1000,20 @@ export function defineVendorDriver<P extends ProviderId, Raw, Native>(
 		spec: (context) => specFor(context),
 	});
 	// DriverModules are frozen; the test seams (the lowering and the declared traits the port
-	// contract reads) travel beside the module, not inside it.
-	return Object.freeze({ ...driver, specFor, traits: Object.freeze(traits) as VendorTraits });
+	// contract reads) travel beside the module, not inside it, and are as immutable as the module.
+	return Object.freeze({ ...driver, specFor, traits: frozenData(traits) as VendorTraits });
+}
+
+/**
+ * Deep-freeze the plain data in `value` (objects and arrays), leaving class instances and
+ * functions (a sandbox-id schema, a marker spelling's methods) as they are.
+ */
+function frozenData<T>(value: T): T {
+	if (typeof value !== "object" || value === null) return value;
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) return value;
+	for (const field of Object.values(value)) frozenData(field);
+	return Object.freeze(value);
 }
 
 /** A module `defineVendorDriver` returned. */

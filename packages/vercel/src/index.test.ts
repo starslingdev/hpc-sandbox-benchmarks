@@ -218,12 +218,12 @@ describe("Vercel translation", () => {
 		expect(refused?.(new Error("HTTP 401 rate limit"))).toBeUndefined();
 	});
 
-	test("never deletes a sandbox the lookup did not name", async () => {
+	test("never reads as its own, or deletes, a sandbox the lookup did not name", async () => {
 		const project = vercelProject({ getReturnsOther: true });
 		const name = project.allocate(owned("22222222-2222-4222-8222-222222222222"));
-		await expect(vercelVendor(project.sdk, context).control.remove(name, op())).rejects.toThrow(
-			"other than the one requested",
-		);
+		const { control } = kitPort(vercelVendor(project.sdk, context));
+		await expect(control.get(name, op())).rejects.toThrow("returned an unrelated sandbox");
+		await expect(control.remove(name, op())).rejects.toThrow("returned an unrelated sandbox");
 		expect(project.count("delete")).toBe(0);
 	});
 });

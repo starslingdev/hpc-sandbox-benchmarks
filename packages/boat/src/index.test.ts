@@ -3,7 +3,7 @@
 // (convergence, deadlines, the inventory partition, recovery mechanics) is tested once in the
 // driver package.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { Sandbox } from "@boatdev/sdk";
 import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
@@ -257,7 +257,7 @@ describe("boat translation", () => {
 		const account = boatAccount({
 			deleteErrors: [vendorError(409, "snapshot_in_progress"), vendorError(403, "delete_denied")],
 		});
-		const { control } = boatVendor(account.client, fast);
+		const { control } = kitPort(boatVendor(account.client, fast));
 		const id = account.allocate("x");
 		for (const [message, transient] of [
 			["boat delete HTTP 409 snapshot_in_progress; removal unconfirmed", true],
@@ -271,6 +271,21 @@ describe("boat translation", () => {
 		for (const status of [408, 429, 500])
 			expect(control.transient?.(vendorError(status))).toBe(true);
 		expect(control.transient?.(new TypeError("socket hang up"))).toBe(false);
+	});
+
+	test("a delete that finds the sandbox gone is removal, its error body never read", async () => {
+		const notFound = vendorError(404, "not_found");
+		const bodyReads = spyOn(notFound.response, "clone");
+		const account = boatAccount({ deleteErrors: [notFound, notFound] });
+		const id = account.allocate("x");
+		// The adapter passes the not-found on as it is; the kit reads it as removal.
+		const raw = boatVendor(account.client, fast).control;
+		const current = async () => null;
+		expect(await raw.remove(id, { ...op(), current }).catch((caught) => caught)).toBe(notFound);
+		expect(await kitPort(boatVendor(account.client, fast)).control.remove(id, op())).toBe(
+			"removed",
+		);
+		expect(bodyReads).not.toHaveBeenCalled();
 	});
 });
 

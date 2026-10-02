@@ -15,7 +15,13 @@ import { RunCloudError } from "@run-cloud/sdk";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { DriverError, isDriverError } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { httpClassifiers, LEAK_EXPIRY_MS, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import {
+	bounded,
+	httpClassifiers,
+	httpStatus,
+	LEAK_EXPIRY_MS,
+	markerSpelling,
+} from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 /** The SDK's sandbox calls plus one raw inventory page (the SDK's `list` drops its cursor). */
@@ -87,12 +93,8 @@ function record(sandbox: RuncloudRow): VendorRecord<RuncloudRow> {
 	};
 }
 
-const status = (error: unknown) =>
-	error instanceof RunCloudError
-		? error.status
-		: isDriverError(error) && error.provider === "runcloud"
-			? error.vendorHttpStatus
-			: undefined;
+/** The SDK's typed status, raw or as the cause this adapter's create error carries. */
+const status = httpStatus(RunCloudError, (error) => error.status);
 /** The REST reading of the status: refused, transient, and the 404 that is absence. */
 const http = httpClassifiers(status);
 /**
@@ -109,22 +111,18 @@ const network = (error: unknown) =>
 const transient = (error: unknown) =>
 	status(error) === undefined ? !isDriverError(error) && network(error) : http.transient(error);
 
-/** One SDK call raced against its bound and the caller: the SDK's create and list take no signal. */
-function bounded<T>(label: string, work: () => Promise<T>, signal: AbortSignal): Promise<T> {
-	const timeout = AbortSignal.timeout(RUNCLOUD_CONTROL_TIMEOUT_MS);
-	const bound = AbortSignal.any([timeout, signal]);
-	if (bound.aborted) return Promise.reject(signal.reason);
-	return new Promise((resolve, reject) => {
-		const abort = () =>
-			reject(
-				signal.aborted
-					? signal.reason
-					: new Error(`run.cloud ${label} did not settle within ${RUNCLOUD_CONTROL_TIMEOUT_MS}ms`),
-			);
-		bound.addEventListener("abort", abort, { once: true });
-		work()
-			.then(resolve, reject)
-			.finally(() => bound.removeEventListener("abort", abort));
+/**
+ * One SDK call raced against its bound and the caller (the SDK's create and list take no signal).
+ * The bound's own expiry is named, and so is never read as a network failure.
+ */
+function settled<T>(label: string, work: () => Promise<T>, signal: AbortSignal): Promise<T> {
+	let bound: AbortSignal | undefined;
+	return bounded(signal, RUNCLOUD_CONTROL_TIMEOUT_MS, (within) => {
+		bound = within;
+		return work();
+	}).catch((error: unknown) => {
+		if (signal.aborted || error !== bound?.reason) throw error;
+		throw new Error(`run.cloud ${label} did not settle within ${RUNCLOUD_CONTROL_TIMEOUT_MS}ms`);
 	});
 }
 
@@ -140,7 +138,7 @@ export function runcloudVendor(
 	const { sandboxes } = transport;
 	/** Live sandboxes carrying exactly this name, oldest first: never a prefix or fuzzy match. */
 	const named = async (name: string, signal: AbortSignal) =>
-		(await bounded(`lookup ${name}`, () => sandboxes.list({ name }), signal))
+		(await settled(`lookup ${name}`, () => sandboxes.list({ name }), signal))
 			.filter((sandbox) => sandbox.name === name && sandbox.state !== "destroyed")
 			.sort((a, b) => (Date.parse(a.createdAt ?? "") || 0) - (Date.parse(b.createdAt ?? "") || 0));
 	/** A failed create's outcome, read by its name; a failed lookup costs an attempt, not the search. */
@@ -170,7 +168,7 @@ export function runcloudVendor(
 					timeoutSeconds: LIFETIME_SECS,
 				};
 				try {
-					return record(await bounded("create", () => sandboxes.create(options), signal));
+					return record(await settled("create", () => sandboxes.create(options), signal));
 				} catch (error) {
 					// Ask what the request did. A definitive 4xx gets one confirming look (a rejection can
 					// still sit on a real allocation); anything else the whole window. A create that

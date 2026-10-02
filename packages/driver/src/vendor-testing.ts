@@ -26,6 +26,7 @@ import {
 } from "@sandbox-benchmarks/driver/vendor";
 import { driverFromComputeSpec } from "./lib/computesdk.ts";
 import { guestShell } from "./lib/guest.fixture.ts";
+import type { KitVendor } from "./lib/vendor-port.ts";
 import { kitPort } from "./lib/vendor-port.ts";
 
 /**
@@ -325,18 +326,28 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
  */
 export function vendorContract<Raw, Native>(
 	name: string,
-	module: { readonly traits: Pick<VendorTraits, "account" | "recovery"> },
+	module: { readonly traits: Pick<VendorTraits, "account" | "recovery" | "timing"> },
 	make: () => Vendor<Raw, Native>,
 ) {
 	const account = module.traits.account ?? "shared";
-	const bound = () => ({ vendor: kitPort(make(), module.traits.recovery?.lookup), account });
+	const lookup = module.traits.recovery?.lookup;
+	const bound = () => ({
+		vendor: kitPort(make(), {
+			provider: name,
+			...(lookup && { lookup }),
+			...(module.traits.timing?.controlTimeoutMs !== undefined && {
+				controlTimeoutMs: module.traits.timing.controlTimeoutMs,
+			}),
+		}),
+		account,
+	});
 	const op = { signal: new AbortController().signal };
 	const request = {
 		spec: { vcpus: 4, memoryGb: 8 },
 		artifact: { kind: "none" },
 		deadlineMs: 1,
 	} as const;
-	const create = (vendor: Vendor<Raw, Native>, marker: string) =>
+	const create = (vendor: KitVendor<Raw, Native>, marker: string) =>
 		vendor.control.create({ request, marker }, op);
 	// Markers of the shape the kit mints: a vendor may encode the attempt UUID in a strict name.
 	const mint = () => `${MARKER_PREFIX}${randomUUID()}`;

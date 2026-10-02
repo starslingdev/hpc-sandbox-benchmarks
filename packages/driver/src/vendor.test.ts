@@ -18,6 +18,7 @@ import {
 import { admissionFailures, runConformance } from "@sandbox-benchmarks/driver/conformance";
 import type { Vendor, VendorDriverSpec, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import {
+	bounded,
 	coverage,
 	DISK_PROBE,
 	defineVendorDriver,
@@ -34,6 +35,8 @@ import {
 } from "@sandbox-benchmarks/driver/vendor";
 import type { MemoryRow, MemoryVendorOptions } from "@sandbox-benchmarks/driver/vendor/testing";
 import {
+	kitPort,
+	MemoryNotFound,
 	memoryVendor,
 	vendorContract,
 	vendorDriver,
@@ -352,7 +355,9 @@ describe("cleanup confirmation, continued", () => {
 	test("a sandbox already deleting is observed to removal, never deleted again", async () => {
 		const { driver, vendor, calls } = bind({ removalAfterGets: 1 });
 		const session = await driver.create(request);
-		await vendor.control.remove(session.sandboxRef.id, { signal: new AbortController().signal });
+		await kitPort(vendor).control.remove(session.sandboxRef.id, {
+			signal: new AbortController().signal,
+		});
 		calls.length = 0;
 		await driver.destroyById?.(session.sandboxRef);
 		expect(calls).toEqual(["get", "get"]);
@@ -387,7 +392,7 @@ describe("cleanup confirmation, continued", () => {
 			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 5 },
 		}).driver(context);
 		const session = await driver.create(request);
-		await world.vendor.control.remove(session.sandboxRef.id, {
+		await kitPort(world.vendor).control.remove(session.sandboxRef.id, {
 			signal: new AbortController().signal,
 		});
 		await expect(driver.destroyById?.(session.sandboxRef)).rejects.toThrow();
@@ -1082,6 +1087,24 @@ describe("request proof", () => {
 });
 
 describe("typed passthroughs", () => {
+	test("a module's declared traits are deeply immutable", () => {
+		const module = moduleOver(() => memoryVendor().vendor, {
+			recovery: { absenceConfirmationMs: 1, lookup: markerSpelling("bench-") },
+		});
+		const { traits } = module;
+		for (const data of [traits, traits.coverage, traits.coverage.spec, traits.coverage.gpu])
+			expect(Object.isFrozen(data)).toBe(true);
+		expect(Object.isFrozen(traits.timing)).toBe(true);
+		expect(Object.isFrozen(traits.recovery)).toBe(true);
+		expect(() => {
+			(traits.coverage.spec as { vcpus: unknown }).vcpus = "unsupported";
+		}).toThrow(TypeError);
+		expect(traits.coverage.spec.vcpus).toBe("mapped");
+		// A schema is not plain data: it keeps working.
+		expect(traits.sandboxId).toBeDefined();
+		expect(module.driver(context)).toBeDefined();
+	});
+
 	test("execution defaults to a 60s cap over the kit's shell detach", () => {
 		expect(bind().module.execution).toEqual({ syncCapMs: 60_000, durable: "shell-detach" });
 	});
@@ -1279,6 +1302,105 @@ describe("bounded control calls", () => {
 		await expect(driver.snapshots?.delete("sh-1")).rejects.toThrow();
 		expect(performance.now() - started).toBeLessThan(1_000);
 	});
+
+	test("every control-plane read is bounded on its own, even inside a teardown's budget", async () => {
+		const world = memoryVendor();
+		const signals: AbortSignal[] = [];
+		const hung: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				// An SDK that takes the signal but never honours it.
+				get: (_id, { signal }) => {
+					signals.push(signal);
+					return new Promise(() => {});
+				},
+			},
+		};
+		const driver = moduleOver(() => hung, {
+			timing: { pollMs: 0, readyTimeoutMs: 1_000, deleteTimeoutMs: 5_000, controlTimeoutMs: 20 },
+		}).driver(context);
+		const started = performance.now();
+		await expect(driver.destroyById?.({ provider: "novita", id: "mem-1" })).rejects.toThrow();
+		expect(performance.now() - started).toBeLessThan(1_000);
+		// The adapter was handed the bounded signal, which the bound aborted.
+		expect(signals[0]?.aborted).toBe(true);
+	});
+
+	test("bounded races a call the SDK cannot cancel and hands it the bounded signal", async () => {
+		const hung = (_signal: AbortSignal) => new Promise<never>(() => {});
+		expect(await bounded(undefined, 1_000, async () => "answered")).toBe("answered");
+		await expect(bounded(undefined, 10, hung)).rejects.toMatchObject({ name: "TimeoutError" });
+		const caller = new AbortController();
+		const pending = bounded(caller.signal, 1_000, hung);
+		caller.abort(new Error("caller cancelled"));
+		await expect(pending).rejects.toThrow("caller cancelled");
+		let calls = 0;
+		await expect(
+			bounded(caller.signal, 1_000, async () => {
+				calls += 1;
+			}),
+		).rejects.toThrow("caller cancelled");
+		expect(calls).toBe(0);
+	});
+});
+
+describe("identity of a read by id", () => {
+	const op = { signal: new AbortController().signal };
+	/** A vendor whose read by id resolves a sandbox named like that id instead (Daytona's SDK). */
+	function namesake() {
+		const world = memoryVendor();
+		const removed: string[] = [];
+		const vendor: Vendor<MemoryRow, MemoryRow> = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				get: async (id) => ({ id: `${id}-namesake`, phase: "ready", raw: {} as MemoryRow }),
+				settle: async (id) => ({ id: `${id}-namesake`, phase: "ready", raw: {} as MemoryRow }),
+				// Deletes through the handle its kit read returns, as a handle-keyed SDK must.
+				remove: async (_id, { current }) => {
+					const handle = await current();
+					if (handle) removed.push(handle.id);
+					return "removed";
+				},
+			},
+		};
+		return { vendor, removed };
+	}
+
+	test("get, settle and a removal's own read refuse an unrelated sandbox, and nothing is deleted", async () => {
+		const { vendor, removed } = namesake();
+		const { control } = kitPort(vendor, { provider: "novita" });
+		await expect(control.get("mem-1", op)).rejects.toThrow(
+			"novita returned an unrelated sandbox for mem-1",
+		);
+		await expect(control.settle?.("mem-1", op)).rejects.toThrow("unrelated sandbox");
+		await expect(control.remove("mem-1", op)).rejects.toThrow("unrelated sandbox");
+		expect(removed).toEqual([]);
+	});
+
+	test("a marker lookup by get is a lookup by name, not a read by id", async () => {
+		const { vendor } = namesake();
+		const { control } = kitPort(vendor, { lookup: markerSpelling("bench-") });
+		const found = await control.find?.(`${MARKER_PREFIX}attempt`, undefined, op);
+		expect(found?.records.map((record) => record.id)).toEqual(["bench-attempt-namesake"]);
+	});
+
+	test("a listing find's not-found is never an empty page", async () => {
+		const world = memoryVendor({ notFound: "throws", lookup: true });
+		const { control } = kitPort({
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				find: async (marker) => {
+					throw new MemoryNotFound(marker);
+				},
+			},
+		});
+		await expect(control.find?.("benchmark-x", undefined, op)).rejects.toBeInstanceOf(
+			MemoryNotFound,
+		);
+	});
 });
 
 describe("the data plane without native files", () => {
@@ -1435,7 +1557,7 @@ describe("port contract", () => {
 		expect((await vendor.control.find?.(marker, undefined, op))?.records.map((r) => r.id)).toEqual([
 			id,
 		]);
-		await vendor.control.remove(id, op);
+		await kitPort(vendor).control.remove(id, op);
 		await vendor.control.get(id, op);
 		const replayed = await vendor.control.find?.(marker, undefined, op);
 		expect(replayed?.records.map((record) => [record.id, record.phase])).toEqual([[id, "gone"]]);

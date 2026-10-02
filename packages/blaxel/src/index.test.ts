@@ -248,6 +248,22 @@ describe("Blaxel translation", () => {
 		expect(refused?.(new Error("401 unauthorized"))).toBeUndefined();
 	});
 
+	test("absence is only the control plane's 404: never auth, outage, transport or data plane", () => {
+		const { absent } = blaxelVendor(blaxelWorkspace().sdk, context).control;
+		expect(absent?.({ code: 404 })).toBe(true);
+		for (const error of [
+			{ code: 401 },
+			{ code: 403 },
+			{ code: 500 },
+			{ code: 503 },
+			new TypeError("fetch failed"),
+			new Error("404 sandbox not found"),
+			// A guest file's not-found is the data plane's, not proof the sandbox is gone.
+			{ response: { status: 404 } },
+		])
+			expect(absent?.(error)).toBe(false);
+	});
+
 	test("withholds an exit code the sandbox never reported", async () => {
 		const workspace = blaxelWorkspace();
 		const { data } = blaxelVendor(workspace.sdk, context);

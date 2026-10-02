@@ -111,10 +111,16 @@ ADR-0023 §1: a provider package writes an adapter against two ports and `define
 derives the DriverModule. The **control plane** (`create`, `get`, `remove`, `page`, optionally
 `settle`, `find`, `refused`, `transient`, `absent`, `admit`) and the **data plane** (`attach`, `exec`, optionally `launch`, `files`, `prepare`)
 speak provider-neutral `VendorRecord`s carrying a `Phase`. The kit starts no port call on an
-already-cancelled signal, and where the control plane declares `absent` (the vendor's own
-not-found, as narrow as the vendor's rule: Modal's counts only sandbox RPCs) it reads such an error
-from `get` or `settle` as `null` and from `remove` as `"removed"`, so no adapter hand-writes that
-rule. What adapters would otherwise restate is shared from `/vendor` too: `httpStatus` (a typed
+already-cancelled signal; bounds each control-plane read (`get`, `page`, `find`) by
+`controlTimeoutMs`, handing the adapter the bounded signal and racing an SDK that takes none
+(`create`, `settle` and `remove` may wait on the vendor and stay within their own budgets; an
+adapter bounds a step the kit does not with the exported `bounded`); refuses a record a read by id
+returns for another id (an SDK whose read also resolves a name), including the read a removal makes
+through `RemoveOp.current` before deleting by handle; and, where the control plane declares
+`absent` (the vendor's own not-found, as narrow as the vendor's rule: Modal's counts only sandbox
+RPCs), reads such an error from `get` or `settle` as `null` and from `remove` as `"removed"`. A
+listing `find` never reads a not-found as an empty page; only a `recovery.lookup` (a `get` by name)
+does. So no adapter hand-writes those rules. What adapters would otherwise restate is shared from `/vendor` too: `httpStatus` (a typed
 error's status anywhere in its cause chain), `refusedOn` (refusal over listed statuses, retryable
 only on 429), `httpClassifiers` (the REST reading of a status as `refused`, `transient` and
 `absent`), `LEAK_EXPIRY_MS` (the vendor-side lifetime every create that can state one states) and
@@ -160,7 +166,7 @@ only on 429), `httpClassifiers` (the REST reading of a status as `refused`, `tra
 It lowers onto the ComputeSDK bridge, so coverage proof, id parsing, cleanup double faults,
 redaction and output caps are reused. Every port call outside a poll is bounded
 (`controlTimeoutMs` for probes and listing pages, `snapshotTimeoutMs` for snapshots), and a response
-arriving after its bound is rejected. `create` is the only step before the vendor returns an id:
+arriving after its bound is rejected. A module's declared traits are deeply frozen. `create` is the only step before the vendor returns an id:
 `attach` (before readiness), readiness, `admit`, `prepare` and the disk proof run on the bridge's
 post-create path, so a failure in any of them tears the allocation down by that id and, if teardown
 fails too, keeps a cleanup that retries by id (a `FailedCreateCleanupError` with an `id` locator),
@@ -177,7 +183,7 @@ Microsandbox Cloud (name-keyed: the sandbox name carries the marker's attempt UU
 recovery lookup), Namespace and Runloop (recovered by matching the marker over the drained
 account), E2B (a server-side metadata query), run.cloud (name-keyed, with a lost create response
 adopted by reading its name), boat (renamed to its marker on `attach`, since its create takes no
-name), Daytona (both isolation variants, named by the marker and found by a get by name), Modal
+name), Daytona (both isolation variants, named by the marker and recovered by `recovery.lookup`), Modal
 (both isolation variants: the marker is the sandbox name in the benchmark App, the ownership
 boundary, and a listing's first page is the App's own generation) and Freestyle (marked in
 metadata, found by the attempt's slug, with native snapshots on the `snapshots` passthrough) are

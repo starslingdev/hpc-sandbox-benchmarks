@@ -9,7 +9,8 @@ catalog.
 
 - Every create boots the resolved class-pinned snapshot with auto-stop off, named by its ownership
   marker (`benchmark-<uuid>`). The SDK's create returns a started sandbox and its waited delete a
-  destroyed one, so both are evidence. A lost create is found by a get by that name.
+  destroyed one, so both are evidence. A lost create is found by a get by that name
+  (`recovery.lookup`); the kit refuses a read by id that resolves a sandbox named like the id.
 - Both variants share one org and one concurrency queue, so each variant's inventory claims every
   benchmark-named sandbox it finds; a sibling's later teardown of the same id converges on
   not-found. A `destroying` sandbox is not counted as foreign capacity.

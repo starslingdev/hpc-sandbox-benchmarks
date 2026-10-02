@@ -58,7 +58,6 @@ export interface ComputeSdkSandboxLike<TNative = unknown> {
 		command: string,
 		options?: { readonly background?: boolean; readonly signal?: AbortSignal },
 	): Promise<{ readonly exitCode?: number; readonly stdout?: string; readonly stderr?: string }>;
-	destroy(): Promise<unknown>;
 	readonly filesystem?: {
 		readFile(path: string): Promise<string>;
 		exists(path: string): Promise<boolean>;
@@ -102,15 +101,17 @@ interface ComputeSdkCommands<TCompute extends ComputeSdkLike> {
 	): Promise<void>;
 }
 
-type ComputeSdkRecoveryLocator =
-	| { readonly kind: "name"; readonly value: string }
-	| { readonly kind: "marker"; readonly key: string; readonly value: string };
+type ComputeSdkRecoveryLocator = {
+	readonly kind: "marker";
+	readonly key: string;
+	readonly value: string;
+};
 
 interface ComputeSdkLifecycle<TCompute extends ComputeSdkLike> {
 	/**
 	 * Idempotent teardown that must surface transport/auth failures instead of swallowing them.
 	 * `ref` is the bridge-validated canonical identity when validation reached that boundary. When
-	 * it is absent, teardown may use the retained native handle or the bridge-snapshotted recovery
+	 * it is absent, teardown may use the retained wrapper handle or the bridge-snapshotted recovery
 	 * locator, but must never reread a raw wrapper id or wrapper-visible create options.
 	 */
 	destroy(
@@ -312,21 +313,21 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 	 * table when a native option is required.
 	 */
 	readonly commands?: ComputeSdkCommands<TCompute>;
-	/** Truthful teardown projection for wrappers whose destroy path is lossy or over-tolerant. */
-	readonly lifecycle?: ComputeSdkLifecycle<TCompute>;
-	/** Optional recovery protocol for remotely ambiguous create failures without a returned handle. */
-	readonly createRecovery?: ComputeSdkCreateRecovery<TCompute>;
+	/** Truthful teardown: idempotent, and surfacing every failure rather than swallowing it. */
+	readonly lifecycle: ComputeSdkLifecycle<TCompute>;
+	/** The recovery protocol for remotely ambiguous create failures without a returned handle. */
+	readonly createRecovery: ComputeSdkCreateRecovery<TCompute>;
 	/**
 	 * Whether the wrapper's filesystem actually works. Explicit, because the wrapper cannot be
 	 * asked: UnsupportedFileSystem is truthy and throws. ADR-0008's smoke conformance verifies
 	 * the answer against the live vendor.
 	 */
 	readonly hasWorkingFilesystem: boolean;
-	/** Honest lifecycle probes supplied only when this wrapper/provider can implement them. */
-	readonly probes?: {
+	/** Lifecycle probes: observation, one listing page, and the raw record of one sandbox. */
+	readonly probes: {
 		observe(compute: TCompute, ref: SandboxRef): Promise<SandboxObservation>;
-		list?(compute: TCompute): Promise<unknown>;
-		describe?(compute: TCompute, ref: SandboxRef): Promise<unknown>;
+		list(compute: TCompute): Promise<unknown>;
+		describe(compute: TCompute, ref: SandboxRef): Promise<unknown>;
 	};
 	/** Honest snapshot projection; omission records an unsupported capability instead of a stub. */
 	readonly snapshots?: {
@@ -338,13 +339,12 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 		delete(compute: TCompute, snapshotId: string): Promise<void>;
 	};
 	/**
-	 * Whole-account inventory, supplied only where the vendor can enumerate every sandbox. Together
-	 * with {@link destroyById} and `probes` it is what account admission requires (the CLI's
-	 * reconciliation refuses a driver missing any of the three).
+	 * Whole-account inventory. Together with {@link destroyById} and `probes` it is what account
+	 * admission requires (the CLI's reconciliation refuses a driver missing any of the three).
 	 */
-	readonly inventory?: ComputeSdkInventory<TCompute>;
+	readonly inventory: ComputeSdkInventory<TCompute>;
 	/** See {@link ComputeSdkDestroyById}. */
-	readonly destroyById?: ComputeSdkDestroyById<TCompute>;
+	readonly destroyById: ComputeSdkDestroyById<TCompute>;
 }
 
 type ComputeSdkPolicy<P extends ProviderId, TCompute extends ComputeSdkLike> = DriverPolicy<
@@ -845,8 +845,6 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 	const { probes, snapshots, inventory, destroyById, commands, lifecycle, createRecovery } =
 		options;
 	const wantsFiles = options.hasWorkingFilesystem;
-	const probeList = probes?.list;
-	const probeDescribe = probes?.describe;
 	const createRequestMapper = options.createOptions;
 	const prepareAndVerifyCreatedRequest = options.prepareAndVerifyCreatedRequest;
 	const sensitiveValuesDefault = options.sensitiveValues;
@@ -857,9 +855,8 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 		prepareAndVerifyCreatedRequest !== undefined,
 	);
 	if (
-		createRecovery !== undefined &&
-		(!Number.isSafeInteger(createRecovery.absenceConfirmationMs) ||
-			createRecovery.absenceConfirmationMs <= 0)
+		!Number.isSafeInteger(createRecovery.absenceConfirmationMs) ||
+		createRecovery.absenceConfirmationMs <= 0
 	) {
 		throw new DriverError(
 			"vendor-contract-violation",
@@ -867,10 +864,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			{ provider },
 		);
 	}
-	if (
-		createRecovery !== undefined &&
-		(!Number.isSafeInteger(createRecovery.maxAttempts) || createRecovery.maxAttempts < 2)
-	) {
+	if (!Number.isSafeInteger(createRecovery.maxAttempts) || createRecovery.maxAttempts < 2) {
 		throw new DriverError(
 			"vendor-contract-violation",
 			`computesdk createRecovery.maxAttempts must be a safe integer of at least 2, received ${runtimeNumberLabel(createRecovery.maxAttempts)}`,
@@ -911,9 +905,8 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 		ref: SandboxRef | undefined,
 		operationOptions: DriverOperationOptions = {},
 		recoveryLocator?: ComputeSdkRecoveryLocator,
-	): Promise<unknown> => {
-		if (lifecycle === undefined) return sandbox.destroy();
-		return invokeComputeSdkRedactedCallbackAsync(
+	): Promise<unknown> =>
+		invokeComputeSdkRedactedCallbackAsync(
 			provider,
 			"lifecycle destroy",
 			() => lifecycle.destroy(sandbox, ref, operationOptions, recoveryLocator),
@@ -923,7 +916,6 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				sensitiveValues: ref === undefined ? sensitiveValuesDefault : sensitiveForRef(ref),
 			},
 		);
-	};
 	return {
 		async create(compute, request: CreateRequest, operationOptions?: DriverOperationOptions) {
 			if (operationOptions?.signal?.aborted) {
@@ -936,18 +928,9 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				request,
 				sensitiveValues,
 			);
-			const recoveryLocator =
-				createRecovery === undefined
-					? undefined
-					: Object.freeze({ ...createRecovery.locator(createOptions) });
+			const recoveryLocator = Object.freeze({ ...createRecovery.locator(createOptions) });
 			const rejectWithRecovery = async (primary: unknown): Promise<never> => {
-				if (
-					isFailedCreateCleanupError(primary) ||
-					createRecovery === undefined ||
-					recoveryLocator === undefined
-				) {
-					throw primary;
-				}
+				if (isFailedCreateCleanupError(primary)) throw primary;
 				const retryCleanup = (cleanupOptions?: DriverOperationOptions) =>
 					reconcileAmbiguousCreate(
 						provider,
@@ -1055,11 +1038,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 						);
 					}
 					try {
-						if (
-							parsedId === undefined &&
-							createRecovery !== undefined &&
-							recoveryLocator !== undefined
-						) {
+						if (parsedId === undefined) {
 							// A returned handle proves that an allocation existed, but an invalid wrapper id
 							// cannot identify it safely. Reconcile by the preallocated locator so an eventually
 							// consistent first name miss cannot release ownership and leak the allocation.
@@ -1098,10 +1077,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 				} catch (cleanupError) {
 					throw new FailedCreateCleanupError(cleanupError, primary, {
 						provider,
-						locator:
-							parsedId === undefined
-								? (recoveryLocator ?? { kind: "native-handle" })
-								: { kind: "id", value: parsedId },
+						locator: parsedId === undefined ? recoveryLocator : { kind: "id", value: parsedId },
 						cleanup: retryCleanup,
 					});
 				}
@@ -1260,103 +1236,65 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 					fileCall(sandbox, "filesystem write", (filesystem) => filesystem.writeFile(path, text)),
 			},
 		}),
-		...(inventory === undefined
-			? {}
-			: {
-					inventory: {
-						list: async (compute: TCompute, operationOptions: DriverOperationOptions = {}) =>
-							normalizeComputeSdkInventory(
-								provider,
-								await invokeComputeSdkProviderCallbackAsync(
-									provider,
-									"inventory list",
-									() => inventory.list(compute, operationOptions),
-									{ code: "probe-failed" },
-								),
-								sandboxIds.canonical,
-								sensitiveValuesDefault,
-							),
-					},
+		inventory: {
+			list: async (compute: TCompute, operationOptions: DriverOperationOptions = {}) =>
+				normalizeComputeSdkInventory(
+					provider,
+					await invokeComputeSdkProviderCallbackAsync(
+						provider,
+						"inventory list",
+						() => inventory.list(compute, operationOptions),
+						{ code: "probe-failed" },
+					),
+					sandboxIds.canonical,
+					sensitiveValuesDefault,
+				),
+		},
+		destroyById: async (
+			compute: TCompute,
+			ref: SandboxRef,
+			operationOptions: DriverOperationOptions = {},
+		) => {
+			const canonical = validateRef(provider, sandboxIds.canonical, ref, sensitiveForRef(ref));
+			if (operationOptions.signal?.aborted) {
+				throw wrapperAborted(
+					provider,
+					operationOptions.signal.reason,
+					"destroy by id",
+					"destroy-failed",
+				);
+			}
+			await invokeComputeSdkProviderCallbackAsync(
+				provider,
+				"destroy by id",
+				() => destroyById(compute, canonical, operationOptions),
+				{ code: "destroy-failed", ref: canonical },
+			);
+		},
+		probes: {
+			observe: async (compute, ref) => {
+				const canonical = validateRef(provider, sandboxIds.canonical, ref, sensitiveForRef(ref));
+				return invokeComputeSdkProviderCallbackAsync(
+					provider,
+					"probe observe",
+					() => probes.observe(compute, canonical),
+					{ code: "probe-failed", ref: canonical },
+				);
+			},
+			list: (compute: TCompute) =>
+				invokeComputeSdkProviderCallbackAsync(provider, "probe list", () => probes.list(compute), {
+					code: "probe-failed",
 				}),
-		...(destroyById === undefined
-			? {}
-			: {
-					destroyById: async (
-						compute: TCompute,
-						ref: SandboxRef,
-						operationOptions: DriverOperationOptions = {},
-					) => {
-						const canonical = validateRef(
-							provider,
-							sandboxIds.canonical,
-							ref,
-							sensitiveForRef(ref),
-						);
-						if (operationOptions.signal?.aborted) {
-							throw wrapperAborted(
-								provider,
-								operationOptions.signal.reason,
-								"destroy by id",
-								"destroy-failed",
-							);
-						}
-						await invokeComputeSdkProviderCallbackAsync(
-							provider,
-							"destroy by id",
-							() => destroyById(compute, canonical, operationOptions),
-							{ code: "destroy-failed", ref: canonical },
-						);
-					},
-				}),
-		...(probes === undefined
-			? {}
-			: {
-					probes: {
-						observe: async (compute, ref) => {
-							const canonical = validateRef(
-								provider,
-								sandboxIds.canonical,
-								ref,
-								sensitiveForRef(ref),
-							);
-							return invokeComputeSdkProviderCallbackAsync(
-								provider,
-								"probe observe",
-								() => probes.observe(compute, canonical),
-								{ code: "probe-failed", ref: canonical },
-							);
-						},
-						...(probeList === undefined
-							? {}
-							: {
-									list: (compute: TCompute) =>
-										invokeComputeSdkProviderCallbackAsync(
-											provider,
-											"probe list",
-											() => probeList(compute),
-											{ code: "probe-failed" },
-										),
-								}),
-						...(probeDescribe === undefined
-							? {}
-							: {
-									describe: (compute: TCompute, ref: SandboxRef) => {
-										const canonical = validateRef(
-											provider,
-											sandboxIds.canonical,
-											ref,
-											sensitiveForRef(ref),
-										);
-										return invokeComputeSdkProviderCallbackAsync(
-											provider,
-											"probe describe",
-											() => probeDescribe(compute, canonical),
-											{ code: "probe-failed", ref: canonical },
-										);
-									},
-								}),
-					},
-				}),
+			describe: (compute: TCompute, ref: SandboxRef) => {
+				const canonical = validateRef(provider, sandboxIds.canonical, ref, sensitiveForRef(ref));
+				return invokeComputeSdkProviderCallbackAsync(
+					provider,
+					"probe describe",
+					() => probes.describe(compute, canonical),
+					{ code: "probe-failed", ref: canonical },
+				);
+			},
+		},
 		...(snapshots === undefined
 			? {}
 			: {
@@ -1503,11 +1441,11 @@ const CREATE_CLASSIFIER_BOUNDARIES = {
  */
 function classifiesCreateRejection(
 	provider: ProviderId,
-	recovery: Partial<Record<ComputeSdkCreateClassifier, (error: unknown) => boolean>> | undefined,
+	recovery: Partial<Record<ComputeSdkCreateClassifier, (error: unknown) => boolean>>,
 	classifier: ComputeSdkCreateClassifier,
 	caught: unknown,
 ): boolean {
-	const classify = recovery?.[classifier];
+	const classify = recovery[classifier];
 	if (classify === undefined) return false;
 	try {
 		return (

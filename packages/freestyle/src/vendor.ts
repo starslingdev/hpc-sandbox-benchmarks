@@ -65,6 +65,8 @@ const durableSnapshotResult = type({
 });
 
 const status = httpStatus(FreestyleApiError, (error) => error.status);
+/** Only a 404 proves removal, of a VM or a snapshot. */
+const absent = (error: unknown) => status(error) === 404;
 
 /** A create's own response carries only the VM id; every read carries the whole record. */
 type Raw = Pick<FreestyleRow, "id"> & Partial<FreestyleRow>;
@@ -136,7 +138,7 @@ export function freestyleVendor(
 				await api(signal).vms.delete(id);
 				return "accepted";
 			},
-			absent: (error) => status(error) === 404,
+			absent,
 			// Offset pagination: the cursor carries the offset and the total the first page reported,
 			// so a total that moves under the scan fails closed instead of skipping a VM.
 			page: async (cursor, { signal }): Promise<VendorPage<Raw>> => {
@@ -222,7 +224,7 @@ export function freestyleVendor(
 				try {
 					await api(signal).vms.snapshots.delete(snapshotId);
 				} catch (error) {
-					if (status(error) !== 404) throw error;
+					if (!absent(error)) throw error;
 				}
 			},
 		},

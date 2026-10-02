@@ -18,10 +18,15 @@
 import type { BoatApi, InitOverrideFunction } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
 import type { ExecOptions } from "@sandbox-benchmarks/driver";
-import { DriverError, isDriverError, pollUntilReady } from "@sandbox-benchmarks/driver";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
+import { DriverError, pollUntilReady } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
-import { abortableDelay, httpClassifiers, markerSpelling } from "@sandbox-benchmarks/driver/vendor";
+import {
+	abortableDelay,
+	bounded,
+	httpClassifiers,
+	httpStatus,
+	markerSpelling,
+} from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
 
 export type BoatClient = Pick<
@@ -98,16 +103,8 @@ const record = (sandbox: BoatSandbox): VendorRecord<BoatSandbox> => {
 	};
 };
 
-/** The HTTP status of a vendor refusal, whether raw or already carried by this adapter's error. */
-function boatHttpStatus(error: unknown): number | undefined {
-	let status: number | undefined;
-	matchesAnyCause(error, (cause) => {
-		if (cause instanceof ResponseError) status = cause.response.status;
-		else if (isDriverError(cause) && cause.provider === "boat") status = cause.vendorHttpStatus;
-		return status !== undefined;
-	});
-	return status;
-}
+/** The HTTP status of a vendor refusal, raw or as the cause this adapter's create error carries. */
+const boatHttpStatus = httpStatus(ResponseError, (error) => error.response.status);
 
 /**
  * The REST reading of the status: a 4xx other than a timeout or conflict refused the create before
@@ -126,13 +123,9 @@ async function errorDetail(error: ResponseError): Promise<{ code?: string; messa
 	}
 }
 
-/** One call's request init: the caller's signal, bounded by the control-plane timeout. */
-const init = (signal?: AbortSignal): RequestInit => ({
-	signal: AbortSignal.any([
-		AbortSignal.timeout(BOAT_CONTROL_TIMEOUT_MS),
-		...(signal ? [signal] : []),
-	]),
-});
+/** One call the kit does not bound itself, within the control-plane timeout and the caller. */
+const call = <T>(signal: AbortSignal | undefined, work: (init: RequestInit) => Promise<T>) =>
+	bounded(signal, BOAT_CONTROL_TIMEOUT_MS, (bound) => work({ signal: bound }));
 
 export interface BoatVendorOptions {
 	/** The wait between create retries (test seam). */
@@ -151,16 +144,18 @@ export function boatVendor(
 		signal?: AbortSignal,
 	) =>
 		commandResponse.assert(
-			await client.command(
-				{
-					sandboxId,
-					commandRequest: {
-						command: commandText,
-						...(detached && { detached }),
-						timeoutSeconds: BOAT_COMMAND_TIMEOUT_SECONDS,
+			await call(signal, (init) =>
+				client.command(
+					{
+						sandboxId,
+						commandRequest: {
+							command: commandText,
+							...(detached && { detached }),
+							timeoutSeconds: BOAT_COMMAND_TIMEOUT_SECONDS,
+						},
 					},
-				},
-				init(signal),
+					init,
+				),
 			),
 		);
 	const exec = async ({ id }: BoatSandbox, commandText: string, options?: ExecOptions) => {
@@ -173,9 +168,9 @@ export function boatVendor(
 	// The override runs after the SDK built the JSON object and before it stringifies it, so the
 	// body must stay an object (a string would be encoded twice); RequestInit does not model that.
 	const withMachineProvider =
-		(signal: AbortSignal): InitOverrideFunction =>
+		(init: RequestInit): InitOverrideFunction =>
 		async ({ init: built }) => ({
-			...init(signal),
+			...init,
 			body: {
 				...jsonBody.assert(built.body),
 				machineProvider: BOAT_MACHINE_PROVIDER,
@@ -189,12 +184,14 @@ export function boatVendor(
 			create: async ({ marker }, { signal }) => {
 				for (let attempt = 1; ; attempt++) {
 					try {
-						const created = await client.create(
-							{
-								idempotencyKey: BOAT_NAME.toVendor(marker),
-								createSandboxRequest: { type: BOAT_MACHINE_TYPE, ttlSeconds: null, noEnv: true },
-							},
-							withMachineProvider(signal),
+						const created = await call(signal, (init) =>
+							client.create(
+								{
+									idempotencyKey: BOAT_NAME.toVendor(marker),
+									createSandboxRequest: { type: BOAT_MACHINE_TYPE, ttlSeconds: null, noEnv: true },
+								},
+								withMachineProvider(init),
+							),
 						);
 						// The response predates the rename; the idempotency key attributes it to the attempt.
 						return { ...record(sandboxResponse.assert(created).sandbox), marker };
@@ -225,19 +222,22 @@ export function boatVendor(
 				}
 			},
 			get: async (id, { signal }) =>
-				record(sandboxResponse.assert(await client.get({ sandboxId: id }, init(signal))).sandbox),
+				record(sandboxResponse.assert(await client.get({ sandboxId: id }, { signal })).sandbox),
 			// Accepted only: the sandbox is observed gone (404) by the kit, which also asks a
-			// transient refusal again. A refusal names boat's error code, so it is diagnosable.
+			// transient refusal again. A refusal names boat's error code, so it is diagnosable; a
+			// not-found is removal, passed to the kit as it is, its body unread.
 			remove: async (id, { signal }) => {
 				try {
 					const accepted = deletionResponse.assert(
-						await client.deleteSandbox({ sandboxId: id, xAsciiConfirmDelete: id }, init(signal)),
+						await call(signal, (init) =>
+							client.deleteSandbox({ sandboxId: id, xAsciiConfirmDelete: id }, init),
+						),
 					);
 					if (accepted.operation.targetId !== id)
 						throw new Error(`boat deletion ${accepted.operation.id} targets another sandbox`);
 					return "accepted";
 				} catch (error) {
-					if (!(error instanceof ResponseError)) throw error;
+					if (!(error instanceof ResponseError) || http.absent(error)) throw error;
 					const status = error.response.status;
 					const { code } = await errorDetail(error);
 					const named = code && /^[a-z0-9_]{1,80}$/i.test(code) ? ` ${code}` : "";
@@ -247,9 +247,7 @@ export function boatVendor(
 				}
 			},
 			page: async (cursor, { signal }) => {
-				const page = pageSchema.assert(
-					await client.sandboxes({ limit: 100, cursor }, init(signal)),
-				);
+				const page = pageSchema.assert(await client.sandboxes({ limit: 100, cursor }, { signal }));
 				const next = page.pageInfo?.nextCursor ?? null;
 				const records = page.sandboxes.map(record);
 				return next === null || page.pageInfo?.hasMore === false ? { records } : { records, next };
@@ -262,7 +260,9 @@ export function boatVendor(
 				if (marker === undefined) throw new Error("boat attaches only a create's record");
 				const name = BOAT_NAME.toVendor(marker);
 				return sandboxResponse.assert(
-					await client.update({ sandboxId: id, updateSandboxRequest: { name } }, init(signal)),
+					await call(signal, (init) =>
+						client.update({ sandboxId: id, updateSandboxRequest: { name } }, init),
+					),
 				).sandbox;
 			},
 			// Outbound network, then the allocation's reported size; the kit proves the disk after.

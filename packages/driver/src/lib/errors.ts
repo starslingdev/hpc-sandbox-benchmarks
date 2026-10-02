@@ -81,10 +81,6 @@ export interface FailedCreateRecovery {
 				readonly value: string;
 		  }
 		| {
-				/** The wrapper returned no stable id, so cleanup retains its native object in-process. */
-				readonly kind: "native-handle";
-		  }
-		| {
 				/** The source locator was unreadable; only the retained cleanup callback is trustworthy. */
 				readonly kind: "cleanup-callback";
 		  };
@@ -101,9 +97,7 @@ function snapshotRecoveryLocator(locator: unknown): FailedCreateRecovery["locato
 			throw new Error("invalid locator");
 		}
 		const kind: unknown = Reflect.get(locator, "kind");
-		if (kind === "native-handle" || kind === "cleanup-callback") {
-			return Object.freeze({ kind });
-		}
+		if (kind === "cleanup-callback") return Object.freeze({ kind });
 		const value: unknown = Reflect.get(locator, "value");
 		if (typeof value !== "string" || value.length === 0) throw new Error("invalid locator");
 		if (kind === "name" || kind === "id") return Object.freeze({ kind, value });
@@ -145,13 +139,11 @@ export class FailedCreateCleanupError extends SuppressedError implements AsyncDi
 	) {
 		const locator = snapshotRecoveryLocator(options.locator);
 		const locatorLabel =
-			locator.kind === "native-handle"
-				? "through its retained native handle"
-				: locator.kind === "cleanup-callback"
-					? "through its retained cleanup callback"
-					: locator.kind === "marker"
-						? `by marker ${locator.key}=${locator.value}`
-						: `by ${locator.kind} ${locator.value}`;
+			locator.kind === "cleanup-callback"
+				? "through its retained cleanup callback"
+				: locator.kind === "marker"
+					? `by marker ${locator.key}=${locator.value}`
+					: `by ${locator.kind} ${locator.value}`;
 		super(
 			cleanupError,
 			createError,

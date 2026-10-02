@@ -552,7 +552,11 @@ describe("Modal enforced control deadline", () => {
 		const cases = [
 			["lookup", MODAL_CONTROL_TIMEOUT_MS, (v: Hanging) => v.control.get(V1, cancelled())],
 			["poll", MODAL_CONTROL_TIMEOUT_MS, (v: Hanging) => v.control.get(V1, cancelled())],
-			["terminate", MODAL_DESTROY_TIMEOUT_MS, (v: Hanging) => v.control.remove(V1, cancelled())],
+			[
+				"terminate",
+				MODAL_DESTROY_TIMEOUT_MS,
+				(v: Hanging) => v.control.remove(V1, { ...cancelled(), current: async () => null }),
+			],
 			[
 				"exec",
 				MODAL_CONTROL_TIMEOUT_MS,

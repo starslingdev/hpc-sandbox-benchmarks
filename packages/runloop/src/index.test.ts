@@ -4,9 +4,12 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	APIConnectionError,
 	AuthenticationError,
 	BadRequestError,
+	InternalServerError,
 	NotFoundError,
+	PermissionDeniedError,
 	RateLimitError,
 } from "@runloop/api-client";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
@@ -267,6 +270,21 @@ describe("Runloop translation", () => {
 		await expect(
 			silent.launch?.({ id: noHandle.allocate() } as DevboxView, "sleep 60"),
 		).rejects.toThrow("no execution id");
+	});
+
+	test("absence is only the SDK's typed not-found: never auth, outage or transport failures", () => {
+		const { absent } = runloopVendor(context, runloopAccount().client).control;
+		expect(absent?.(new NotFoundError(404, undefined, "no devbox", {}))).toBe(true);
+		for (const error of [
+			new AuthenticationError(401, undefined, "bad key", {}),
+			new PermissionDeniedError(403, undefined, "forbidden", {}),
+			new InternalServerError(500, undefined, "boom", {}),
+			new InternalServerError(503, undefined, "unavailable", {}),
+			new APIConnectionError({ message: "socket hang up" }),
+			new TypeError("fetch failed"),
+			new Error("404 not found"),
+		])
+			expect(absent?.(error)).toBe(false);
 	});
 
 	test("classifies refusals by the SDK's typed errors only; a rate limit is retryable", () => {

@@ -141,12 +141,6 @@ export function daytonaVendor(
 		handles.set(sandbox.id, sandbox);
 		return record(sandbox);
 	};
-	// The SDK's get resolves a name as well as an id: a sandbox named like the id is not that one.
-	const byId = async (id: string) => {
-		const found = read(await client.get(id));
-		if (found.id !== id) throw new Error("Daytona returned an unrelated sandbox");
-		return found;
-	};
 
 	return {
 		control: {
@@ -176,11 +170,18 @@ export function daytonaVendor(
 					throw error;
 				}
 			},
-			get: (id) => byId(id),
-			remove: async (id) => {
-				await client.delete(handles.get(id) ?? (await byId(id)).raw, DELETE_TIMEOUT_SECS, true);
-				handles.delete(id);
-				return "removed";
+			// The SDK's get resolves a name as well as an id: the kit refuses a namesake of the id, and
+			// recovery looks a marker up by this same get of the sandbox name.
+			get: async (idOrName) => read(await client.get(idOrName)),
+			// A handle is held only until its delete settles, so a not-found never leaves a stale one.
+			remove: async (id, { current }) => {
+				try {
+					const sandbox = handles.get(id) ?? (await current())?.raw;
+					if (sandbox) await client.delete(sandbox, DELETE_TIMEOUT_SECS, true);
+					return "removed";
+				} finally {
+					handles.delete(id);
+				}
 			},
 			absent: notFound,
 			// The SDK drains its own cursor; the whole account is one page.
@@ -191,15 +192,6 @@ export function daytonaVendor(
 					records.push(record(sandbox));
 				}
 				return { records };
-			},
-			// A get by name: the marker is the sandbox name.
-			find: async (marker) => {
-				try {
-					return { records: [read(await client.get(marker))] };
-				} catch (error) {
-					if (notFound(error)) return { records: [] };
-					throw error;
-				}
 			},
 			refused: (error) =>
 				definitive(error)

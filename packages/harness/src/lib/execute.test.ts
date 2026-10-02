@@ -571,39 +571,6 @@ describe("StepRunner.runDetached", () => {
 		).toBe(true);
 	});
 
-	it("degrades to the exec poll when the filesystem is PRESENT but unsupported", async () => {
-		// The live namespace failure this guards: computesdk gives an adapter with no `filesystem` table
-		// its UnsupportedFileSystem stub, so `filesystem` is truthy and every call throws. The poll picked
-		// the fs path and 12 straight throws killed the step as a "dead sandbox" — while plain exec was
-		// answering fine the whole time. A present-but-broken fs must degrade to cat, not fail the step,
-		// and the degradation must NOT consume the consecutive-failure budget meant for real outages.
-		const { sandbox, commands } = catPollSandbox({
-			readyAfter: 1,
-			log: "ran via cat",
-			exitCode: "0",
-		});
-		let fsCalls = 0;
-		const unsupported = () => {
-			fsCalls++;
-			return Promise.reject(
-				new Error("Filesystem operations are not supported by namespace's sandbox environment."),
-			);
-		};
-		// Attach to the same handle `commands` records through, rather than a spread copy — one object, so
-		// the assertions below can't be reading a different fake than the one the runner drove.
-		sandbox.filesystem = { exists: unsupported, readFile: unsupported };
-		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
-
-		const result = await runner.runDetached("bench", "mise run benchmark", 60_000);
-
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toBe("ran via cat");
-		// Discovered by use, then abandoned: exactly one fs attempt, never retried.
-		expect(fsCalls).toBe(1);
-		// Completion and the log read-back both came over exec instead.
-		expectPolledOverExec(commands);
-	});
-
 	it("propagates a non-zero exit from the cat-polled done-file", async () => {
 		const { sandbox } = catPollSandbox({ exitCode: "42" });
 		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);

@@ -163,19 +163,19 @@ export function selectTransport(transport: ProviderTransport, timeoutMs: number)
 	return couldExceedSyncCap && transport.detachedPoll ? "detached" : "sync";
 }
 
-/** The slice of a computesdk sandbox filesystem the detached transport polls (its `filesystem` satisfies this). */
+/** The slice of a session's files the detached transport polls. */
 export interface SandboxFilesystem {
 	readFile(path: string): Promise<string>;
 	exists(path: string): Promise<boolean>;
 }
 
-/** The slice of a computesdk sandbox the suite runner needs (its `Sandbox` satisfies this). */
+/** The slice of a driver session the suite runner needs (`sessionHandle` adapts one). */
 export interface SandboxHandle {
-	/** Universal ComputeSDK sandbox identity, snapshotted before teardown for cost attribution. */
+	/** The session's sandbox id, snapshotted before teardown for cost attribution. */
 	readonly sandboxId?: string;
 	runCommand(command: string, options?: RunCommandOptions): Promise<CommandResult>;
 	destroy(): Promise<unknown>;
-	/** Present on real computesdk sandboxes; enables the durable detached transport for long steps. */
+	/** Present when the session exposes files; the detached transport then polls through it. */
 	filesystem?: SandboxFilesystem;
 }
 
@@ -184,21 +184,6 @@ export interface StepOptions {
 	/** Suppress echoing stdout/stderr (for steps that emit bulk data, e.g. the base64 results tar).
 	 *  A silent step that fails still emits its stderr, so failures stay debuggable. */
 	silent?: boolean;
-}
-
-/**
- * Does this error mean the sandbox has NO filesystem API, as opposed to one that briefly failed?
- *
- * computesdk gives an adapter that declares no `filesystem` table its `UnsupportedFileSystem` stub
- * (@computesdk/provider), which is a truthy object whose every method throws
- * "Filesystem operations are not supported by <provider>'s sandbox environment." So the only way to
- * tell "never going to work" from "wedged for a moment" is the error itself — matched on the stable
- * phrase rather than the provider-interpolated remainder. Getting this wrong is asymmetric, which is
- * why it matches narrowly: a missed match costs the old dead-step failure, while a false match would
- * silently abandon a working filesystem for the (fully supported, slightly chattier) exec poll.
- */
-function isUnsupportedFilesystem(err: unknown): boolean {
-	return err instanceof Error && /not supported by .*sandbox environment/i.test(err.message);
 }
 
 /** Race a promise against a timeout, clearing the timer either way. */
@@ -453,16 +438,10 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 	 */
 	private readonly secrets: readonly string[] = diagnosticSecretsFromEnv(process.env);
 	/**
-	 * The sandbox filesystem WHILE it is usable — cleared for good the first time it proves it isn't.
-	 *
-	 * "Exposes a filesystem" is not "has a working one": computesdk hands an adapter that declares no
-	 * `filesystem` table its UnsupportedFileSystem stub, a present and truthy object that throws on
-	 * every call, so a truthiness check picks the fs poll and then every poll throws (live on namespace:
-	 * 12 straight failures killed a step the loop could only read as a dead sandbox). Scoped to the
-	 * RUNNER, not to one step, because it is a fact about the sandbox — a per-step local would re-probe
-	 * and re-announce the same permanent absence on every detached step of the run.
+	 * The session's filesystem, present only when it exposes a working one (capability by presence:
+	 * the driver port never hands the runner a stub that throws, ADR-0008).
 	 */
-	private pollFs?: SandboxFilesystem;
+	private readonly pollFs?: SandboxFilesystem;
 
 	protected constructor(
 		filesystem: SandboxFilesystem | undefined,
@@ -489,31 +468,17 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 
 	/**
 	 * Observe a detached step's completion once: the exit code, or `undefined` while it is still running.
-	 *
-	 * Prefers the filesystem done-file and degrades PERMANENTLY to the exec `cat` poll the first time the
-	 * filesystem proves unsupported — retrying in the same call rather than surfacing a failure, because
-	 * an absent capability is a discovery, not evidence the sandbox died. Every other error propagates
-	 * untouched to the caller's consecutive-failure policy: a transient fs blip must keep the fs path (a
-	 * real Blaxel incident, 2026-07-19), where permanent absence must abandon it, and only the stub's own
-	 * error distinguishes the two. A dead sandbox is still caught, because the cat poll will fail too.
+	 * Reads the filesystem done-file when the session exposes files, else the exec `cat` poll. Every
+	 * error propagates to the caller's consecutive-failure policy: a transient fs blip keeps the fs path
+	 * (a real Blaxel incident, 2026-07-19), and a dead sandbox fails either way.
 	 */
 	private async pollDoneOnce(
 		donePath: string,
-		label: string,
 		deadline: number,
 	): Promise<number | null | undefined> {
-		if (!this.pollFs) return this.pollDoneViaCat(donePath, deadline);
-		try {
-			return await this.pollDoneViaFs(this.pollFs, donePath, deadline);
-		} catch (err) {
-			if (!isUnsupportedFilesystem(err)) throw err;
-			console.log(
-				`    [${label}] this sandbox exposes no working filesystem; ` +
-					`falling back to the exec done-file poll`,
-			);
-			this.pollFs = undefined;
-			return this.pollDoneViaCat(donePath, deadline);
-		}
+		return this.pollFs
+			? this.pollDoneViaFs(this.pollFs, donePath, deadline)
+			: this.pollDoneViaCat(donePath, deadline);
 	}
 
 	/**
@@ -662,10 +627,8 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 				// for the rest of the command budget (see MAX_CONSECUTIVE_POLL_FAILURES).
 				let exitCode: number | null | undefined;
 				try {
-					exitCode = await withTimeout(
-						this.pollDoneOnce(donePath, label, deadline),
-						remaining(),
-						() => stepTimeout(label, timeoutMs),
+					exitCode = await withTimeout(this.pollDoneOnce(donePath, deadline), remaining(), () =>
+						stepTimeout(label, timeoutMs),
 					);
 					evidence.lastObservationMs = Math.round(performance.now() - started);
 					evidence.state =
@@ -691,8 +654,6 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 				}
 				if (exitCode !== undefined) {
 					try {
-						// this.pollFs, not the raw capability: once the poll has degraded, the read-back must not
-						// re-try the same broken API and burn its whole retry budget rediscovering that.
 						let stdout: string;
 						try {
 							stdout = await withTimeout(

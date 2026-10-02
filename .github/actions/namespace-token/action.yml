@@ -1,7 +1,7 @@
 name: Mint a portable Namespace token
 description: >-
   Log the `nsc` CLI into ONE pinned Namespace tenant via GitHub OIDC federation, then mint a scoped,
-  revocable token file @computesdk/namespace can read through NSC_TOKEN_FILE. Namespace federates on
+  revocable token file the Namespace driver reads through NSC_TOKEN_FILE. Namespace federates on
   the job's `id-token: write` identity, which the caller must grant; the only stored value is the
   tenant id, passed in by the caller.
 
