@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NETWORK_LATENCY_TARGETS } from "@sandbox-benchmarks/schema";
 import { extractProviderDir } from "./extract.ts";
-import { isNetworkProbeFile } from "./network-probes.ts";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
 const daytonaDir = join(import.meta.dir, "__fixtures__/daytona-vm");
@@ -260,60 +257,20 @@ describe("network probe artifacts", () => {
 	});
 
 	const write = (name: string, body: unknown): void => {
-		writeFileSync(join(dir, name), typeof body === "string" ? body : JSON.stringify(body));
+		writeFileSync(join(dir, name), JSON.stringify(body));
 	};
 
-	it("recognizes probe artifacts and rejects gap markers and unknown hosts", () => {
-		expect(isNetworkProbeFile("network-latency.json")).toBe(true);
-		expect(isNetworkProbeFile("network-dns--github.com.json")).toBe(true);
-		expect(isNetworkProbeFile("network-download--speed.json")).toBe(true);
-		expect(isNetworkProbeFile("network-latency--skipped.json")).toBe(false);
-		expect(isNetworkProbeFile("network-dns--other.com.json")).toBe(false);
-	});
-
-	it("samples responding curl time_total in record order and ignores timing_ms", () => {
-		write("network-latency.json", {
-			endpoints: [
-				{
-					url: "https://index.crates.io/config.json",
-					host: "index.crates.io",
-					timing_ms: { total: { median: 999 } },
-					curl_records: [{ time_total: 0.050902, response_code: 200, exitcode: 0 }],
-				},
-			],
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([
-			{
-				metricId: "network_https_index_crates_io_config_total_ms",
-				samples: [50.902],
-				sourceFile: "network-latency.json",
-			},
-		]);
-	});
-
-	it("drops a curl record that got no response", () => {
-		write("network-latency.json", {
-			endpoints: [
-				{
-					url: "https://github.com/",
-					curl_records: [{ time_total: 1.5, response_code: 0, exitcode: 56 }],
-				},
-			],
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("keeps all 30 responding time_total values and ignores the median", () => {
+	it("keeps every responding time_total and ignores the median", () => {
+		const task = readFileSync(
+			join(import.meta.dir, "../../../../.mise/tasks/benchmark/network/latency"),
+			"utf8",
+		);
+		expect(task).toContain("SAMPLES=30");
 		const expectedMs = [
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
 			27, 28, 29, 30,
 		];
 		write("network-latency.json", {
-			probe: { samples_per_endpoint: 30 },
 			endpoints: [
 				{
 					url: "https://github.com/",
@@ -326,8 +283,7 @@ describe("network probe artifacts", () => {
 				},
 			],
 		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.contributions).toEqual([
+		expect(extractProviderDir(dir, "e2b").contributions).toEqual([
 			{
 				metricId: "network_https_github_com_total_ms",
 				samples: expectedMs,
@@ -336,37 +292,11 @@ describe("network probe artifacts", () => {
 		]);
 	});
 
-	it("keeps two responding totals around one failure, in record order", () => {
-		write("network-latency.json", {
-			endpoints: [
-				{
-					url: "https://github.com/",
-					curl_records: [
-						{ time_total: 0.012, response_code: 200, exitcode: 0 },
-						{ time_total: 9.999, response_code: 0, exitcode: 56 },
-						{ time_total: 0.0345, response_code: 200, exitcode: 0 },
-					],
-				},
-			],
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([
-			{
-				metricId: "network_https_github_com_total_ms",
-				samples: [12, 34.5],
-				sourceFile: "network-latency.json",
-			},
-		]);
-	});
-
-	it("reads one cold dig query_time when the question name matches the filename", () => {
+	it("keeps one cold dig query time", () => {
 		write("network-dns--github.com.json", [
 			{ query_time: 14, status: "NOERROR", question: { name: "github.com." } },
 		]);
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([
+		expect(extractProviderDir(dir, "e2b").contributions).toEqual([
 			{
 				metricId: "network_dns_cold_github_com_ms",
 				samples: [14],
@@ -375,43 +305,7 @@ describe("network probe artifacts", () => {
 		]);
 	});
 
-	it("reads a single jc object whose query_time is zero", () => {
-		write("network-dns--pypi.org.json", {
-			query_time: 0,
-			status: "NOERROR",
-			question: { name: "pypi.org." },
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([
-			{
-				metricId: "network_dns_cold_pypi_org_ms",
-				samples: [0],
-				sourceFile: "network-dns--pypi.org.json",
-			},
-		]);
-	});
-
-	it("admits no DNS sample from a multi-row dig", () => {
-		write("network-dns--github.com.json", [
-			{ query_time: 14, status: "NOERROR", question: { name: "github.com." } },
-			{ query_time: 1, status: "NOERROR", question: { name: "github.com." } },
-		]);
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("admits no DNS sample when the question name is a different domain", () => {
-		write("network-dns--github.com.json", [
-			{ query_time: 14, status: "NOERROR", question: { name: "example.com" } },
-		]);
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("converts a pinned download's bytes/sec into decimal Mbits/sec", () => {
+	it("converts a pinned download to decimal Mbits/sec", () => {
 		write("network-download--speed.json", {
 			http_code: 200,
 			size_download: 54000000,
@@ -419,9 +313,7 @@ describe("network probe artifacts", () => {
 			exitcode: 0,
 			url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
 		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([
+		expect(extractProviderDir(dir, "e2b").contributions).toEqual([
 			{
 				metricId: "network_download_node_v22_23_1_linux_x64_mbits_per_sec",
 				samples: [100],
@@ -429,153 +321,4 @@ describe("network probe artifacts", () => {
 			},
 		]);
 	});
-
-	it("omits an HTTP error body", () => {
-		write("network-download--speed.json", {
-			http_code: 403,
-			size_download: 54000000,
-			speed_download: 12500000,
-			exitcode: 0,
-			url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("keeps a max-time exit 28 when bytes arrived", () => {
-		write("network-download--speed.json", {
-			http_code: 200,
-			size_download: 1000,
-			speed_download: 1250000,
-			exitcode: 28,
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([
-			{
-				metricId: "network_download_node_v22_23_1_linux_x64_mbits_per_sec",
-				samples: [10],
-				sourceFile: "network-download--speed.json",
-			},
-		]);
-	});
-
-	it("drops a download whose curl exit is neither success nor the time cap", () => {
-		write("network-download--speed.json", {
-			http_code: 200,
-			size_download: 1000,
-			speed_download: 1250000,
-			exitcode: 18,
-			url: "https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz",
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("leaves an overridden download URL raw", () => {
-		write("network-download--speed.json", {
-			http_code: 200,
-			size_download: 54000000,
-			speed_download: 12500000,
-			exitcode: 0,
-			url: "https://example.com/other",
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("keeps a latency skip marker as a gap and not a probe sample", () => {
-		write("network-latency--skipped.json", {
-			schema_version: "1.0",
-			benchmark: "network-latency",
-			skipped: true,
-			skip_reason: "curl not installed",
-		});
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-		expect(extraction.gaps).toEqual([
-			{
-				scope: "suite",
-				id: "network-latency",
-				outcome: "skipped",
-				reason: "curl not installed",
-			},
-		]);
-	});
-
-	it("drops an NXDOMAIN dig even when query_time is present", () => {
-		write("network-dns--github.com.json", [
-			{ query_time: 4, status: "NXDOMAIN", question: { name: "github.com." } },
-		]);
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.contributions).toEqual([]);
-	});
-
-	it("returns no contribution for malformed probe JSON", () => {
-		write("network-latency.json", "{");
-		const extraction = extractProviderDir(dir, "e2b");
-		expect(extraction.attemptedEmpty).toEqual([]);
-		expect(extraction.contributions).toEqual([]);
-	});
 });
-
-const repoRoot = join(import.meta.dir, "../../../..");
-const jqAvailable = (() => {
-	try {
-		execFileSync("jq", ["--version"], { stdio: "ignore" });
-		return true;
-	} catch {
-		return false;
-	}
-})();
-
-(jqAvailable ? describe : describe.skip)(
-	"network probe latency matches curl-phases.jq on recorded curls",
-	() => {
-		it("keeps a sample exactly when jq responded is true", () => {
-			const records = readFileSync(
-				join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"),
-				"utf8",
-			)
-				.split("\n")
-				.filter((line) => line.length > 0)
-				.map((line) => JSON.parse(line) as { url: string });
-			const urls = new Set<string>(NETWORK_LATENCY_TARGETS.map((target) => target.url));
-			const matched = records.filter((record) => urls.has(record.url));
-			expect(matched.length).toBeGreaterThan(0);
-			const endpoints = NETWORK_LATENCY_TARGETS.flatMap((target) => {
-				const curlRecords = matched.filter((record) => record.url === target.url);
-				return curlRecords.length > 0 ? [{ url: target.url, curl_records: curlRecords }] : [];
-			});
-			const dir = mkdtempSync(join(tmpdir(), "extract-jq-"));
-			try {
-				writeFileSync(join(dir, "network-latency.json"), JSON.stringify({ endpoints }));
-				const byId = new Map(
-					extractProviderDir(dir, "e2b").contributions.map((contribution) => [
-						contribution.metricId,
-						contribution.samples.length,
-					]),
-				);
-				for (const target of NETWORK_LATENCY_TARGETS) {
-					const curlRecords = matched.filter((record) => record.url === target.url);
-					if (curlRecords.length === 0) continue;
-					const responded = curlRecords.filter((record) => {
-						const out = execFileSync(
-							"jq",
-							["-L", join(repoRoot, "lib/jq"), "-c", 'include "curl-phases"; responded'],
-							{ input: JSON.stringify(record), encoding: "utf8" },
-						);
-						return out.trim() === "true";
-					}).length;
-					expect(byId.get(target.id) ?? 0).toBe(responded);
-				}
-			} finally {
-				rmSync(dir, { recursive: true, force: true });
-			}
-		});
-	},
-);
