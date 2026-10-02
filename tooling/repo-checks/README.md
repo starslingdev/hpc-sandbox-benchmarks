@@ -14,6 +14,10 @@
   identity fields, the test/typecheck script contract (source members) vs. a `files` array
   (config-only members), `exports`/`bin` rules, and that internal deps use `workspace:*` while
   cataloged externals use `catalog:` / `catalog:<name>`.
+- `src/vendor-seam.test.ts` — the vendor seam (ADR-0023 §2, logic in `src/lib/vendor-seam.ts`):
+  each vendor library is owned by one provider package, members take third-party libraries only
+  from the root catalogs, every file declares what it references (no reach through hoisting or a
+  `node_modules` path), and only the drivers join and named subpaths import a provider package.
 - `src/lib/workspace.ts` — repo-root resolution + member enumeration via `Bun.Glob` (private).
 
 To prove enforcement works, temporarily add an import like `import "../../providers/src/index.ts"`

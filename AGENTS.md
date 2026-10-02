@@ -49,7 +49,7 @@ directly:
 - A new provider starts from `bun run new-provider -- --id <id> --kind sdk|http|cli [--sdk
   <name>@<version>] [--protocol e2b] [--baked]` (CONTRIBUTING.md "Add a provider"); the author fills
   the typed `unfilled(...)` values (metadata, `src/vendor.ts`, a test stand-in or builder where the
-  scaffold leaves one) and runs `generate-providers`. `bun run check:new-provider` takes a scaffold
+  scaffold leaves one; a baked E2B-protocol provider's builder is the shared one) and runs `generate-providers`. `bun run check:new-provider` takes a scaffold
   of every kind through every repository gate (`check:providers`, `lint`, `lint:workflows`,
   `lint:shell`, `spell`, `typecheck`, the whole `test`) in a temporary copy (about six minutes; CI's
   `scaffold` job). A registry-snapshot drift is caught by `bun run test`, not by `check:providers`.

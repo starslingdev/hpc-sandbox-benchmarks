@@ -27,7 +27,7 @@
   versions/timestamps and does not rewrite the index; the overall operation is not dataset-atomic.
 - `bake` / `bench-smoke` / `stability` — toolchain bake, single-cell smoke, cross-run stability gate.
 
-**Depends on:** the workspace libraries (`workspace:*`) + `dotenv` (`catalog:`). It declares no
+**Depends on:** the workspace libraries (`workspace:*`) + `arktype` and `@actions/*` (`catalog:`). It declares no
 vendor library: providers are reached through the generated loaders in `@sandbox-benchmarks/drivers`,
 except two Modal-only modules imported by name — `@sandbox-benchmarks/modal/gpu` (the `bench-gpu`
 platform: client, App, CUDA image, Volumes, allocations, tags, snapshots; workload staging and

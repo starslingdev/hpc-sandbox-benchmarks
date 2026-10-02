@@ -36,21 +36,6 @@ export function fillMetadata(source: string): string {
 	return filled;
 }
 
-/** A filled OCI artifact builder for provider `id`: the vendor's build, reduced to its result. */
-export const filledArtifactBuilder = (
-	id: string,
-): string => `// The ${id} artifact builder (\`./artifact\`): bakes the digest-pinned toolchain base into the
-// artifact the driver boots, and returns exactly the ref it boots.
-
-import { defineArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
-
-export default defineArtifactBuilder(${JSON.stringify(id)}, async ({ name, base, log, signal }) => {
-	signal.throwIfAborted();
-	log(\`${id} template \${name} from \${base.digestRef}\`);
-	return { ref: name, replaced: "atomic" };
-});
-`;
-
 /** Lines of `after` outside its longest common subsequence of lines with `before`. */
 export function handWrittenLines(before: string, after: string): number {
 	const left = before.split("\n");
@@ -228,33 +213,22 @@ export function fillSdkTest(source: string): string {
 	return rewrite(source, [
 		[STUB_IMPORT, ""],
 		[
-			'const stub = (): AcmeSdkSdk => unfilled("an in-memory stand-in for the SDK");',
-			`const stub = (): AcmeSdkSdk => {
-	class NotFoundError extends Error {}
-	const sandboxes = new Map<string, SandboxInfo>();
-	const find = async (id: string) => {
-		const found = sandboxes.get(id);
-		if (!found) throw new NotFoundError(id);
-		return found;
-	};
-	const api: AcmeClient["sandboxes"] = {
-		create: async ({ labels }) => {
-			const created = { id: \`sb-\${sandboxes.size + 1}\`, status: "running" as const, labels };
-			sandboxes.set(created.id, created);
-			return created;
+			`const stub = () => sdkStub<AcmeSdkSdk>(unfilled("the SDK's surface over the account")).sdk;`,
+			`const stub = () =>
+	sdkStub<AcmeSdkSdk, SandboxInfo>(({ add, row, rows, run, NotFound }) => ({
+		NotFoundError: NotFound,
+		AcmeClient: class {
+			sandboxes: AcmeClient["sandboxes"] = {
+				create: async ({ labels }) => add({ status: "running", labels }),
+				retrieve: async (id) => row(id),
+				delete: async (id) => {
+					rows.delete(row(id).id);
+				},
+				list: async () => ({ data: [...rows.values()] }),
+				exec: async (id, { command }) => run(id, command),
+			};
 		},
-		retrieve: find,
-		delete: async (id) => {
-			sandboxes.delete((await find(id)).id);
-		},
-		list: async () => ({ data: [...sandboxes.values()] }),
-		exec: async (_id, { command }) => {
-			const exitCode = Number(/exit (\\d+)/.exec(command)?.[1] ?? 0);
-			return { exitCode, stdout: "", stderr: "" };
-		},
-	};
-	return { NotFoundError, AcmeClient: class { sandboxes = api } } as unknown as AcmeSdkSdk;
-};`,
+	})).sdk;`,
 		],
 		[
 			'import type { CreateRequest } from "@sandbox-benchmarks/driver";',

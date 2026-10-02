@@ -9,8 +9,9 @@ Implementations, SDK dependencies, tests, and provenance belong in `packages/<pr
 `@sandbox-benchmarks/blaxel`. Shared adapter mechanics belong in `@sandbox-benchmarks/driver`.
 Daytona and Modal each share one package across their isolation variants.
 
-To add a provider, create its source-first workspace package, declare the provider descriptor,
-and run `bun run generate-providers`. The generator verifies that every registered provider's
+To add a provider, run `bun run new-provider` (CONTRIBUTING.md "Add a provider"): it scaffolds the
+identity, catalog pin, metadata, package, adapter and tests, and leaves only what the vendor makes
+true. Then run `bun run generate-providers`, which verifies that every registered provider's
 package exports a default-exported driver module, that its `sdkPackage` is a dependency of that
 package, and `./artifact` exactness (exported by exactly the providers that bake from the OCI base),
 then emits the fleet's workspace dependencies, lazy imports, and each package's provenance.

@@ -21,6 +21,7 @@
 // Bun.YAML.parse is built into bun >= 1.3 (no new dependency).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { vendorClis } from "@sandbox-benchmarks/schema/providers";
 import { Glob } from "bun";
 import { findRepoRoot } from "./workspace.ts";
 
@@ -36,14 +37,19 @@ export const TOOLCHAIN_IMAGE_PR_PATHS = [
 	".github/workflows/toolchain-image.yml",
 ] as const;
 
+/** The setup action of every vendor CLI a provider drives; generate-providers wires it into the smoke. */
+export const CLI_SETUP_ACTIONS: readonly string[] = vendorClis().map(
+	({ cli }) => `./.github/actions/setup-${cli}`,
+);
+
 /** Local setup composites executed by the lightweight smoke, plus the smoke itself. */
-export const TOOLCHAIN_ACTION_SMOKE_PR_PATHS = [
-	".github/actions/setup-tama/**",
+export const TOOLCHAIN_ACTION_SMOKE_PR_PATHS: readonly string[] = [
+	...CLI_SETUP_ACTIONS.map((action) => `${action.slice(2)}/**`),
 	".github/actions/setup-toolchain/**",
 	".github/actions/setup-workspace/**",
 	".github/actions/release-summary/**",
 	".github/workflows/toolchain-actions-smoke.yml",
-] as const;
+];
 
 /** GitHub Environment name that holds provider secrets and gates releases. See docs/ci-secrets.md. */
 export const PRIVILEGED_ENVIRONMENT = "privileged";
@@ -616,9 +622,9 @@ export function checkToolchainPrScope(
 			errors.push(`${jobLabel}: setup-toolchain must pass \`buildx: "true"\``);
 		}
 	}
-	if (!steps.some((step) => step.uses === "./.github/actions/setup-tama")) {
-		errors.push(`${jobLabel}: must execute ./.github/actions/setup-tama`);
-	}
+	for (const action of CLI_SETUP_ACTIONS)
+		if (!steps.some((step) => step.uses === action))
+			errors.push(`${jobLabel}: must execute ${action}`);
 	const summary = steps.find((step) => step.uses === "./.github/actions/release-summary");
 	if (summary === undefined) {
 		errors.push(`${jobLabel}: must execute ./.github/actions/release-summary`);

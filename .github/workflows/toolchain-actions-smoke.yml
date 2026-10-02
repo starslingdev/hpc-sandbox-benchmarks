@@ -6,7 +6,10 @@ name: Toolchain actions smoke
 on:
   pull_request:
     paths:
+      # Every vendor CLI's setup action (sdkPackage { cli }).
+      # >>> generated: provider-cli-smoke-paths — bun run generate-providers
       - ".github/actions/setup-tama/**"
+      # <<< end generated: provider-cli-smoke-paths
       - ".github/actions/setup-toolchain/**"
       - ".github/actions/setup-workspace/**"
       - ".github/actions/release-summary/**"
@@ -40,8 +43,14 @@ jobs:
         with:
           buildx: "true"
 
-      - name: Set up tama
+      # One setup step per pinned vendor CLI (sdkPackage { cli }), from its setup-<cli> action.
+      # >>> generated: provider-cli-smoke — bun run generate-providers
+      - name: Set up the tama CLI
         uses: ./.github/actions/setup-tama
+
+      - name: Find the tama CLI on PATH
+        run: command -v tama
+      # <<< end generated: provider-cli-smoke
 
       - name: Probe setup outputs
         run: |

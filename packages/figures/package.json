@@ -20,9 +20,9 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "@fontsource-variable/afacad": "5.3.0",
-    "@fontsource/geist-mono": "5.3.0",
-    "@fontsource/geist-sans": "5.3.0",
+    "@fontsource-variable/afacad": "catalog:",
+    "@fontsource/geist-mono": "catalog:",
+    "@fontsource/geist-sans": "catalog:",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:"
   }

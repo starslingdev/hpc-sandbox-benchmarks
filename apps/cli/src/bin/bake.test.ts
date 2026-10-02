@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { candidateBuildResults, requestedBaseImage, requestedProviders } from "./bake.ts";
+import {
+	bakeReport,
+	candidateBuildResults,
+	requestedBaseImage,
+	requestedProviders,
+} from "./bake.ts";
 
 describe("requestedProviders", () => {
 	test("no flag → undefined (drive every registered provider, the local default)", () => {
@@ -114,6 +119,23 @@ describe("candidateBuildResults", () => {
 			} finally {
 				rmSync(dir, { recursive: true, force: true });
 			}
+		}
+	});
+
+	test("a matrix cell's report names its provider, so promote attributes it under any file name", () => {
+		const candidate = { image: "ghcr.io/x@sha256:1", artifacts: { e2b: "toolchain-v9-candidate" } };
+		const cell = bakeReport(["e2b"], candidate, [{ provider: "e2b", status: "ok" }]);
+		expect(cell.provider).toBe("e2b");
+		// A local bake of several providers names none, so its candidates pin nothing.
+		expect(bakeReport(["e2b", "freestyle"], candidate, [])).not.toHaveProperty("provider");
+		expect(bakeReport(undefined, candidate, [])).not.toHaveProperty("provider");
+		const dir = reports({ "renamed.json": cell, "bake-e2b.json": cell });
+		try {
+			expect(candidateBuildResults(["--bake-reports", dir])).toEqual({
+				e2b: "toolchain-v9-candidate",
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 

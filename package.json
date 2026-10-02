@@ -12,7 +12,12 @@
       "typescript": "6.0.3",
       "@types/bun": "1.4.0",
       "arktype": "2.2.0",
-      "dotenv": "17.4.2"
+      "@actions/artifact": "6.2.1",
+      "@actions/core": "1.11.1",
+      "@fontsource-variable/afacad": "5.3.0",
+      "@fontsource/geist-mono": "5.3.0",
+      "@fontsource/geist-sans": "5.3.0",
+      "@octokit/rest": "22.0.1"
     },
     "catalogs": {
       "vendors": {

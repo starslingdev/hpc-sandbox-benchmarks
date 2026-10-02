@@ -33,7 +33,7 @@
     "@nodable/compact-builder": "catalog:xml",
     "@nodable/flexible-xml-parser": "catalog:xml",
     "@repo/tsconfig": "workspace:*",
-    "@octokit/rest": "22.0.1",
+    "@octokit/rest": "catalog:",
     "typescript": "catalog:",
     "@types/bun": "catalog:"
   }

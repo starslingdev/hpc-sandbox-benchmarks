@@ -65,7 +65,8 @@ const KINDS = {
 				"src/artifact.ts",
 			),
 		],
-		authored: [meta("probe-baked"), "packages/probe-baked/src/artifact.ts"],
+		// The shared protocol builder is final as written too.
+		authored: [meta("probe-baked")],
 		holes: 0,
 		codeLines: 22,
 	},
@@ -201,6 +202,17 @@ describe("new-provider: what one scaffold writes and leaves to its author", () =
 		expect(adapter).not.toMatch(/^\s+signals:/m);
 	});
 
+	test("a baked E2B-protocol provider's builder is the shared one, run by its own test", () => {
+		const files = plan("E2B protocol, baked").files;
+		const builder = files.get("packages/probe-baked/src/artifact.ts") ?? "";
+		expect(builder).toContain('e2bProtocolArtifactBuilder("probe-baked", sdk, {');
+		expect(builder).toContain("apiKey: (env) => env.PROBE_BAKED_API_KEY");
+		expect(codeLines(builder)).toBeLessThanOrEqual(9);
+		expect(files.get("packages/probe-baked/src/index.test.ts")).toContain(
+			"await probeBakedArtifactBuilder(() => stub.sdk).build(build)",
+		);
+	});
+
 	test("pre-states spec pinning where the scaffold's coverage already decides it", () => {
 		const pinning = (kind: keyof typeof KINDS) =>
 			/specPinning: ([^\n,]+)/.exec(plan(kind).files.get(meta(KINDS[kind].spec.id)) ?? "")?.[1];
@@ -295,6 +307,6 @@ describe("new-provider: what one scaffold writes and leaves to its author", () =
 			...final,
 		]);
 		expect(lint.output).toContain(`Checked ${final.length} files`);
-		expect(lint.exitCode).toBe(0);
+		expect(lint.exitCode, lint.output).toBe(0);
 	}, 60_000);
 });

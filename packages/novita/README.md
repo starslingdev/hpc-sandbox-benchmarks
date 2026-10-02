@@ -24,7 +24,8 @@ The driver is written against the vendor port (ADR-0023):
   forward to the guest daemon.
 
 `src/artifact.ts` (`./artifact`) builds the template from the digest-pinned toolchain base with the
-SDK's Template API on the same regional control plane, masking PTS's phoromatic units.
+shared `e2bProtocolArtifactBuilder` (the SDK's Template API) on the same regional control plane,
+masking PTS's phoromatic units in a root build step.
 
 `src/index.test.ts` tests the translation, runs `vendorContract` over the shared `e2bProtocolStub`, and drives
 sessions through the kit's `vendorDriver`. Run `bun run --filter @sandbox-benchmarks/novita test`

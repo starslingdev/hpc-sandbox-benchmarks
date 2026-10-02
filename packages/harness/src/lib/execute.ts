@@ -6,17 +6,18 @@
  *
  *   - {@link StepRunner.run}: a direct synchronous exec. Fine for short steps, but NOT durable for
  *     long ones on a capped provider: Daytona's synchronous executeCommand returns HTTP 408 on
- *     multi-minute commands while the process keeps running server-side, and computesdk's Daytona
- *     adapter doesn't stream (it ignores onStdout/onStderr).
- *   - {@link StepRunner.runDetached}: starts the step in the background (computesdk's `background:true`,
- *     double-fork daemonized so it detaches even on e2b's envd) writing its output to a log file and
+ *     multi-minute commands while the process keeps running server-side, and no exec streams its
+ *     output back while the command runs.
+ *   - {@link StepRunner.runDetached}: starts the step in the background (the driver's durable launch,
+ *     or a double-fork daemonized shell so it detaches even on e2b's envd) writing its output to a log file and
  *     its exit code to a done-file, then polls until the done-file appears — via the sandbox filesystem
  *     when one is exposed, else by `cat`-ing the done-file over `exec`. The poll interval backs off
  *     adaptively so a short step isn't over-charged for polling. This survives the 408-prone exec
  *     round-trip, so multi-minute benchmarks complete on every provider.
  *
- * {@link StepRunner.step} reads the provider's declared {@link ProviderTransport} (via
- * {@link selectTransport}) and dispatches: a step that could outlast the provider's synchronous cap
+ * {@link StepRunner.step} reads the transport the driver module's `execution` policy projects to
+ * (the CLI's `driverTransport`, via {@link selectTransport}; a {@link SessionStepRunner} reads the
+ * policy itself) and dispatches: a step that could outlast the provider's synchronous cap
  * runs detached where the provider supports it; everything else runs synchronously. So Daytona keeps
  * its detached+poll path while an uncapped provider (e.g. Modal) runs the same step directly — the
  * harness adapts to the capability rather than hardcoding one provider's transport.
@@ -123,7 +124,7 @@ export interface CommandResult {
 	stderr?: string;
 }
 
-/** Options for one in-sandbox command (a subset of computesdk's RunCommandOptions). */
+/** Options for one in-sandbox command on the harness's sandbox shape. */
 export interface RunCommandOptions {
 	/** Start detached and return immediately, rather than waiting for the command to finish. */
 	background?: boolean;
@@ -144,8 +145,8 @@ export const DEFAULT_TRANSPORT: ProviderTransport = Object.freeze({
 });
 
 /**
- * Pick the exec transport for a step from the provider's declared {@link ProviderTransport} and the
- * step's timeout budget. A step runs detached when it could reach or outlast the provider's synchronous
+ * Pick the exec transport for a step from the {@link ProviderTransport} the driver's `execution`
+ * policy projects to and the step's timeout budget. A step runs detached when it could reach or outlast the provider's synchronous
  * cap (`syncCapMs`) AND the provider supports detached+poll; otherwise it runs as a direct synchronous
  * exec. A `null` cap (uncapped) always stays synchronous; a provider without `detachedPoll` has no
  * durable alternative, so it stays synchronous and best-effort even past its cap.
@@ -482,7 +483,7 @@ abstract class StepExecution<Result extends { stdout?: string; stderr?: string }
 	}
 
 	/**
-	 * Run a step on the transport the provider's {@link ProviderTransport} calls for: detached+poll when
+	 * Run a step on the transport the driver's execution policy calls for: detached+poll when
 	 * the step's budget could outlast the provider's synchronous cap and the provider supports it,
 	 * otherwise a direct synchronous exec (see {@link selectTransport}). This is the capability-driven
 	 * entry point the orchestrator uses for every step whose runtime can reach into the minutes (setup

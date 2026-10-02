@@ -52,8 +52,8 @@ const READINESS_PROBE_TIMEOUT_MS = 2_000;
  * exists to prevent.
  */
 const PAYLOAD_DISABLED = "64KiB payload exec disabled for this run";
-// Scoped to the integration under measurement — a leftover ComputeSDK adapter or a DriverModule
-// projection — never to the vendor SDK as a whole. Two different integrations of one provider can
+// Scoped to the integration under measurement — the DriverModule projection the CLI hands over —
+// never to the vendor SDK as a whole. Two different integrations of one provider can
 // expose different control-plane calls, and this benchmark only ever observes the one it was handed;
 // "the vendor has no such API" is a claim about the vendor that the absent method is no evidence for.
 const NO_LIST_OP = "the provider integration under measurement exposes no sandbox list operation";
@@ -86,7 +86,7 @@ const PAYLOAD_CMD = "head -c 65536 /dev/zero | tr '\\0' 'a'";
 /** Real wall-clock delay between readiness retries; swapped for a no-op in tests. */
 const realDelay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The slice of a computesdk sandbox the lifecycle driver times (its `Sandbox` satisfies this). */
+/** The slice of a sandbox the lifecycle driver times (the CLI's session adapter satisfies this). */
 export interface LifecycleSandbox {
 	readonly sandboxId: string;
 	runCommand(command: string, options?: { background?: boolean }): Promise<{ exitCode: number }>;
@@ -95,7 +95,7 @@ export interface LifecycleSandbox {
 	destroy(): Promise<unknown>;
 }
 
-/** The slice of a computesdk snapshot manager the driver times (its `ProviderSnapshotManager` satisfies this). */
+/** The slice of a snapshot manager the lifecycle driver times. */
 export interface LifecycleSnapshots {
 	create(sandboxId: string, options?: { name?: string }): Promise<{ id: string }>;
 	delete(snapshotId: string): Promise<unknown>;

@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sandbox-benchmarks/schema": "workspace:*"
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

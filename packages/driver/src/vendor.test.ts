@@ -44,6 +44,7 @@ import {
 	MemoryNotFound,
 	memoryVendor,
 	restStub,
+	sdkStub,
 	vendorContract,
 	vendorDriver,
 } from "@sandbox-benchmarks/driver/vendor/testing";
@@ -1775,6 +1776,26 @@ describe("restStub, the REST API stand-in", () => {
 		expect(api.calls.map(({ method, path }) => `${method} ${path}`)).toContain(
 			"DELETE /v1/sandboxes/sb-1",
 		);
+	});
+});
+
+describe("sdkStub, the SDK stand-in", () => {
+	test("states an SDK over the account's rows, throws its not-found, and runs each guest", async () => {
+		class VendorNotFound extends Error {}
+		const account = sdkStub<{ create(): { id: string }; get(id: string): { id: string } }>(
+			({ add, row }) => ({ create: () => add({}), get: row }),
+			{ notFound: (id) => new VendorNotFound(id), diskGb: 40 },
+		);
+		const created = account.sdk.create();
+		expect(created).toEqual({ id: "sb-1" });
+		expect(account.sdk.get("sb-1")).toBe(created);
+		expect(() => account.sdk.get("sb-2")).toThrow(VendorNotFound);
+		expect(account.run("sb-1", "sh -c 'exit 7'")).toEqual({ exitCode: 7, stdout: "", stderr: "" });
+		expect(account.run("sb-1", DISK_PROBE).stdout).toBe(`${40 * 1024 * 1024}\n`);
+		account.run("sb-1", "echo saved > /tmp/item");
+		expect(account.files("sb-1").get("/tmp/item")).toBe("saved\n");
+		// Without an SDK class, an unknown id throws the stand-in's own.
+		expect(() => sdkStub(({ row }) => row("x")).sdk).toThrow("sandbox x not found");
 	});
 });
 

@@ -119,6 +119,8 @@ describe("vendor seam: planted violations", () => {
 			`const m = require(${q}acme-sdk${q});`,
 			`const p = require.resolve(${q}acme-sdk${q});`,
 			`const m = createRequire(import.meta.url)(${q}acme-sdk${q});`,
+			`const p = import.meta.resolve(${q}acme-sdk${q});`,
+			`/// <reference types=${q}acme-sdk${q} />`,
 		]) {
 			expect(vendorSeamViolations(fixture({ "apps/cli/src/lib/leak.ts": source }))).toEqual([
 				"apps/cli/src/lib/leak.ts references vendor library acme-sdk",
@@ -129,6 +131,82 @@ describe("vendor seam: planted violations", () => {
 	it("ignores a commented-out vendor import", () => {
 		const source = `// ${from("acme-sdk")}\n/* ${from("acme-sdk")} */`;
 		expect(vendorSeamViolations(fixture({ "apps/cli/src/lib/leak.ts": source }))).toEqual([]);
+	});
+
+	it("catches an undeclared third-party library, such as a vendor SDK's own dependency", () => {
+		// `acme-internal` is not a vendor catalog entry; it is installed only because acme-sdk needs it.
+		expect(
+			vendorSeamViolations(
+				fixture({
+					"apps/cli/src/lib/leak.ts": from("acme-internal/client"),
+					"packages/acme/src/inner.ts": `const p = import.meta.resolve(${q}acme-internal${q});`,
+					"scripts/leak.ts": `const m = require(${q}acme-internal${q});`,
+				}),
+			),
+		).toEqual([
+			"apps/cli/src/lib/leak.ts references acme-internal, which apps/cli does not declare",
+			"packages/acme/src/inner.ts references acme-internal, which packages/acme does not declare",
+			"scripts/leak.ts references acme-internal, which the root manifest does not declare",
+		]);
+	});
+
+	it("reads a declared library, a builtin, its types package and generator templates as clean", () => {
+		const cli = JSON.stringify({
+			name: "@sandbox-benchmarks/cli",
+			dependencies: { arktype: "catalog:", "@types/acme-types": "catalog:" },
+		});
+		const source = [
+			from("arktype"),
+			from("fs"),
+			from("bun"),
+			from("node:path"),
+			`/// <reference types=${q}acme-types${q} />`,
+			`const printed = \`import { x } from ${q}\${spec.name}${q};\`;`,
+		].join("\n");
+		expect(
+			vendorSeamViolations(
+				fixture({ "apps/cli/package.json": cli, "apps/cli/src/lib/ok.ts": source }),
+			),
+		).toEqual([]);
+		// The types package satisfies only a `types` directive, never a runtime import.
+		expect(
+			vendorSeamViolations(
+				fixture({ "apps/cli/package.json": cli, "apps/cli/src/lib/ok.ts": from("acme-types") }),
+			),
+		).toEqual(["apps/cli/src/lib/ok.ts references acme-types, which apps/cli does not declare"]);
+	});
+
+	it("catches a path into node_modules, relative or absolute", () => {
+		expect(
+			vendorSeamViolations(
+				fixture({
+					"apps/cli/src/lib/relative.ts": from("../../../../node_modules/acme-sdk/index.js"),
+					"apps/cli/src/lib/absolute.ts": `const m = await import(${q}/repo/node_modules/acme-sdk/dist/index.js${q});`,
+					"apps/cli/src/lib/directive.ts": `/// <reference path=${q}../../../../node_modules/acme-sdk/index.d.ts${q} />`,
+				}),
+			),
+		).toEqual([
+			"apps/cli/src/lib/absolute.ts reaches into node_modules by path /repo/node_modules/acme-sdk/dist/index.js",
+			"apps/cli/src/lib/directive.ts reaches into node_modules by path ../../../../node_modules/acme-sdk/index.d.ts",
+			"apps/cli/src/lib/relative.ts reaches into node_modules by path ../../../../node_modules/acme-sdk/index.js",
+		]);
+	});
+
+	it("catches a third-party library pinned outside the catalogs by a non-provider member", () => {
+		const cli = JSON.stringify({
+			name: "@sandbox-benchmarks/cli",
+			dependencies: { "acme-internal": "1.0.0", "@sandbox-benchmarks/drivers": "workspace:*" },
+		});
+		expect(
+			vendorSeamViolations(
+				fixture({
+					"apps/cli/package.json": cli,
+					"apps/cli/src/lib/client.ts": from("acme-internal"),
+				}),
+			),
+		).toEqual([
+			"apps/cli pins acme-internal outside the catalogs; a third-party library is taken from the root catalogs",
+		]);
 	});
 
 	it("catches a vendor library declared outside a provider package", () => {
@@ -258,6 +336,8 @@ describe("moduleSpecifiers", () => {
 			`export { y } from ${q}b/c${q};`,
 			`const z = await import(\`d\`);`,
 			`const w = require(${q}@e/f/g${q});`,
+			`const v = import.meta.resolve(${q}h${q});`,
+			`/// <reference types=${q}i${q} />`,
 			from("./local"),
 			from("node:fs"),
 		].join("\n");
@@ -266,6 +346,8 @@ describe("moduleSpecifiers", () => {
 			"a",
 			"b",
 			"d",
+			"h",
+			"i",
 		]);
 	});
 });

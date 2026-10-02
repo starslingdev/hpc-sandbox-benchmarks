@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { CheckoutStep } from "./lib/workflow-hardening.ts";
 import {
 	CI_LINT_WORKFLOW,
+	CLI_SETUP_ACTIONS,
 	CREDENTIALED_CHECKOUTS,
 	checkCiLintGate,
 	checkoutSteps,
@@ -643,7 +644,8 @@ docker buildx inspect --bootstrap`,
 				"timeout-minutes": 5,
 				steps: [
 					{ uses: "./.github/actions/setup-toolchain", with: { buildx } },
-					...(tama ? [{ uses: "./.github/actions/setup-tama" }] : []),
+					// Every vendor CLI's generated setup step, so a scaffolded CLI is covered too.
+					...(tama ? CLI_SETUP_ACTIONS.map((uses) => ({ uses })) : []),
 					{ run },
 					{ uses: "./.github/actions/release-summary", if: summaryIf },
 				],

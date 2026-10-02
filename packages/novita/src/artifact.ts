@@ -10,15 +10,15 @@
 // templates straight from the digest-pinned base; the e2b variant Dockerfile's only deltas
 // (validate-base and OCI labels) do not ride along, which is acceptable because the template still
 // provably derives from the same validated bytes. The template lands in Novita's namespace, which
-// is why it reuses the version-scoped artifact name.
+// is why it reuses the version-scoped artifact name. The build itself is the shared E2B-protocol
+// builder; Novita states its regional domain and the phoromatic mask step.
 
 import { createRequire } from "node:module";
-import type { EnvOf } from "@sandbox-benchmarks/driver";
-import { defineArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
+import { e2bProtocolArtifactBuilder } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
 import { NOVITA_DOMAIN } from "./vendor.ts";
 
 /** The SDK surface the builder translates onto. */
-type NovitaTemplateSdk = Pick<typeof import("novita-sandbox"), "Template">;
+export type NovitaTemplateSdk = Pick<typeof import("novita-sandbox"), "Template">;
 
 /**
  * Mask the PTS phoromatic units at template-build time, mirroring the base image's own mask
@@ -38,27 +38,12 @@ const loadSdk = (): NovitaTemplateSdk =>
 	createRequire(import.meta.url)("novita-sandbox") as NovitaTemplateSdk;
 
 /** The Novita builder over an SDK loader; the default export binds the real SDK lazily. */
-export function novitaArtifactBuilder(sdk: () => NovitaTemplateSdk = loadSdk) {
-	return defineArtifactBuilder<"novita", EnvOf<"novita">>("novita", async (request) => {
-		const { name, base, spec, env, log } = request;
-		const { Template } = sdk();
-		log(`novita Template.build ${name} via ${NOVITA_DOMAIN} (base ${base.digestRef})`);
+export const novitaArtifactBuilder = (sdk: () => NovitaTemplateSdk = loadSdk) =>
+	e2bProtocolArtifactBuilder("novita", sdk, {
+		apiKey: (env) => env.NOVITA_API_KEY,
+		domain: NOVITA_DOMAIN,
 		// Build steps run as the template's default user; /etc needs root.
-		const template = Template()
-			.fromImage(base.digestRef)
-			.runCmd(NOVITA_PHOROMATIC_MASK, { user: "root" });
-		request.signal.throwIfAborted();
-		const info = await Template.build(template, name, {
-			apiKey: env.NOVITA_API_KEY,
-			domain: NOVITA_DOMAIN,
-			cpuCount: spec.vcpus,
-			memoryMB: spec.memoryGb * 1024,
-			onBuildLogs: (entry) => log(String(entry)),
-		});
-		log(`novita template built: ${info.templateId} (build ${info.buildId})`);
-		// Template names are replaced in place by the control plane.
-		return { ref: name, replaced: "atomic" };
+		steps: (template) => template.runCmd(NOVITA_PHOROMATIC_MASK, { user: "root" }),
 	});
-}
 
 export default novitaArtifactBuilder();

@@ -10,7 +10,7 @@ import {
 	PROVIDER_PRE_AUTH_CONTRACTS,
 	PROVIDER_PRE_AUTH_POLICIES,
 } from "../src/provider-meta.ts";
-import { baseImageUse, provenanceConstant, providerPackage } from "../src/providers.ts";
+import { baseImageUse, provenanceConstant, providerPackage, vendorClis } from "../src/providers.ts";
 import {
 	artifactBuilderSource,
 	assertArtifactBuilders,
@@ -25,6 +25,7 @@ import {
 	renderCiSecretTable,
 	renderCiVariableTable,
 	renderCliSetupSteps,
+	renderCliSmokePaths,
 	renderDotenvValue,
 	renderDriversIndex,
 	renderDriversPackage,
@@ -257,6 +258,7 @@ describe("provider wiring projections", () => {
 			return typeof source === "object" && "cli" in source ? [{ id, cli: source.cli }] : [];
 		});
 		expect(clis.length).toBeGreaterThan(0);
+		expect(vendorClis().map(({ cli }) => cli)).toEqual([...new Set(clis.map(({ cli }) => cli))]);
 		for (const { id, cli } of clis)
 			for (const { file, job, lane } of lanes) {
 				const matches = workflowJobSteps(file, job).filter(
@@ -266,6 +268,25 @@ describe("provider wiring projections", () => {
 				expect(renderCliSetupSteps(lane)).toContain(`if: ${matches[0]?.if}`);
 				expect(String(matches[0]?.if)).toContain(`'${id}'`);
 			}
+	});
+
+	test("runs every pinned vendor CLI's setup action in the toolchain-actions smoke", () => {
+		const file = ".github/workflows/toolchain-actions-smoke.yml";
+		const document = record(Bun.YAML.parse(readFileSync(resolve(REPO_ROOT, file), "utf8")), file);
+		const paths = record(record(document.on, "on").pull_request, "pull_request").paths;
+		const steps = workflowJobSteps(file, "smoke");
+		for (const { cli } of vendorClis()) {
+			expect(paths).toContain(`.github/actions/setup-${cli}/**`);
+			expect(steps.filter((step) => step.uses === `./.github/actions/setup-${cli}`)).toHaveLength(
+				1,
+			);
+			expect(steps.some((step) => step.run === `command -v ${cli}`)).toBe(true);
+		}
+		expect(renderCliSmokePaths()).toBe(
+			vendorClis()
+				.map(({ cli }) => `      - ".github/actions/setup-${cli}/**"`)
+				.join("\n"),
+		);
 	});
 
 	test("keeps retired pre-auth actions managed and unconditionally disabled", () => {

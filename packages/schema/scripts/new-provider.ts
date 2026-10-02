@@ -207,7 +207,7 @@ export function planProvider(
 	files.set(`${directory}/src/index.ts`, entry(spec, n));
 	files.set(`${directory}/src/vendor.ts`, adapter(spec, n, cli));
 	files.set(`${directory}/src/index.test.ts`, tests(spec, n));
-	if (spec.baked) files.set(`${directory}/src/artifact.ts`, artifactBuilder(n));
+	if (spec.baked) files.set(`${directory}/src/artifact.ts`, artifactBuilder(spec, n));
 
 	const created = new Map([...files].filter(([file]) => !edited.has(file)));
 	for (const [file, content] of format(created)) files.set(file, content);
@@ -598,10 +598,11 @@ test("a session runs and is destroyed through the module's table", async () => {
 		: sdk
 			? `
 /**
- * A whole-account stand-in for the SDK surface ${n.camel}Vendor translates: its sandboxes become
- * ready within a few reads and answer \`sh -c 'exit 7'\` with exit 7, as the port contract assumes.
+ * A whole-account stand-in for the SDK surface ${n.camel}Vendor translates, stated over the account:
+ * \`add\` allocates a sandbox, \`row\` is the one an id names (else the account's \`NotFound\`), and
+ * \`run\` executes in its guest (\`sh -c 'exit 7'\` exits 7, as the port contract assumes).
  */
-const stub = (): ${n.pascal}Sdk => unfilled("an in-memory stand-in for the SDK");
+const stub = () => sdkStub<${n.pascal}Sdk>(unfilled("the SDK's surface over the account")).sdk;
 `
 			: `
 /**
@@ -612,16 +613,19 @@ const stub = (): ${n.pascal}Sdk => unfilled("an in-memory stand-in for the SDK")
 const stub = () => restStub(unfilled("the API's routes")).fetch;
 `;
 	const make = e2b ? `e2bProtocolStub<${n.pascal}Sdk>().sdk` : "stub()";
+	const bakes = e2b && spec.baked;
 	const testing = e2b
-		? "e2bProtocolStub, testContext, vendorContract, vendorDriver"
+		? `e2bProtocolStub, ${bakes ? "ociBuildRequest, " : ""}testContext, vendorContract, vendorDriver`
 		: sdk
-			? "testContext, vendorContract, vendorDriver"
+			? "sdkStub, testContext, vendorContract, vendorDriver"
 			: "restStub, testContext, vendorContract, vendorDriver";
 	const imports = [
 		'import { expect, test } from "bun:test";',
 		'import type { CreateRequest } from "@sandbox-benchmarks/driver";',
 		e2b ? "" : 'import { unfilled } from "@sandbox-benchmarks/driver/vendor";',
 		`import { ${testing} } from "@sandbox-benchmarks/driver/vendor/testing";`,
+		bakes ? `import type { ${n.pascal}TemplateSdk } from "./artifact.ts";` : "",
+		bakes ? `import { ${n.camel}ArtifactBuilder } from "./artifact.ts";` : "",
 		`import ${n.camel} from "./index.ts";`,
 		spec.kind === "sdk" ? `import type { ${n.pascal}Sdk } from "./vendor.ts";` : "",
 		`import { ${n.camel}Vendor } from "./vendor.ts";`,
@@ -647,10 +651,42 @@ test("a session runs${e2b ? ", round-trips a file" : ""} and is destroyed, leavi
 	await session.destroy();
 	expect((await driver.inventory?.list())?.owned).toEqual([]);
 });
-`;
+${bakes ? builderTest(n) : ""}`;
 }
 
-function artifactBuilder(n: Names): string {
+/** The baked E2B-protocol provider's builder, run over the shared stand-in's \`Template\`. */
+const builderTest = (n: Names) => `
+test("the artifact builder bakes the pinned base into the template the driver boots", async () => {
+	const stub = e2bProtocolStub<${n.pascal}TemplateSdk>();
+	const build = ociBuildRequest(${JSON.stringify(n.id)});
+	expect(await ${n.camel}ArtifactBuilder(() => stub.sdk).build(build)).toEqual({ ref: build.name, replaced: "atomic" });
+	expect(stub.calls.find((call) => call.name === "Template.build")?.options).toMatchObject({
+		steps: [["fromImage", build.base.digestRef]],
+		apiKey: build.env.${n.credential},
+	});
+});
+`;
+
+function artifactBuilder(spec: NewProvider, n: Names): string {
+	if (spec.protocol === "e2b") {
+		const sdk = spec.sdk?.name ?? "";
+		return `// The ${n.id} artifact builder (\`./artifact\`): the shared E2B-protocol template build over the
+// ${sdk} SDK, loaded only when a build runs. It bakes the digest-pinned toolchain base into the
+// template the driver boots, under the release lane's name. State a regional \`domain\` or build
+// \`steps\` here where ${n.id} needs them (\`E2bProtocolArtifactOptions\`).
+
+import { e2bProtocolArtifactBuilder } from "@sandbox-benchmarks/driver/vendor/e2b-protocol";
+
+/** The SDK's template-build surface; tests pass the shared stand-in. */
+export type ${n.pascal}TemplateSdk = Pick<typeof import("${sdk}"), "Template">;
+
+export const ${n.camel}ArtifactBuilder = (
+	sdk: () => ${n.pascal}TemplateSdk | Promise<${n.pascal}TemplateSdk> = () => import("${sdk}"),
+) => e2bProtocolArtifactBuilder(${JSON.stringify(n.id)}, sdk, { apiKey: (env) => env.${n.credential} });
+
+export default ${n.camel}ArtifactBuilder();
+`;
+	}
 	return `// The ${n.id} artifact builder (\`./artifact\`): bakes the digest-pinned toolchain base into the
 // artifact the driver boots, and returns exactly the ref it boots.
 

@@ -2,12 +2,13 @@
 // the vendor port real) and the port contract every adapter must satisfy (ADR-0023 §1, ADR-0008's
 // kit tier). The kit's lifecycle behaviour is tested once against memoryVendor; provider packages
 // test only their translation, then run vendorContract against their adapter over a stubbed
-// transport: the shared e2bProtocolStub for an E2B-protocol SDK, a restStub route table for a REST
-// API.
+// transport: the shared e2bProtocolStub for an E2B-protocol SDK, an sdkStub surface for another
+// SDK, a restStub route table for a REST API.
 
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { DriverContext, ProviderId, SandboxDriver } from "@sandbox-benchmarks/driver";
+import type { DriverContext, EnvOf, ProviderId, SandboxDriver } from "@sandbox-benchmarks/driver";
+import type { OciArtifactBuildRequest } from "@sandbox-benchmarks/driver/artifact";
 import { parseDriverEnv, sensitiveEnvValuesFor } from "@sandbox-benchmarks/driver/env";
 import type {
 	MarkerSpelling,
@@ -75,6 +76,31 @@ export function testContext<P extends ProviderId>(id: P): DriverContext<P> {
 			: { kind: artifact.kind, ref: `${id}-test-${artifact.kind}` };
 	// The registry entry is the same one `DriverContext<P>` maps statically; the cast records it.
 	return { env: parseDriverEnv(id, ambient), artifact, resolvedArtifact } as DriverContext<P>;
+}
+
+/**
+ * An OCI build request for provider `id`'s artifact builder in a test: its {@link testContext}
+ * credentials, a digest-pinned base and a 4 vCPU / 8 GiB target, with `overrides` applied.
+ */
+export function ociBuildRequest<P extends ProviderId>(
+	id: P,
+	overrides: Partial<OciArtifactBuildRequest<EnvOf<P>>> = {},
+): OciArtifactBuildRequest<EnvOf<P>> {
+	return {
+		bakes: "oci",
+		name: `${id}-toolchain-test`,
+		base: {
+			digestRef: `ghcr.io/starslingdev/sandbox-benchmarks-toolchain@sha256:${"c".repeat(64)}`,
+		},
+		spec: { vcpus: 4, memoryGb: 8 },
+		env: testContext(id).env,
+		replace: "allowed",
+		imagesDir: "/unused",
+		dockerConfig: "/unused",
+		log: () => {},
+		signal: new AbortController().signal,
+		...overrides,
+	};
 }
 
 export interface MemoryRow {
@@ -536,8 +562,11 @@ export interface E2bProtocolStubRow {
 }
 
 /**
- * A whole-account stand-in for an E2B-protocol SDK's statics (`Sandbox.create/getInfo/kill/list`
- * and the typed errors), shared by every package whose adapter is `e2bProtocolVendor`. Sandboxes
+ * A whole-account stand-in for an E2B-protocol SDK's statics (`Sandbox.create/getInfo/kill/list`,
+ * the typed errors, and `Template` for `e2bProtocolArtifactBuilder`), shared by every package whose
+ * adapter is `e2bProtocolVendor`. A template records its steps (`["fromImage", image]`,
+ * `["runCmd", command, options]`); `Template.build` records them with its name and options as a
+ * `Template.build` call, and streams one build log line. Sandboxes
  * are running once created, answer `df` with `diskGb`, `sh -c 'exit N'` with exit N and any other
  * foreground command with `out`/`err`; a background `echo X > path` writes the file. Every call
  * records its options, so a test can see the channel a credential rode. `Sdk` is the package's own
@@ -669,14 +698,129 @@ export function e2bProtocolStub<Sdk>(options: E2bProtocolStubOptions = {}) {
 			};
 		},
 	};
+	interface StubTemplate {
+		readonly steps: readonly unknown[][];
+		fromImage(image: string): StubTemplate;
+		runCmd(command: string, runOptions?: unknown): StubTemplate;
+	}
+	const template = (steps: readonly unknown[][]): StubTemplate => ({
+		steps,
+		fromImage: (image) => template([...steps, ["fromImage", image]]),
+		runCmd: (command, runOptions) => template([...steps, ["runCmd", command, runOptions]]),
+	});
+	let builds = 0;
+	const Template = Object.assign(() => template([]), {
+		build: async (
+			built: StubTemplate,
+			name: string,
+			buildOptions: { readonly onBuildLogs?: (entry: unknown) => void },
+		) => {
+			calls.push({
+				name: "Template.build",
+				options: { name, steps: built.steps, ...buildOptions },
+			});
+			buildOptions.onBuildLogs?.(`building ${name}`);
+			builds += 1;
+			return { templateId: `tpl-${name}`, buildId: `build-${builds}` };
+		},
+	});
 	return {
 		/** The stand-in, typed as the package's SDK it satisfies structurally. */
-		sdk: { Sandbox, ...errors } as unknown as Sdk,
+		sdk: { Sandbox, Template, ...errors } as unknown as Sdk,
 		rows,
 		calls,
 		/** Place a sandbox directly in the account (another tenant's, or one in a given state). */
 		allocate,
 		count: (name: string) => calls.filter((call) => call.name === name).length,
+	};
+}
+
+/** The sandboxes of a stand-in account ({@link restStub}, {@link sdkStub}), each with its own guest. */
+function stubAccount<Row extends { readonly id: string }>(
+	options: Pick<RestStubOptions<Row>, "newId" | "diskGb">,
+) {
+	const rows = new Map<string, Row>();
+	const guests = new Map<string, ReturnType<ReturnType<typeof guestOf>>>();
+	const guest = guestOf(options);
+	let next = 0;
+	const add = (fields: Omit<Row, "id">): Row => {
+		next += 1;
+		const row = { ...fields, id: options.newId?.(next) ?? `sb-${next}` } as Row;
+		rows.set(row.id, row);
+		guests.set(row.id, guest());
+		return row;
+	};
+	/** The guest of sandbox `id` (a fresh one for a row placed in `rows` directly). */
+	const guestFor = (id: string) => {
+		const found = guests.get(id) ?? guest();
+		guests.set(id, found);
+		return found;
+	};
+	return { rows, add, guestFor };
+}
+
+/** The stand-in SDK's own typed not-found, for a test that passes no SDK class. */
+class SdkNotFound extends Error {
+	constructor(id: string) {
+		super(`sandbox ${id} not found`);
+	}
+}
+
+/** The account a {@link sdkStub} surface translates onto. */
+export interface SdkAccount<Row extends { readonly id: string }> {
+	/** The account's sandboxes by id. */
+	readonly rows: Map<string, Row>;
+	/** Allocate a sandbox under the next id, with its own guest. */
+	add(fields: Omit<Row, "id">): Row;
+	/** The sandbox `id` names; throws the account's not-found for one it lacks. */
+	row(id: string): Row;
+	/** Run `command` in sandbox `id`'s guest: exit codes, the kit's files fallback, `df`. */
+	run(id: string, command: string): { exitCode: number; stdout: string; stderr: string };
+	/** Sandbox `id`'s files, which its guest reads and writes. */
+	files(id: string): Map<string, string>;
+	/** The class `row` throws for an unknown id, unless `notFound` says otherwise. */
+	readonly NotFound: new (
+		id: string,
+	) => Error;
+}
+
+export interface SdkStubOptions<Row> extends Pick<RestStubOptions<Row>, "newId" | "diskGb"> {
+	/** The SDK's own not-found error for `id`, where the test exercises it. */
+	readonly notFound?: (id: string) => unknown;
+}
+
+/**
+ * A whole-account stand-in for a vendor SDK, parallel to {@link restStub}: `surface` states the
+ * SDK's shape over the account's sandboxes (`add`, `row`, `rows`), each a row with its own guest
+ * shell (`run`, `files`) as in {@link memoryVendor}, so the kit's exec, files fallback and disk
+ * proof run for real. `Sdk` is the package's own SDK type, which the surface satisfies
+ * structurally.
+ */
+export function sdkStub<Sdk, Row extends { readonly id: string } = { readonly id: string }>(
+	surface: (account: SdkAccount<Row>) => unknown,
+	options: SdkStubOptions<Row> = {},
+) {
+	const { rows, add, guestFor } = stubAccount<Row>(options);
+	const row = (id: string): Row => {
+		const found = rows.get(id);
+		if (found !== undefined) return found;
+		throw options.notFound?.(id) ?? new SdkNotFound(id);
+	};
+	const account: SdkAccount<Row> = {
+		rows,
+		add,
+		row,
+		run: (id, command) => {
+			const { code, stdout, stderr } = guestFor(row(id).id).run(command);
+			return { exitCode: code, stdout, stderr };
+		},
+		files: (id) => guestFor(row(id).id).files,
+		NotFound: SdkNotFound,
+	};
+	return {
+		/** The stand-in, typed as the package's SDK it satisfies structurally. */
+		sdk: surface(account) as Sdk,
+		...account,
 	};
 }
 
@@ -729,18 +873,8 @@ export function restStub<Row extends { readonly id: string }>(
 	routes: Readonly<Record<string, RestRoute<Row>>>,
 	options: RestStubOptions<Row> = {},
 ) {
-	const rows = new Map<string, Row>();
-	const guests = new Map<string, ReturnType<ReturnType<typeof guestOf>>>();
-	const guest = guestOf(options);
+	const { rows, add, guestFor } = stubAccount<Row>(options);
 	const calls: Array<{ method: string; path: string; headers: Headers; body: unknown }> = [];
-	let next = 0;
-	const add = (fields: Omit<Row, "id">): Row => {
-		next += 1;
-		const row = { ...fields, id: options.newId?.(next) ?? `sb-${next}` } as Row;
-		rows.set(row.id, row);
-		guests.set(row.id, guest());
-		return row;
-	};
 	const table = Object.entries(routes).map(([route, handler]) => {
 		const [method, path = ""] = route.split(" ");
 		return { method, segments: path.split("/"), handler };
@@ -795,7 +929,7 @@ export function restStub<Row extends { readonly id: string }>(
 			return options.missing?.(id) ?? Response.json({ error: "not found" }, { status: 404 });
 		const sandbox = () => {
 			if (row === undefined) throw new Error(`restStub: ${method} ${url.pathname} names no :id`);
-			return { row, guest: guests.get(row.id) ?? guest() };
+			return { row, guest: guestFor(row.id) };
 		};
 		return answer(
 			await found.handler({

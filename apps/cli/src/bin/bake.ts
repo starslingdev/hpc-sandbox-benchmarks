@@ -161,6 +161,20 @@ export function candidateBuildResults(argv: string[]): Partial<Record<BakedProvi
 	return results;
 }
 
+/**
+ * The report one bake writes: the candidate refs a later promote pins and every provider's outcome,
+ * under the one provider a matrix cell bakes, so the report attributes its candidates itself
+ * whatever its file is named. A bake of several providers (a local run) names none, so a promote
+ * takes no candidate from it.
+ */
+export function bakeReport(
+	scope: readonly ProviderId[] | undefined,
+	candidate: { readonly image: string; readonly artifacts: Readonly<Record<string, string>> },
+	reports: readonly BakeReport[],
+) {
+	return { ...(scope?.length === 1 && { provider: scope[0] }), candidate, reports };
+}
+
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
 
@@ -310,11 +324,8 @@ if (import.meta.main) {
 		...(run.value && run.value.checks.length > 0 ? { checks: run.value.checks } : {}),
 	}));
 
-	writeReport({
-		// `artifacts` is what a later promote pins: the ref each candidate build returned.
-		candidate: { image: pinnedBaseImage, artifacts: buildResults },
-		reports,
-	});
+	// `artifacts` is what a later promote pins: the ref each candidate build returned.
+	writeReport(bakeReport(only, { image: pinnedBaseImage, artifacts: buildResults }, reports));
 
 	if (anyFailed(runs)) await exitAfterSandboxCleanup(1);
 

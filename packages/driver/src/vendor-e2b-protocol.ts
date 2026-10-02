@@ -1,11 +1,13 @@
-// @sandbox-benchmarks/driver/vendor/e2b-protocol — one vendor adapter for every SDK of the E2B
-// protocol (E2B's own SDK, and the E2B-compatible SDKs other vendors publish). It imports no SDK:
-// each provider package injects its own library, which it alone imports (ADR-0023 §2), and states
-// only how its vendor differs.
+// @sandbox-benchmarks/driver/vendor/e2b-protocol — one vendor adapter and one template builder for
+// every SDK of the E2B protocol (E2B's own SDK, and the E2B-compatible SDKs other vendors publish).
+// It imports no SDK: each provider package injects its own library, which it alone imports
+// (ADR-0023 §2), and states only how its vendor differs.
 //
 // Every command and file call runs as root in the foreground unless it is the durable launch.
 
-import type { ExecOptions } from "@sandbox-benchmarks/driver";
+import type { EnvOf, ExecOptions, ProviderId } from "@sandbox-benchmarks/driver";
+import type { OciArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
+import { defineArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
 import type { Phase, Vendor, VendorPage, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import { instanceOfAny, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
@@ -250,4 +252,67 @@ export function e2bProtocolVendor<Native extends E2bProtocolSandbox>(
 			},
 		},
 	};
+}
+
+/** A template build's options, as the protocol's `Template.build` takes them. */
+export interface E2bProtocolBuildOptions {
+	readonly apiKey: string;
+	readonly domain?: string;
+	readonly cpuCount: number;
+	readonly memoryMB: number;
+	readonly onBuildLogs: (entry: unknown) => void;
+}
+
+/** The SDK's template-build surface, structurally: `Template().fromImage(…)` and `Template.build`. */
+export interface E2bProtocolTemplateSdk<Builder> {
+	readonly Template: {
+		(): { fromImage(image: string): Builder };
+		build(
+			template: NoInfer<Builder>,
+			name: string,
+			options: E2bProtocolBuildOptions,
+		): Promise<{ readonly templateId: string; readonly buildId: string }>;
+	};
+}
+
+/** What one vendor of the protocol states about its template build. */
+export interface E2bProtocolArtifactOptions<P extends ProviderId, Builder> {
+	/** The account key from the parsed inputs; it rides the SDK's `apiKey` channel, never headers. */
+	readonly apiKey: (env: EnvOf<P>) => string;
+	/** The vendor's control-plane domain that serves the build, where it is not the SDK's default. */
+	readonly domain?: string;
+	/** Build steps after `fromImage`, where the vendor needs them (they run as the template's user). */
+	readonly steps?: (template: Builder) => Builder;
+}
+
+/**
+ * The OCI baker of an E2B-protocol provider: one template from the digest-pinned toolchain base,
+ * sized to the target, built under the release lane's name by the SDK's `Template.build` (which
+ * waits for the build). The control plane publishes over a name in place, so the predecessor serves
+ * until the new build lands. `sdk` loads the provider's SDK when a build runs.
+ */
+export function e2bProtocolArtifactBuilder<P extends ProviderId, Builder>(
+	provider: P,
+	sdk: () => E2bProtocolTemplateSdk<Builder> | Promise<E2bProtocolTemplateSdk<Builder>>,
+	options: E2bProtocolArtifactOptions<P, Builder>,
+): OciArtifactBuilder<P> {
+	const { domain, steps = (template: Builder) => template } = options;
+	return defineArtifactBuilder<P, EnvOf<P>>(provider, async (request) => {
+		const { name, base, spec, env, log } = request;
+		const { Template } = await sdk();
+		log(
+			`${provider} Template.build ${name}${domain === undefined ? "" : ` via ${domain}`} (base ${base.digestRef})`,
+		);
+		const template = steps(Template().fromImage(base.digestRef));
+		request.signal.throwIfAborted();
+		const info = await Template.build(template, name, {
+			apiKey: options.apiKey(env),
+			...(domain !== undefined && { domain }),
+			cpuCount: spec.vcpus,
+			memoryMB: spec.memoryGb * 1024,
+			onBuildLogs: (entry) => log(String(entry)),
+		});
+		log(`${provider} template built: ${info.templateId} (build ${info.buildId})`);
+		return { ref: name, replaced: "atomic" };
+	});
 }

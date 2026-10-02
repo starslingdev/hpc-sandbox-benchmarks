@@ -527,7 +527,7 @@ export async function drainPages<Raw>(
 }
 
 /** The `df` disk-capacity proof for a disk axis the create request cannot control. */
-export async function verifyDisk(
+async function verifyDisk(
 	provider: ProviderId,
 	requestedGb: number,
 	exec: (command: string) => Promise<ExecOutcome>,

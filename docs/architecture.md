@@ -65,11 +65,11 @@ docs/       methodology, ADRs, CI & secrets
 | `@sandbox-benchmarks/driver`     | schema                                          | `arktype`                           |
 | `@sandbox-benchmarks/drivers`    | driver, provider workspace packages              | — |
 | `@sandbox-benchmarks/<provider>` | driver (schema where needed)                    | `arktype`, that provider's vendor libraries (`catalog:vendors`) |
-| `@sandbox-benchmarks/templates`  | schema                                          | —                                   |
+| `@sandbox-benchmarks/templates`  | schema                                          | `arktype`                           |
 | `@sandbox-benchmarks/harness`    | driver, schema                                  | —                                   |
-| `@sandbox-benchmarks/figures`    | schema                                          | `arktype`, fonts (`@fontsource/*`)  |
+| `@sandbox-benchmarks/figures`    | schema                                          | `arktype`, fonts (`@fontsource/*`, `catalog:`) |
 | `@sandbox-benchmarks/results`    | schema, figures                                 | `arktype`, XML tooling (`catalog:xml`) |
-| `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, modal (named subpaths only), templates, harness, results, figures | `dotenv`, `@actions/core`, `arktype` — no vendor library |
+| `@sandbox-benchmarks/cli` (app)  | schema, driver, drivers, modal (named subpaths only), templates, harness, results, figures | `@actions/core`, `@actions/artifact`, `arktype` — no vendor library |
 | `@repo/tsconfig`            | —                                               | —                                   |
 | `@repo/repo-checks`         | —                                               | —                                   |
 
@@ -101,9 +101,13 @@ with a single implementation, which the CLI imports by name:
 - `@sandbox-benchmarks/modal/cleanup-observation` — read-only clearance of the Modal benchmark App for
   retained-allocation recovery.
 
-`tooling/repo-checks/src/vendor-seam.test.ts` enforces this over all workspace source (`apps/`,
-`packages/`, `tooling/`, `scripts/`), counting type-only imports, dynamic imports and `require`
-specifiers; adding a named subpath means editing its allowlist and saying why in the ADR.
+Every member takes third-party libraries only from the root catalogs (no inline version pins), and
+every file references a third-party library only when its own member (the root manifest, for
+`scripts/`) declares it, so a vendor SDK's transitive dependency cannot be reached through hoisting;
+no file reaches into `node_modules` by path. `tooling/repo-checks/src/vendor-seam.test.ts` enforces
+this over all workspace source (`apps/`, `packages/`, `tooling/`, `scripts/`), counting type-only
+imports, dynamic imports, `import.meta.resolve`, `require` specifiers and triple-slash `types`/`path`
+references; adding a named subpath means editing its allowlist and saying why in the ADR.
 
 ### Driver authoring (`@sandbox-benchmarks/driver/vendor`)
 
@@ -147,8 +151,8 @@ only on 429), `httpClassifiers` (the REST reading of a status as `refused`, `tra
   owned/foreign partition by the kit-minted `benchmark-` ownership marker, where a `stopped` foreign
   record holds no compute and is not counted while a `stopped` owned one is a leftover, draining pages and
   failing closed on a repeated, omitted or runaway cursor, or a sandbox listed twice: 100 pages
-  unless the module declares a larger `pageCap`, as Runloop and Namespace do for listings that keep
-  terminal history; the whole listing shares one `inventoryTimeoutMs` budget, 5 minutes unless the
+  unless the module declares a larger `pageCap`, as Runloop, Namespace and run.cloud do for listings
+  that keep terminal history, and Boat and Freestyle do for accounts larger than 100 pages; the whole listing shares one `inventoryTimeoutMs` budget, 5 minutes unless the
   module declares another, as Modal does for its one-minute enumeration);
 - ambiguous-create recovery — by marker lookup (`find`, or, where the module declares
   `recovery.lookup`, a `get` of the marker's spelling: the create named the sandbox by it),
@@ -201,12 +205,18 @@ adapter over the caller's App and image, whose teardown also waits until the env
 listing the sandbox. E2B and Novita speak one protocol through different SDKs, so both adapters are
 `@sandbox-benchmarks/driver/vendor/e2b-protocol`'s `e2bProtocolVendor` over the package's own
 injected SDK, stating only the vendor's differences (its domain, whether its SDK takes a signal,
-its create and command timeouts); the shared module imports no SDK, so the vendor seam holds.
+its create and command timeouts); the shared module imports no SDK, so the vendor seam holds. The
+same subpath's `e2bProtocolArtifactBuilder` is an E2B-protocol OCI baker (`Template().fromImage` of
+the digest-pinned base, then `Template.build` under the release lane's name): Novita states its
+regional domain and its phoromatic-mask build step; E2B keeps its own CLI-based Dockerfile build.
 
 `@sandbox-benchmarks/driver/vendor/testing` holds `memoryVendor` (an in-memory account with a fault
 script, a guest shell that answers the kit's commands, and leak detectors), `vendorContract`
 (the port contract every adapter passes, read as the module's kit calls it), `vendorDriver` and
-`kitPort` (an adapter as the kit sees it, for translation tests). Kit behaviour is tested once against `memoryVendor`,
+`kitPort` (an adapter as the kit sees it, for translation tests), and the transport stand-ins a
+provider test runs over: `e2bProtocolStub` (an E2B-protocol SDK, including its `Template` build),
+`sdkStub` (another SDK's surface stated over an account of rows with guest shells), `restStub` (a
+REST API as a route table) and `ociBuildRequest` (an artifact builder's request). Kit behaviour is tested once against `memoryVendor`,
 including ADR-0008's kit tier, which admits a module built over it.
 
 `@sandbox-benchmarks/driver/artifact` (arktype-free) is the release lane's build seam. Its request
@@ -263,11 +273,13 @@ Everything else that names providers is derived from that registry rather than r
   setup action pinning an exact version) and `./artifact` exactness (an OCI baker exports one; no other
   provider does; a native-snapshot baker's driver exports `snapshotBuild`), and writes the registry
   assembly, the driver and artifact-builder loaders, each package's provenance, the managed workflow,
-  env and docs regions (including one setup step per pinned vendor CLI) and the reviewed registry
+  env and docs regions (including one setup step per pinned vendor CLI, in every lane that boots
+  its providers and in the toolchain-actions smoke with its PR paths) and the reviewed registry
   snapshot. `bun run check:providers` is its drift check;
 - one scaffolder, `bun run new-provider`, which writes everything mechanical about a new provider
   (its `PROVIDER_IDS` entry, catalog pin, metadata module, package, adapter skeleton, tests and, for a
-  CLI, its setup action) and leaves only what the vendor makes true as typed `unfilled(...)` values.
+  CLI, its setup action; a baked E2B-protocol provider's builder is the shared one, final as written)
+  and leaves only what the vendor makes true as typed `unfilled(...)` values.
   `packages/schema/scripts/new-provider.test.ts` is its cost guard (the files it writes, the files an
   author edits, the adapter skeleton's budget, and that generation then needs no other edit);
   `bun run check:new-provider` scaffolds and fills a provider of every kind in a temporary copy of

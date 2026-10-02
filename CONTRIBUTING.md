@@ -54,7 +54,8 @@ A new provider is four steps; everything else is scaffolded or generated.
    [--protocol e2b] [--baked]`. `--sdk` names the vendor's npm SDK at an exact version (`--kind
    sdk`) or the CLI binary and its release (`--kind cli`); `--protocol e2b` binds an E2B-compatible
    SDK to the shared `e2bProtocolVendor`; `--baked` adds the `./artifact` builder for a provider that
-   bakes the OCI toolchain base. It appends the id to `PROVIDER_IDS`, pins the SDK in the root
+   bakes the OCI toolchain base (for `--protocol e2b`, the shared `e2bProtocolArtifactBuilder`, final
+   as written, and a test that runs it). It appends the id to `PROVIDER_IDS`, pins the SDK in the root
    `catalogs.vendors` (an SDK already pinned there is refused: its owning package takes the new
    provider as an isolation variant instead), writes `packages/schema/src/provider-meta/<id>.ts` and
    `packages/<id>/`
@@ -81,13 +82,17 @@ A new provider is four steps; everything else is scaffolded or generated.
    vendor's domain. An SDK, HTTP or CLI provider also fills the stand-in for its transport in
    `src/index.test.ts`, which then runs `vendorContract` and a session through `vendorDriver`: an HTTP
    API's is a `restStub` route table (`"METHOD /path/:id"` to its answer, each sandbox a row with a
-   guest shell), an E2B-protocol test needs nothing (it runs over the shared `e2bProtocolStub`). A baking provider writes its builder in `src/artifact.ts`. Add translation
+   guest shell), an SDK's is an `sdkStub` surface (the SDK's shape stated over the same account's
+   `add`, `row` and `run`), an E2B-protocol test needs nothing (it runs over the shared
+   `e2bProtocolStub`). A provider baking through another vendor's builder writes it in
+   `src/artifact.ts` (an E2B-protocol one states only a domain or build steps there). Add translation
    tests for the vendor's quirks beside the generated ones; kit behaviour is already tested in
    `packages/driver`. Change the generated `src/index.ts` only to tune a trait (`coverage`,
    `execution`, `timing`, `recovery`) away from its default.
 4. **Generate** — `bun run generate-providers` renders the registry index, the driver and
    artifact-builder loaders, provenance, the managed workflow/docs/env regions (smoke dispatch
-   options, workflow input blocks, runner routing, the CLI setup step, `.env.example`, CI
+   options, workflow input blocks, runner routing, the CLI setup steps and their toolchain-actions
+   smoke coverage, `.env.example`, CI
    configuration docs, the privileged-environment checklist) and the registry snapshot
    (`packages/schema/src/__snapshots__/provider-registry.test.ts.snap`). Review that snapshot's diff:
    it records every fact the registry answers for the new provider. The drift gate

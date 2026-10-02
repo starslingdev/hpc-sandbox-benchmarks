@@ -9,7 +9,12 @@ import { RunCloudError } from "@run-cloud/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { FailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
-import { kitPort, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import {
+	kitPort,
+	sdkStub,
+	vendorContract,
+	vendorDriver,
+} from "@sandbox-benchmarks/driver/vendor/testing";
 import runcloud, {
 	RUNCLOUD_CREATE_CEILING_MS,
 	RUNCLOUD_PROVENANCE,
@@ -54,89 +59,81 @@ function runcloudAccount(
 		readonly creates?: Array<RunCloudError | { readonly lost: true; readonly hidden?: boolean }>;
 	} = {},
 ) {
-	const rows = new Map<string, Row>();
 	const hidden = new Set<string>();
 	const calls: Array<{ name: string; input?: unknown }> = [];
-	let next = 0;
-	const allocate = (name: string | null, state = "running", createdAt = next) => {
-		const id = `sb-${++next}`;
-		rows.set(id, {
-			id,
+	const account = sdkStub<RuncloudTransport["sandboxes"], Row>(
+		({ rows, row, run }) => ({
+			create: async (input: CreateSandboxOptions) => {
+				calls.push({ name: "create", input });
+				const outcome = options.creates?.shift();
+				if (outcome instanceof RunCloudError) throw outcome;
+				const id = allocate(input.name ?? null, "building_image");
+				if (outcome?.lost) {
+					if (outcome.hidden) hidden.add(id);
+					throw new TypeError("socket hang up after the vendor accepted the create");
+				}
+				return view(id);
+			},
+			get: async (id: string) => {
+				calls.push({ name: "get", input: id });
+				const found = rows.get(id);
+				if (found) {
+					found.gets += 1;
+					if (found.state === "building_image" && found.gets >= (options.readyAfterGets ?? 1)) {
+						found.state = options.bootsTo?.state ?? "running";
+						if (options.bootsTo?.lastError) found.last_error = options.bootsTo.lastError;
+					}
+					if (found.state === "destroying" && found.gets > (options.removalAfterGets ?? 1))
+						found.state = "destroyed";
+				}
+				return view(id);
+			},
+			destroy: async (id: string) => {
+				calls.push({ name: "destroy", input: id });
+				const refusal = options.destroyErrors?.shift();
+				if (refusal) throw refusal;
+				const found = row(id);
+				if (found.state === "destroyed") throw new RunCloudError(404, "sandbox not found");
+				found.state = "destroying";
+				found.gets = 0;
+			},
+			list: async ({ name }: { name?: string } = {}) => {
+				calls.push({ name: "list", input: name });
+				// A loose server-side filter: the adapter must match the name exactly itself.
+				return [...rows.keys()]
+					.filter((id) => !hidden.has(id) && (rows.get(id)?.name ?? "").startsWith(name ?? ""))
+					.map(view);
+			},
+			exec: async (id: string, command: string) => {
+				calls.push({ name: "exec", input: command });
+				if (rows.get(id)?.state !== "running")
+					throw new RunCloudError(4409, "sandbox is not running");
+				const { exitCode, stdout, stderr } = run(id, command);
+				return { exit_code: exitCode, exitCode, stdout, stderr };
+			},
+		}),
+		{
+			notFound: () => new RunCloudError(404, "sandbox not found"),
+			...(options.diskGb !== undefined && { diskGb: options.diskGb }),
+		},
+	);
+	const { rows } = account;
+	// Creation times follow allocation order (the account never forgets a sandbox, even destroyed).
+	const allocate = (name: string | null, state = "running", createdAt = rows.size) =>
+		account.add({
 			name,
 			state,
 			milliCpu: 4_000,
 			memMb: 8_192,
 			createdAt: new Date(createdAt * 1000).toISOString(),
 			gets: 0,
-		});
-		return id;
-	};
+		}).id;
 	const view = (id: string): Sandbox => {
-		const row = rows.get(id);
-		if (!row) throw new RunCloudError(404, "sandbox not found");
-		const { gets: _, ...sandbox } = row;
+		const { gets: _, ...sandbox } = account.row(id);
 		return sandbox;
 	};
-	const sandboxes = {
-		create: async (input: CreateSandboxOptions) => {
-			calls.push({ name: "create", input });
-			const outcome = options.creates?.shift();
-			if (outcome instanceof RunCloudError) throw outcome;
-			const id = allocate(input.name ?? null, "building_image");
-			if (outcome?.lost) {
-				if (outcome.hidden) hidden.add(id);
-				throw new TypeError("socket hang up after the vendor accepted the create");
-			}
-			return view(id);
-		},
-		get: async (id: string) => {
-			calls.push({ name: "get", input: id });
-			const row = rows.get(id);
-			if (row) {
-				row.gets += 1;
-				if (row.state === "building_image" && row.gets >= (options.readyAfterGets ?? 1)) {
-					row.state = options.bootsTo?.state ?? "running";
-					if (options.bootsTo?.lastError) row.last_error = options.bootsTo.lastError;
-				}
-				if (row.state === "destroying" && row.gets > (options.removalAfterGets ?? 1))
-					row.state = "destroyed";
-			}
-			return view(id);
-		},
-		destroy: async (id: string) => {
-			calls.push({ name: "destroy", input: id });
-			const refusal = options.destroyErrors?.shift();
-			if (refusal) throw refusal;
-			const row = rows.get(id);
-			if (!row || row.state === "destroyed") throw new RunCloudError(404, "sandbox not found");
-			row.state = "destroying";
-			row.gets = 0;
-		},
-		list: async ({ name }: { name?: string } = {}) => {
-			calls.push({ name: "list", input: name });
-			// A loose server-side filter: the adapter must match the name exactly itself.
-			return [...rows.keys()]
-				.filter((id) => !hidden.has(id) && (rows.get(id)?.name ?? "").startsWith(name ?? ""))
-				.map(view);
-		},
-		exec: async (id: string, command: string) => {
-			calls.push({ name: "exec", input: command });
-			const row = rows.get(id);
-			if (row?.state !== "running") throw new RunCloudError(4409, "sandbox is not running");
-			const answer = (exitCode: number, stdout = "") => ({
-				exit_code: exitCode,
-				exitCode,
-				stdout,
-				stderr: "",
-			});
-			if (command.startsWith("df -Pk"))
-				return answer(0, `${Math.round((options.diskGb ?? 80) * 1024 * 1024)}\n`);
-			const exit = /^sh -c 'exit (\d+)'$/.exec(command);
-			return exit ? answer(Number(exit[1])) : answer(0, "ok\n");
-		},
-	};
 	const transport: RuncloudTransport = {
-		sandboxes: sandboxes as unknown as RuncloudTransport["sandboxes"],
+		sandboxes: account.sdk,
 		page: async (cursor) => {
 			calls.push({ name: "page", input: cursor });
 			const all = [...rows.keys()];

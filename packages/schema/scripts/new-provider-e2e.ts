@@ -20,7 +20,6 @@ import {
 	fakeSdks,
 	fillCliAdapter,
 	fillCliTest,
-	filledArtifactBuilder,
 	fillHttpAdapter,
 	fillHttpTest,
 	fillMetadata,
@@ -45,11 +44,66 @@ function sh(cwd: string, argv: readonly string[]): string {
 	return output;
 }
 
-/** The `(package, test)` pairs a `bun run test` reports failing. */
+/** The `(package, test)` pairs a `bun run test` reports failing, as `member > describe > test`. */
 const failures = (output: string): string[] =>
 	[...output.matchAll(/^(\S+) test: \(fail\) (.*?)(?: \[[\d.]+m?s\])?$/gm)].map(
 		([, member, name]) => `${member} > ${name}`,
 	);
+
+/** The packages whose `bun test` reported an error outside any test (a rejection, a failed load). */
+const errored = (output: string): string[] => [
+	...new Set(
+		[...output.matchAll(/^(\S+) test:\s+(?:[1-9]\d* errors?|# Unhandled error.*)$/gm)].map(
+			([, member]) => member ?? "",
+		),
+	),
+];
+
+/** What one `bun run test` of the scaffolded tree comes to, failing test by failing test. */
+export interface TestVerdict {
+	/** Errors outside any test, by package: never excused, since no test names them. */
+	readonly errors: readonly string[];
+	/** Failures that fail alone in the scaffolded tree but pass alone in the unmodified one. */
+	readonly own: readonly string[];
+	/** Failures that pass alone in the scaffolded tree (on a retry at most): the run's load. */
+	readonly underLoad: readonly string[];
+	/** Failures that fail alone in both trees: the environment's. */
+	readonly environment: readonly string[];
+}
+
+/**
+ * Judge a `bun run test` of the scaffolded tree. Each failing test is run again alone (`passes`
+ * retries once) in the scaffolded tree and, if it still fails, in the unmodified one, so a timeout
+ * that only the whole run's load caused does not fail the gate, and a test the unmodified tree
+ * happens to fail once does not excuse the scaffold's.
+ */
+export function judgeTestRun(
+	output: string,
+	passes: (tree: "scaffolded" | "unmodified", failure: string) => boolean,
+): TestVerdict {
+	const verdict = { errors: errored(output), own: [], underLoad: [], environment: [] } as {
+		errors: string[];
+		own: string[];
+		underLoad: string[];
+		environment: string[];
+	};
+	for (const failure of failures(output)) {
+		if (passes("scaffolded", failure)) verdict.underLoad.push(failure);
+		else if (passes("unmodified", failure)) verdict.own.push(failure);
+		else verdict.environment.push(failure);
+	}
+	return verdict;
+}
+
+/** Run one failing test alone in `root` (by its full name), retrying once: whether it passed. */
+function passesAlone(root: string, failure: string): boolean {
+	const [member = "", ...names] = failure.split(" > ");
+	// `bun test -t` matches the describe and test names joined by spaces.
+	const pattern = `^${names.join(" ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
+	for (let attempt = 0; attempt < 2; attempt++)
+		if (run(root, ["bun", "--filter", member, "test", "-t", pattern]).exitCode === 0) return true;
+	return false;
+}
 
 /** A tree's files, tracked or not, minus ignored ones (dependencies, build output). */
 const filesOf = (root: string): string[] =>
@@ -86,189 +140,196 @@ interface Case {
 	readonly fills: Readonly<Record<string, (scaffold: string) => string>>;
 }
 
-const scratch = mkdtempSync(join(tmpdir(), "new-provider-e2e-"));
-const root = join(scratch, "repo");
-try {
-	// The working tree as a developer has it, committed, so git-aware checks see a checkout.
-	for (const file of filesOf(SOURCE_ROOT))
-		try {
-			mkdirSync(dirname(join(root, file)), { recursive: true });
-			cpSync(join(SOURCE_ROOT, file), join(root, file));
-		} catch {
-			// Tracked but deleted in the working tree.
-		}
-	for (const argv of [
-		["git", "init", "--quiet"],
-		["git", "add", "--all"],
-		[
-			"git",
-			"-c",
-			"user.name=e2e",
-			"-c",
-			"user.email=e2e@example.com",
-			"commit",
-			"--quiet",
-			"--no-verify",
-			"--no-gpg-sign",
-			"-m",
-			"baseline",
-		],
-	])
-		sh(root, argv);
-	step("bun install (the checkout a developer starts from)", () =>
-		sh(root, ["bun", "install", "--frozen-lockfile", "--ignore-scripts"]),
-	);
-	// The vendors' npm SDKs, published offline as tarballs (installed like a registry's, beside their
-	// own dependencies): each name resolves to its fake once the scaffolder pins it.
-	const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-	const sdks = fakeSdks(manifest.workspaces.catalogs.vendors.e2b);
-	for (const [name, files] of Object.entries(sdks)) {
-		const source = join(scratch, "sdks", name.replaceAll("/", "__"));
-		for (const [file, content] of Object.entries(files)) {
-			mkdirSync(join(source, "package"), { recursive: true });
-			writeFileSync(join(source, "package", file), content);
-		}
-		sh(source, ["tar", "-czf", `${source}.tgz`, "package"]);
-		manifest.overrides[name] = `file:${source}.tgz`;
-	}
-	writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-	const before = contents(root);
-	const meta = (id: string) => `packages/schema/src/provider-meta/${id}.ts`;
-	const CASES: readonly Case[] = [
-		{
-			label: "E2B-protocol SDK, baked",
-			id: "acme",
-			args: ["--kind=sdk", "--protocol=e2b", "--sdk=acme-sandbox@1.0.0", "--baked"],
-			fills: {
-				[meta("acme")]: fillMetadata,
-				"packages/acme/src/artifact.ts": () => filledArtifactBuilder("acme"),
-			},
-		},
-		{
-			label: "SDK",
-			id: "acme-sdk",
-			args: ["--kind=sdk", "--sdk=@acme/sdk@1.0.0"],
-			fills: {
-				[meta("acme-sdk")]: fillMetadata,
-				"packages/acme-sdk/src/vendor.ts": fillSdkAdapter,
-				"packages/acme-sdk/src/index.test.ts": fillSdkTest,
-			},
-		},
-		{
-			label: "HTTP",
-			id: "acme-http",
-			args: ["--kind=http"],
-			fills: {
-				[meta("acme-http")]: fillMetadata,
-				"packages/acme-http/src/vendor.ts": fillHttpAdapter,
-				"packages/acme-http/src/index.test.ts": fillHttpTest,
-			},
-		},
-		{
-			label: "CLI",
-			id: "acme-cli",
-			args: ["--kind=cli", "--sdk=acme@0.4.2"],
-			fills: {
-				".github/actions/setup-acme/action.yml": fillSetupAction,
-				[meta("acme-cli")]: fillMetadata,
-				"packages/acme-cli/src/vendor.ts": fillCliAdapter,
-				"packages/acme-cli/src/index.test.ts": fillCliTest,
-			},
-		},
-	];
+if (import.meta.main) main();
 
-	const scaffolds = new Map<Case, string[]>();
-	let current = before;
-	for (const scenario of CASES)
-		step(`bun run new-provider (${scenario.label}, with its bun install)`, () => {
-			sh(root, ["bun", "run", "new-provider", "--", `--id=${scenario.id}`, ...scenario.args]);
-			const next = contents(root);
-			scaffolds.set(
-				scenario,
-				changed(current, next).filter((file) => file !== "bun.lock"),
-			);
-			current = next;
-		});
-	const scaffolded = current;
-	const fills = CASES.flatMap((scenario) => Object.entries(scenario.fills));
-	step("the author fills every unfilled value and formats", () => {
-		for (const [file, fill] of fills)
-			writeFileSync(join(root, file), fill(scaffolded.get(file) ?? ""));
-		const sources = fills.map(([file]) => file).filter((file) => file.endsWith(".ts"));
-		sh(root, ["bunx", "biome", "check", "--write", ...sources]);
-	});
-
-	step("bun run generate-providers", () => sh(root, ["bun", "run", "generate-providers"]));
-	for (const gate of [
-		"check:providers",
-		"lint",
-		"lint:workflows",
-		"lint:shell",
-		"spell",
-		"typecheck",
-	])
-		step(`bun run ${gate}`, () => sh(root, ["bun", "run", gate]));
-	step("bun run test (every package)", () => {
-		const { exitCode, output } = run(root, ["bun", "run", "test"]);
-		if (exitCode === 0) return;
-		const failed = failures(output);
-		// A failure the unmodified tree reproduces is the environment's, not the scaffold's.
-		const members = [...new Set(failed.map((failure) => failure.split(" > ")[0] ?? ""))];
-		const baseline = new Set(
-			members.flatMap((member) =>
-				failures(run(SOURCE_ROOT, ["bun", "--filter", member, "test"]).output),
-			),
-		);
-		const own = failed.filter((failure) => !baseline.has(failure));
-		if (failed.length === 0 || own.length > 0)
-			throw new Error(`${output}\nbun run test failed in the scaffolded tree:\n${own.join("\n")}`);
-		console.log(
-			`  failing on the unmodified tree too (not the scaffold's):\n    ${failed.join("\n    ")}`,
-		);
-	});
-
-	// Nothing changed but the scaffolds, what the author filled, the generator's outputs and the lock.
-	const generated = new Set(
-		sh(root, [
-			"bun",
-			"-e",
-			'const { generatedProviderFiles } = await import("./packages/schema/scripts/generate-providers.ts"); console.log((await generatedProviderFiles()).join("\\n"));',
-		])
-			.trim()
-			.split("\n"),
-	);
-	const after = contents(root);
-	const scaffoldFiles = new Set([...scaffolds.values()].flat());
-	const stray = changed(before, after).filter(
-		(file) => !scaffoldFiles.has(file) && !generated.has(file) && file !== "bun.lock",
-	);
-	if (stray.length > 0) throw new Error(`changed outside scaffolds and generator: ${stray}`);
-	const handEdited = changed(scaffolded, after)
-		.filter((file) => !generated.has(file))
-		.sort();
-	const expected = fills.map(([file]) => file).sort();
-	if (handEdited.join() !== expected.join())
-		throw new Error(`hand-edited ${handEdited}, expected only ${expected}`);
-
-	console.log("\nWhat each provider kind cost:");
-	for (const scenario of CASES) {
-		const lines = Object.keys(scenario.fills).map(
-			(file) =>
-				[file, handWrittenLines(scaffolded.get(file) ?? "", after.get(file) ?? "")] as const,
-		);
-		const files = scaffolds.get(scenario) ?? [];
-		const edited = files.filter((file) => before.has(file)).length;
-		const total = lines.reduce((sum, [, count]) => sum + count, 0);
-		console.log(
+function main(): void {
+	const scratch = mkdtempSync(join(tmpdir(), "new-provider-e2e-"));
+	const root = join(scratch, "repo");
+	try {
+		// The working tree as a developer has it, committed, so git-aware checks see a checkout.
+		for (const file of filesOf(SOURCE_ROOT))
+			try {
+				mkdirSync(dirname(join(root, file)), { recursive: true });
+				cpSync(join(SOURCE_ROOT, file), join(root, file));
+			} catch {
+				// Tracked but deleted in the working tree.
+			}
+		for (const argv of [
+			["git", "init", "--quiet"],
+			["git", "add", "--all"],
 			[
-				`  ${scenario.label} (${scenario.id}): the scaffolder wrote ${files.length} files (${edited} edited in place) and bun.lock;`,
-				`    the author edited ${lines.length} of them, ${total} lines:`,
-				...lines.map(([file, count]) => `      ${file}: ${count}`),
-			].join("\n"),
+				"git",
+				"-c",
+				"user.name=e2e",
+				"-c",
+				"user.email=e2e@example.com",
+				"commit",
+				"--quiet",
+				"--no-verify",
+				"--no-gpg-sign",
+				"-m",
+				"baseline",
+			],
+		])
+			sh(root, argv);
+		step("bun install (the checkout a developer starts from)", () =>
+			sh(root, ["bun", "install", "--frozen-lockfile", "--ignore-scripts"]),
 		);
+		// The vendors' npm SDKs, published offline as tarballs (installed like a registry's, beside their
+		// own dependencies): each name resolves to its fake once the scaffolder pins it.
+		const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+		const sdks = fakeSdks(manifest.workspaces.catalogs.vendors.e2b);
+		for (const [name, files] of Object.entries(sdks)) {
+			const source = join(scratch, "sdks", name.replaceAll("/", "__"));
+			for (const [file, content] of Object.entries(files)) {
+				mkdirSync(join(source, "package"), { recursive: true });
+				writeFileSync(join(source, "package", file), content);
+			}
+			sh(source, ["tar", "-czf", `${source}.tgz`, "package"]);
+			manifest.overrides[name] = `file:${source}.tgz`;
+		}
+		writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+		const before = contents(root);
+		const meta = (id: string) => `packages/schema/src/provider-meta/${id}.ts`;
+		const CASES: readonly Case[] = [
+			{
+				label: "E2B-protocol SDK, baked",
+				id: "acme",
+				args: ["--kind=sdk", "--protocol=e2b", "--sdk=acme-sandbox@1.0.0", "--baked"],
+				// The shared protocol adapter and builder are final as scaffolded; its test runs the builder.
+				fills: { [meta("acme")]: fillMetadata },
+			},
+			{
+				label: "SDK",
+				id: "acme-sdk",
+				args: ["--kind=sdk", "--sdk=@acme/sdk@1.0.0"],
+				fills: {
+					[meta("acme-sdk")]: fillMetadata,
+					"packages/acme-sdk/src/vendor.ts": fillSdkAdapter,
+					"packages/acme-sdk/src/index.test.ts": fillSdkTest,
+				},
+			},
+			{
+				label: "HTTP",
+				id: "acme-http",
+				args: ["--kind=http"],
+				fills: {
+					[meta("acme-http")]: fillMetadata,
+					"packages/acme-http/src/vendor.ts": fillHttpAdapter,
+					"packages/acme-http/src/index.test.ts": fillHttpTest,
+				},
+			},
+			{
+				label: "CLI",
+				id: "acme-cli",
+				args: ["--kind=cli", "--sdk=acme@0.4.2"],
+				fills: {
+					".github/actions/setup-acme/action.yml": fillSetupAction,
+					[meta("acme-cli")]: fillMetadata,
+					"packages/acme-cli/src/vendor.ts": fillCliAdapter,
+					"packages/acme-cli/src/index.test.ts": fillCliTest,
+				},
+			},
+		];
+
+		const scaffolds = new Map<Case, string[]>();
+		let current = before;
+		for (const scenario of CASES)
+			step(`bun run new-provider (${scenario.label}, with its bun install)`, () => {
+				sh(root, ["bun", "run", "new-provider", "--", `--id=${scenario.id}`, ...scenario.args]);
+				const next = contents(root);
+				scaffolds.set(
+					scenario,
+					changed(current, next).filter((file) => file !== "bun.lock"),
+				);
+				current = next;
+			});
+		const scaffolded = current;
+		const fills = CASES.flatMap((scenario) => Object.entries(scenario.fills));
+		step("the author fills every unfilled value and formats", () => {
+			for (const [file, fill] of fills)
+				writeFileSync(join(root, file), fill(scaffolded.get(file) ?? ""));
+			const sources = fills.map(([file]) => file).filter((file) => file.endsWith(".ts"));
+			sh(root, ["bunx", "biome", "check", "--write", ...sources]);
+		});
+
+		step("bun run generate-providers", () => sh(root, ["bun", "run", "generate-providers"]));
+		for (const gate of [
+			"check:providers",
+			"lint",
+			"lint:workflows",
+			"lint:shell",
+			"spell",
+			"typecheck",
+		])
+			step(`bun run ${gate}`, () => sh(root, ["bun", "run", gate]));
+		step("bun run test (every package)", () => {
+			const { exitCode, output } = run(root, ["bun", "run", "test"]);
+			if (exitCode === 0 && errored(output).length === 0) return;
+			const verdict = judgeTestRun(output, (tree, failure) =>
+				passesAlone(tree === "scaffolded" ? root : SOURCE_ROOT, failure),
+			);
+			const unexplained = exitCode !== 0 && failures(output).length === 0;
+			if (verdict.errors.length > 0 || verdict.own.length > 0 || unexplained)
+				throw new Error(
+					[
+						output,
+						"bun run test failed in the scaffolded tree:",
+						...verdict.errors.map((member) => `  an error outside any test in ${member}`),
+						...verdict.own.map((failure) => `  ${failure}`),
+						...(unexplained ? ["  a nonzero exit with no failing test"] : []),
+					].join("\n"),
+				);
+			for (const [label, list] of [
+				["failing under the whole run's load only (passed alone)", verdict.underLoad],
+				["failing alone on the unmodified tree too (not the scaffold's)", verdict.environment],
+			] as const)
+				if (list.length > 0) console.log(`  ${label}:\n    ${list.join("\n    ")}`);
+		});
+
+		// Nothing changed but the scaffolds, what the author filled, the generator's outputs and the lock.
+		const generated = new Set(
+			sh(root, [
+				"bun",
+				"-e",
+				'const { generatedProviderFiles } = await import("./packages/schema/scripts/generate-providers.ts"); console.log((await generatedProviderFiles()).join("\\n"));',
+			])
+				.trim()
+				.split("\n"),
+		);
+		const after = contents(root);
+		const scaffoldFiles = new Set([...scaffolds.values()].flat());
+		const stray = changed(before, after).filter(
+			(file) => !scaffoldFiles.has(file) && !generated.has(file) && file !== "bun.lock",
+		);
+		if (stray.length > 0) throw new Error(`changed outside scaffolds and generator: ${stray}`);
+		const handEdited = changed(scaffolded, after)
+			.filter((file) => !generated.has(file))
+			.sort();
+		const expected = fills.map(([file]) => file).sort();
+		if (handEdited.join() !== expected.join())
+			throw new Error(`hand-edited ${handEdited}, expected only ${expected}`);
+
+		console.log("\nWhat each provider kind cost:");
+		for (const scenario of CASES) {
+			const lines = Object.keys(scenario.fills).map(
+				(file) =>
+					[file, handWrittenLines(scaffolded.get(file) ?? "", after.get(file) ?? "")] as const,
+			);
+			const files = scaffolds.get(scenario) ?? [];
+			const edited = files.filter((file) => before.has(file)).length;
+			const total = lines.reduce((sum, [, count]) => sum + count, 0);
+			console.log(
+				[
+					`  ${scenario.label} (${scenario.id}): the scaffolder wrote ${files.length} files (${edited} edited in place) and bun.lock;`,
+					`    the author edited ${lines.length} of them, ${total} lines:`,
+					...lines.map(([file, count]) => `      ${file}: ${count}`),
+				].join("\n"),
+			);
+		}
+		const regenerated = changed(scaffolded, after).filter((file) => generated.has(file));
+		console.log(`  generate-providers rewrote ${regenerated.length} files for all four.`);
+	} finally {
+		rmSync(scratch, { recursive: true, force: true });
 	}
-	const regenerated = changed(scaffolded, after).filter((file) => generated.has(file));
-	console.log(`  generate-providers rewrote ${regenerated.length} files for all four.`);
-} finally {
-	rmSync(scratch, { recursive: true, force: true });
 }

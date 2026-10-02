@@ -7,15 +7,21 @@
 //     package (the library's owner);
 //   - no file outside the owner references the library, and the owner references it itself (or
 //     declares it only to satisfy another of its vendor libraries' peer dependencies);
-//   - a provider package takes third-party libraries only from the catalogs, so a vendor SDK cannot
-//     enter through an inline pin and escape the vendor set; and takes one from the default catalog
-//     only when a non-provider member also does, so a vendor SDK cannot pass as provider-neutral;
+//   - every member takes third-party libraries only from the root catalogs, so a vendor SDK cannot
+//     enter through an inline pin and escape the vendor set; and a provider package takes one from the
+//     default catalog only when a non-provider member also does, so a vendor SDK cannot pass as
+//     provider-neutral;
+//   - every file references a third-party library only when its own member (or, outside every
+//     member, the root manifest) declares it, so a vendor SDK's transitive dependency cannot be
+//     reached through hoisting, and no file reaches into `node_modules` by path;
 //   - only `@sandbox-benchmarks/drivers` and the allowlisted named subpaths import a provider package
 //     from outside it, and nothing outside it reaches into its directory by relative path;
 //   - the dissolved `packages/providers` does not come back.
 // A reference is any module specifier in source: static, type-only and side-effect imports,
-// re-exports, dynamic `import()` (including `typeof import()` types), and `require` /
-// `require.resolve` / `createRequire(...)(...)` string specifiers.
+// re-exports, dynamic `import()` (including `typeof import()` types), `import.meta.resolve`,
+// `require` / `require.resolve` / `createRequire(...)(...)` string specifiers, and triple-slash
+// `types` and `path` references.
+import { builtinModules } from "node:module";
 import { posix } from "node:path";
 import { stripComments } from "./workspace.ts";
 
@@ -34,30 +40,57 @@ const DISSOLVED = "packages/providers";
 const VENDOR_CATALOG = "catalog:vendors";
 
 const SOURCE_FILE = /\.(?:[cm]?[jt]s|tsx)$/;
+// Quote characters are spelled as escapes (\x22 double, \x27 single, \x60 backtick) so this file's
+// own regex literals never read as string openers to the comment stripper that scans it.
 const SPECIFIER_PATTERNS = [
 	// import … from "x" / export … from "x" (type-only included).
-	/(?:import|export)\b[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]/g,
+	/(?:import|export)\b[^\x22\x27\x60;]*?\bfrom\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]/g,
 	// import "x" (side effect).
-	/\bimport\s+['"]([^'"]+)['"]/g,
-	// import("x"), typeof import("x"), and a template literal without substitutions.
-	/\bimport\s*\(\s*(?:['"]([^'"]+)['"]|`([^`$]+)`)/g,
+	/\bimport\s+[\x22\x27]([^\x22\x27]+)[\x22\x27]/g,
+	// import("x"), typeof import("x"), import.meta.resolve("x"), and a template literal without
+	// substitutions.
+	/\bimport(?:\.meta\.resolve)?\s*\(\s*(?:[\x22\x27]([^\x22\x27]+)[\x22\x27]|\x60([^\x60$]+)\x60)/g,
 	// require("x"), require.resolve("x"), and any aliased `…Require("x")` / `…require("x")`.
-	/\b\w*(?:require|Require)(?:\.resolve)?\s*\(\s*(?:['"]([^'"]+)['"]|`([^`$]+)`)/g,
+	/\b\w*(?:require|Require)(?:\.resolve)?\s*\(\s*(?:[\x22\x27]([^\x22\x27]+)[\x22\x27]|\x60([^\x60$]+)\x60)/g,
 	// createRequire(import.meta.url)("x").
-	/\bcreateRequire\s*\((?:[^()]|\([^()]*\))*\)\s*\(\s*['"]([^'"]+)['"]/g,
+	/\bcreateRequire\s*\((?:[^()]|\([^()]*\))*\)\s*\(\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]/g,
 ];
+// A triple-slash directive is a comment, so it is read from the raw source.
+const REFERENCE_DIRECTIVE =
+	/^[ \t]*\/\/\/[ \t]*<reference\s+(types|path)\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]/gm;
+// A package name as npm spells it; generator code that prints `import … from "${x}"` into a
+// template is not a reference of the file that holds the template.
+const PACKAGE_NAME = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i;
+const NODE_MODULES = /(?:^|[/\\])node_modules(?:[/\\]|$)/;
+const BUILTINS: ReadonlySet<string> = new Set([...builtinModules, "bun"]);
 
-/** Every module specifier a source file references, comments ignored. */
-export function moduleSpecifiers(source: string): string[] {
+/** One module reference: its specifier, and whether a `/// <reference types>` directive made it. */
+interface Reference {
+	readonly specifier: string;
+	readonly types: boolean;
+}
+
+function moduleReferences(source: string): Reference[] {
+	const found: Reference[] = [];
+	for (const [, kind, value] of source.matchAll(REFERENCE_DIRECTIVE)) {
+		if (!value) continue;
+		// A `path` reference is relative to the file even without a leading `./`.
+		if (kind === "types") found.push({ specifier: value, types: true });
+		else found.push({ specifier: /^[./]/.test(value) ? value : `./${value}`, types: false });
+	}
 	const text = stripComments(source);
-	const found: string[] = [];
 	for (const pattern of SPECIFIER_PATTERNS) {
 		for (const match of text.matchAll(pattern)) {
 			const specifier = match.slice(1).find((group) => group !== undefined);
-			if (specifier) found.push(specifier);
+			if (specifier) found.push({ specifier, types: false });
 		}
 	}
 	return found;
+}
+
+/** Every module specifier a source file references, comments ignored (triple-slash directives read). */
+export function moduleSpecifiers(source: string): string[] {
+	return moduleReferences(source).map((reference) => reference.specifier);
 }
 
 /** The package a bare specifier names (`@scope/name` or `name`), or null for relative/builtin ones. */
@@ -167,6 +200,17 @@ export function vendorSeamViolations({ files, providerDirectories }: RepositoryS
 					.map(([dependency]) => dependency),
 			),
 	);
+	// A non-provider member takes third-party libraries from the root catalogs only (its vendor
+	// catalog entries are reported above).
+	for (const member of members) {
+		if (providerDirectories.has(member.dir)) continue;
+		for (const [dependency, specifier] of Object.entries(member.dependencies)) {
+			if (specifier.startsWith("workspace:") || specifier.startsWith("catalog:")) continue;
+			violations.push(
+				`${member.dir} pins ${dependency} outside the catalogs; a third-party library is taken from the root catalogs`,
+			);
+		}
+	}
 	for (const provider of providers.values()) {
 		for (const [dependency, specifier] of Object.entries(provider.dependencies)) {
 			if (specifier.startsWith("workspace:")) continue;
@@ -187,12 +231,19 @@ export function vendorSeamViolations({ files, providerDirectories }: RepositoryS
 	}
 
 	// References: vendor libraries only inside their owner; provider packages only through the join or
-	// a named subpath.
+	// a named subpath; any other third-party library only where the referencing member declares it.
+	const memberNames = new Set(members.map((member) => member.name));
+	const rootDependencies = { ...root.dependencies, ...root.devDependencies };
 	const referenced = new Set<string>();
 	for (const [path, source] of files) {
 		if (!SOURCE_FILE.test(path) || path.includes("node_modules/")) continue;
 		const member = memberOf(path);
-		for (const specifier of moduleSpecifiers(source)) {
+		const declared = member?.dependencies ?? rootDependencies;
+		for (const { specifier, types } of moduleReferences(source)) {
+			if (NODE_MODULES.test(specifier)) {
+				violations.push(`${path} reaches into node_modules by path ${specifier}`);
+				continue;
+			}
 			if (specifier.startsWith(".")) {
 				const resolved = posix.join(posix.dirname(path), specifier);
 				const entered = [...providerDirectories].find(
@@ -206,21 +257,32 @@ export function vendorSeamViolations({ files, providerDirectories }: RepositoryS
 				continue;
 			}
 			const target = packageOf(specifier);
-			if (target === null) continue;
+			if (target === null || !PACKAGE_NAME.test(target) || BUILTINS.has(target)) continue;
 			const owner = owners.get(target);
 			if (vendors.has(target)) {
 				if (owner && member?.dir === owner.dir) referenced.add(target);
 				else violations.push(`${path} references vendor library ${target}`);
+				continue;
 			}
-			const provider = providers.get(target);
-			if (
-				provider &&
-				member?.dir !== provider.dir &&
-				member?.name !== PROVIDER_JOIN &&
-				!NAMED_PROVIDER_SUBPATHS.has(specifier)
-			) {
+			if (memberNames.has(target)) {
+				const provider = providers.get(target);
+				if (
+					provider &&
+					member?.dir !== provider.dir &&
+					member?.name !== PROVIDER_JOIN &&
+					!NAMED_PROVIDER_SUBPATHS.has(specifier)
+				) {
+					violations.push(
+						`${path} imports provider package ${specifier}; only ${PROVIDER_JOIN} and the named subpaths may`,
+					);
+				}
+				continue;
+			}
+			// A `types` directive is also satisfied by the library's DefinitelyTyped package.
+			const typesPackage = `@types/${target.replace(/^@/, "").replace("/", "__")}`;
+			if (!(target in declared) && !(types && typesPackage in declared)) {
 				violations.push(
-					`${path} imports provider package ${specifier}; only ${PROVIDER_JOIN} and the named subpaths may`,
+					`${path} references ${target}, which ${member ? member.dir : "the root manifest"} does not declare`,
 				);
 			}
 		}

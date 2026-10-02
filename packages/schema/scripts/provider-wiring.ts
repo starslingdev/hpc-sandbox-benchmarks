@@ -16,7 +16,7 @@ import type {
 	ProviderSdkPackage,
 } from "../src/provider-meta.ts";
 import { normalizeProviderInput, PROVIDER_PRE_AUTH_POLICIES } from "../src/provider-meta.ts";
-import { provenanceConstant, providerPackage } from "../src/providers.ts";
+import { provenanceConstant, providerPackage, vendorClis } from "../src/providers.ts";
 
 export const REPO_ROOT = resolve(import.meta.dir, "../../..");
 export const GENERATOR_COMMAND = "bun run generate-providers";
@@ -348,18 +348,36 @@ export function renderSetupSecretChecklist(): string {
  * every lane that boots that provider (benchmarks, candidate bake, version promote).
  */
 export function renderCliSetupSteps(lane: WiringLane, indent = "      "): string {
-	const owners = new Map<string, ProviderId[]>();
-	for (const id of PROVIDER_IDS) {
-		const source = providerMeta(id).sdkPackage;
-		if (typeof source === "object" && "cli" in source)
-			owners.set(source.cli, [...(owners.get(source.cli) ?? []), id]);
-	}
-	return [...owners]
-		.map(([cli, ids]) =>
+	return vendorClis()
+		.map(({ cli, providers }) =>
 			[
 				`${indent}- name: Set up the ${cli} CLI`,
-				`${indent}  if: ${ownerCondition(ids, lane)}`,
+				`${indent}  if: ${ownerCondition(providers, lane)}`,
 				`${indent}  uses: ./.github/actions/setup-${cli}`,
+			].join("\n"),
+		)
+		.join("\n\n");
+}
+
+/**
+ * The toolchain-actions smoke's coverage of every vendor CLI's setup action: the PR paths that
+ * trigger it, and the step that runs the action and finds the binary on PATH.
+ */
+export function renderCliSmokePaths(indent = "      "): string {
+	return vendorClis()
+		.map(({ cli }) => `${indent}- ".github/actions/setup-${cli}/**"`)
+		.join("\n");
+}
+
+export function renderCliSmokeSteps(indent = "      "): string {
+	return vendorClis()
+		.map(({ cli }) =>
+			[
+				`${indent}- name: Set up the ${cli} CLI`,
+				`${indent}  uses: ./.github/actions/setup-${cli}`,
+				"",
+				`${indent}- name: Find the ${cli} CLI on PATH`,
+				`${indent}  run: command -v ${cli}`,
 			].join("\n"),
 		)
 		.join("\n\n");
@@ -413,6 +431,16 @@ export function generatedProviderRegions(): GeneratedRegion[] {
 			file: ".github/workflows/toolchain-image.yml",
 			label: "provider-cli-setup-promote",
 			body: renderCliSetupSteps("release-scope"),
+		},
+		{
+			file: ".github/workflows/toolchain-actions-smoke.yml",
+			label: "provider-cli-smoke-paths",
+			body: renderCliSmokePaths(),
+		},
+		{
+			file: ".github/workflows/toolchain-actions-smoke.yml",
+			label: "provider-cli-smoke",
+			body: renderCliSmokeSteps(),
 		},
 		{
 			file: ".github/workflows/bench-suite.yml",

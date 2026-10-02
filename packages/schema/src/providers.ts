@@ -368,6 +368,24 @@ export function figureLabel(id: ProviderId): string {
 	return shared ? meta.vendor : meta.displayName;
 }
 
+/** A vendor CLI the drivers spawn, with the providers that drive it. */
+export interface VendorCli {
+	/** The binary, installed by the checksum-pinned `.github/actions/setup-<cli>` action. */
+	readonly cli: string;
+	readonly providers: readonly ProviderId[];
+}
+
+/** Every vendor CLI a provider declares (`sdkPackage: { cli }`), in registry order. */
+export function vendorClis(): readonly VendorCli[] {
+	const owners = new Map<string, ProviderId[]>();
+	for (const id of PROVIDER_IDS) {
+		const source = REGISTRY[id].sdkPackage;
+		if (typeof source === "object" && "cli" in source)
+			owners.set(source.cli, [...(owners.get(source.cli) ?? []), id]);
+	}
+	return [...owners].map(([cli, providers]) => ({ cli, providers }));
+}
+
 /** The coarse isolation class a guest probe can contradict. */
 export type DeclaredIsolationClass = "gvisor" | "container" | "vm";
 
