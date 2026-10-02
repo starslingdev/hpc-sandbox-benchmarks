@@ -10,8 +10,10 @@ import {
 	PROVIDER_PRE_AUTH_CONTRACTS,
 	PROVIDER_PRE_AUTH_POLICIES,
 } from "../src/provider-meta.ts";
-import { provenanceConstant, providerPackage } from "../src/providers.ts";
+import { baseImageUse, provenanceConstant, providerPackage } from "../src/providers.ts";
 import {
+	artifactBuilderSource,
+	assertArtifactBuilders,
 	escapeMarkdownCell,
 	generatedProviderRegions,
 	packageProvenance,
@@ -258,19 +260,51 @@ describe("provider wiring projections", () => {
 		);
 	});
 
-	test("generates one correlated lazy loader from every registry id", () => {
+	test("generates correlated lazy loaders for every driver and every baked provider's builder", () => {
 		const source = renderDriversIndex();
 		const scanned = new Bun.Transpiler({ loader: "ts" }).scan(source);
-		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([]);
-		expect(scanned.imports).toEqual(
-			PROVIDER_IDS.map((id) => ({
-				kind: "dynamic-import",
+		// The only eager import is the vendor-neutral kit that derives native-snapshot builders.
+		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([
+			{ kind: "import-statement", path: "@sandbox-benchmarks/driver/artifact" },
+		]);
+		const baked = PROVIDER_IDS.flatMap((id) => {
+			const source = artifactBuilderSource(id);
+			return source === null ? [] : [{ id, source }];
+		});
+		expect(scanned.imports.filter(({ kind }) => kind === "dynamic-import")).toEqual([
+			...PROVIDER_IDS.map((id) => ({
+				kind: "dynamic-import" as const,
 				path: providerPackage(id).specifier,
 			})),
-		);
+			...baked.map(({ source }) => ({ kind: "dynamic-import" as const, path: source.specifier })),
+		]);
 		for (const id of PROVIDER_IDS) {
 			expect(source).toContain(`typeof import("${providerPackage(id).specifier}").default`);
 		}
+		// The join is exactly the baked partition, split by how each one bakes.
+		expect(baked.map(({ id }) => id)).toEqual(
+			PROVIDER_IDS.filter((id) => REGISTRY[id].artifact.kind === "baked"),
+		);
+		for (const { id, source } of baked)
+			expect(source.kind).toBe(baseImageUse(id) === "bakes" ? "oci" : "native-snapshot");
+	});
+
+	test("places an OCI baker's builder beside its driver entry, variants under their entry", () => {
+		expect(artifactBuilderSource("e2b")).toEqual({
+			kind: "oci",
+			subpath: "./artifact",
+			specifier: "@sandbox-benchmarks/e2b/artifact",
+			file: "packages/e2b/src/artifact.ts",
+		});
+		expect(artifactBuilderSource("daytona-container")).toEqual({
+			kind: "oci",
+			subpath: "./container/artifact",
+			specifier: "@sandbox-benchmarks/daytona/container/artifact",
+			file: "packages/daytona/src/container/artifact.ts",
+		});
+		expect(artifactBuilderSource("freestyle")).toMatchObject({ kind: "native-snapshot" });
+		expect(artifactBuilderSource("modal-gvisor")).toBeNull();
+		expect(() => assertArtifactBuilders()).not.toThrow();
 	});
 
 	test("projects one provenance constant per provider package from its installation pin", () => {

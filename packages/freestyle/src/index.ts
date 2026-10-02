@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { DriverContext, DriverOperationOptions } from "@sandbox-benchmarks/driver";
+import type {
+	CreateRequest,
+	DriverContext,
+	DriverOperationOptions,
+	SandboxSession,
+	SnapshotOptions,
+} from "@sandbox-benchmarks/driver";
 import { pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
+import type { SnapshotBuildOptions } from "@sandbox-benchmarks/driver/artifact";
 import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
@@ -10,7 +17,9 @@ import { Freestyle, FreestyleApiError } from "freestyle";
 import { FREESTYLE_PROVENANCE } from "./provenance.ts";
 import { freestyleFetch } from "./transport.ts";
 
+/** Freestyle's stock Ubuntu snapshot: a mutable alias, bootable only by a native-snapshot build. */
 export const FREESTYLE_BASE_SNAPSHOT = "freestyle/ubuntu";
+const IMMUTABLE_SNAPSHOT_ID = /^sh-[A-Za-z0-9_-]+$/;
 // Match the shared image's system PATH. The harness adds the user's pinned mise and pnpm dirs.
 // Stock Ubuntu's NVM globals include language servers that change workload test semantics.
 export const FREESTYLE_PATH =
@@ -49,6 +58,10 @@ const execResult = type({
 	"statusCode?": "number.integer | null",
 });
 const snapshotResult = type({ snapshotId: vmId });
+const durableSnapshotResult = type({
+	snapshotId: vmId,
+	snapshot: { "ttlSeconds?": "number | null", "autoDeleteSeconds?": "number | null" },
+});
 
 function hasStatus(error: unknown, statuses: readonly number[]): boolean {
 	return matchesAnyCause(
@@ -58,8 +71,6 @@ function hasStatus(error: unknown, statuses: readonly number[]): boolean {
 }
 
 export interface FreestyleSpecOptions {
-	/** Release composition only: boot stock once, then record its immutable ID in the recipe. */
-	readonly allowStockBaseForBake?: boolean;
 	readonly fetch?: typeof fetch;
 	readonly controlTimeoutMs?: number;
 	readonly deleteTimeoutMs?: number;
@@ -67,9 +78,17 @@ export interface FreestyleSpecOptions {
 }
 
 export function freestyleSpec(
-	{ env }: DriverContext<"freestyle">,
+	{ env, resolvedArtifact }: DriverContext<"freestyle">,
 	options: FreestyleSpecOptions = {},
 ) {
+	// Benchmark execution boots an immutable `sh-` ID and verifies the booted one. The stock alias
+	// is bootable only from a native-snapshot build's context, whose resolved artifact is that alias
+	// (the release lane cannot resolve a benchmark context to anything but an immutable ID).
+	const bootsStockBase = (request: CreateRequest) =>
+		resolvedArtifact.kind === "baked" &&
+		resolvedArtifact.ref === FREESTYLE_BASE_SNAPSHOT &&
+		request.artifact.kind === "baked" &&
+		request.artifact.ref === FREESTYLE_BASE_SNAPSHOT;
 	const controlTimeoutMs = options.controlTimeoutMs ?? CONTROL_TIMEOUT_MS;
 	const deleteTimeoutMs = options.deleteTimeoutMs ?? DELETE_TIMEOUT_MS;
 	const inventoryTimeoutMs = options.inventoryTimeoutMs ?? INVENTORY_TIMEOUT_MS;
@@ -190,8 +209,8 @@ export function freestyleSpec(
 					unsupported("Freestyle requires a native baked snapshot");
 				if (
 					request.artifact.kind === "baked" &&
-					!/^sh-[A-Za-z0-9_-]+$/.test(request.artifact.ref) &&
-					!(options.allowStockBaseForBake && request.artifact.ref === FREESTYLE_BASE_SNAPSHOT)
+					!IMMUTABLE_SNAPSHOT_ID.test(request.artifact.ref) &&
+					!bootsStockBase(request)
 				)
 					unsupported("Freestyle requires an immutable snapshot ID rather than a mutable slug");
 				if (
@@ -221,7 +240,7 @@ export function freestyleSpec(
 			const record = vmRecord.assert(await current.data());
 			if (
 				request.artifact.kind === "baked" &&
-				!(options.allowStockBaseForBake && request.artifact.ref === FREESTYLE_BASE_SNAPSHOT) &&
+				!bootsStockBase(request) &&
 				record.snapshotId !== request.artifact.ref
 			)
 				throw new Error("Freestyle did not boot the requested immutable snapshot");
@@ -311,12 +330,26 @@ export function freestyleSpec(
 		},
 		destroyById: (_compute, ref, operation) => destroy(ref.id, operation),
 		snapshots: {
-			create: async (_compute, session) =>
-				snapshotResult.assert(
-					await api(undefined, EXEC_TIMEOUT_MS)
-						.vms.ref(session.native.id)
-						.snapshot({ ttlSeconds: 600 }),
-				),
+			create: async (_compute, session, snapshotOptions?: SnapshotOptions) => {
+				const vm = api(undefined, EXEC_TIMEOUT_MS).vms.ref(session.native.id);
+				// A lifecycle measurement's snapshot carries a ten-minute expiry as a cleanup backstop.
+				if (snapshotOptions?.retention !== "durable")
+					return snapshotResult.assert(await vm.snapshot({ ttlSeconds: 600 }));
+				const created = durableSnapshotResult.assert(await vm.snapshot({ autoDeleteSeconds: -1 }));
+				if (
+					(created.snapshot.ttlSeconds ?? -1) > 0 ||
+					(created.snapshot.autoDeleteSeconds ?? -1) > 0
+				) {
+					// The caller never learns this ID, so it is deleted here rather than left to expire.
+					await api()
+						.vms.snapshots.delete(created.snapshotId)
+						.catch(() => {});
+					throw new Error(
+						"Freestyle plan applies snapshot expiry; a durable benchmark artifact requires a plan without automatic snapshot deletion",
+					);
+				}
+				return { snapshotId: created.snapshotId };
+			},
 			delete: async (_compute, id) => {
 				try {
 					await api().vms.snapshots.delete(id);
@@ -328,9 +361,26 @@ export function freestyleSpec(
 	});
 }
 
-export default defineComputeSdkDriver("freestyle", {
+const freestyle = defineComputeSdkDriver("freestyle", {
 	provenance: FREESTYLE_PROVENANCE,
 	readiness: { startup: "create-returns-ready" },
 	execution: { syncCapMs: 60_000, durable: "shell-detach" },
 	spec: freestyleSpec,
 });
+
+export default freestyle;
+
+/**
+ * What the native-snapshot builder derived from this driver needs to know about Freestyle: a
+ * candidate boots `FREESTYLE_BASE_SNAPSHOT_ID` when an operator pinned one, else the stock alias,
+ * and the immutable ID a build booted is the VM record's own `snapshotId`.
+ */
+export const snapshotBuild: SnapshotBuildOptions<"freestyle", Vm> = {
+	stockBase: (env) => env.FREESTYLE_BASE_SNAPSHOT_ID ?? FREESTYLE_BASE_SNAPSHOT,
+	bootedBase: async (session: SandboxSession<Vm>) => {
+		const record = vmRecord.assert(await session.native.data());
+		if (!record.snapshotId || !IMMUTABLE_SNAPSHOT_ID.test(record.snapshotId))
+			throw new Error("Freestyle did not report the immutable base snapshot ID");
+		return record.snapshotId;
+	},
+};

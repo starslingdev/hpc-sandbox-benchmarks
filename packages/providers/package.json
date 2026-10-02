@@ -14,8 +14,7 @@
   },
   "dependencies": {
     "@sandbox-benchmarks/schema": "workspace:*",
-    "arktype": "catalog:",
-    "novita-sandbox": "catalog:computesdk"
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

@@ -8,7 +8,8 @@
 //
 // The provider loop + skip-vs-fail contract is shared with bench-smoke/promote (providers-run.ts);
 // the boot+smoke lifecycle (probe results captured before teardown) is shared too (smoke-run.ts).
-import { writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
 	exitAfterSandboxCleanup,
 	requiredProviders,
@@ -25,7 +26,8 @@ import { bakedArtifactName, baseImageUse, PROVIDERS } from "@sandbox-benchmarks/
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import {
-	buildBakedProviderArtifact,
+	buildProviderArtifact,
+	describeReplacement,
 	isBakedProviderId,
 	nonBakedArtifactAction,
 } from "../lib/bake/provider-artifacts.ts";
@@ -110,6 +112,41 @@ export function requestedBaseImage(argv: string[]): string | undefined {
 	return raw;
 }
 
+/**
+ * The `--bake-reports <dir>` a promote reads its candidates' build results from: the candidate
+ * refs every bake report in the directory recorded. A native snapshot boots the immutable ID its
+ * builder returned, which no name derives, so promote pins exactly the ID its bake validated
+ * rather than looking one up by name. Absent → no recorded results (a native-snapshot candidate
+ * then fails its re-validation as unresolved).
+ */
+export function candidateBuildResults(argv: string[]): Partial<Record<BakedProviderId, string>> {
+	const i = argv.indexOf("--bake-reports");
+	const eq = argv.find((arg) => arg.startsWith("--bake-reports="));
+	const dir = eq ? eq.slice("--bake-reports=".length) : i === -1 ? undefined : (argv[i + 1] ?? "");
+	if (dir === undefined) return {};
+	if (dir.trim() === "" || dir.startsWith("-"))
+		throw new Error("--bake-reports requires the directory holding the bake reports");
+	const results: Partial<Record<BakedProviderId, string>> = {};
+	for (const file of readdirSync(dir)
+		.filter((name) => name.endsWith(".json"))
+		.sort()) {
+		const report = JSON.parse(readFileSync(join(dir, file), "utf8")) as {
+			candidate?: { artifacts?: Record<string, unknown> };
+		};
+		for (const [id, ref] of Object.entries(report.candidate?.artifacts ?? {})) {
+			if (!PROVIDERS.some((provider) => provider.id === id) || !isBakedProviderId(id as ProviderId))
+				throw new Error(`${file}: ${id} is not a baked provider`);
+			if (typeof ref !== "string" || ref === "")
+				throw new Error(`${file}: ${id} recorded no candidate artifact ref`);
+			const known = results[id as BakedProviderId];
+			if (known !== undefined && known !== ref)
+				throw new Error(`bake reports disagree on ${id}'s candidate: ${known} vs ${ref}`);
+			results[id as BakedProviderId] = ref;
+		}
+	}
+	return results;
+}
+
 if (import.meta.main) {
 	const log: Log = (m) => console.error(m);
 
@@ -118,9 +155,11 @@ if (import.meta.main) {
 	// or registry call so a typo'd id fails fast (clean message, no stack) before anything is touched.
 	let only: ProviderId[] | undefined;
 	let baseImageRef: string = config.toolchainImageCandidate;
+	let recordedCandidates: Partial<Record<BakedProviderId, string>> = {};
 	try {
 		only = requestedProviders(process.argv);
 		baseImageRef = requestedBaseImage(process.argv) ?? config.toolchainImageCandidate;
+		recordedCandidates = candidateBuildResults(process.argv);
 	} catch (err) {
 		log(`error: ${err instanceof Error ? err.message : String(err)}`);
 		await exitAfterSandboxCleanup(2);
@@ -132,7 +171,7 @@ if (import.meta.main) {
 		// manual toolchain-image.yml dispatch. Automated pushes never pass it, so :v1 stays immutable there.
 		const force = process.argv.includes("--force");
 		// A scoped promote is a backfill onto an existing version, which is the opposite of what --force
-		// does (regenerate the whole version in place, destructively for daytona). Refuse the combination
+		// does (regenerate the whole version in place, destructively where a vendor has no overwrite). Refuse the combination
 		// rather than pick a winner: whichever we picked would silently not be what the operator asked for.
 		if (isPartialScope(only) && force) {
 			log(
@@ -142,21 +181,20 @@ if (import.meta.main) {
 			);
 			await exitAfterSandboxCleanup(2);
 		}
-		const promoted = await promoteAll(log, { force, only });
+		const promoted = await promoteAll(log, { force, only, candidates: recordedCandidates });
 		writeReport({
-			// The scope is recorded alongside the version names because those names are the FULL set the
-			// version owns — on a partial promote most of them were not touched, and the payload has to
-			// say which run this was rather than leave a reader to infer it from `reports`.
+			// The scope is recorded alongside the version because on a partial promote most of the
+			// fleet was not touched, and the payload has to say which run this was rather than leave a
+			// reader to infer it from `reports`.
 			scope: only ?? PROVIDERS.map((p) => p.id),
 			partial: isPartialScope(only),
 			version: {
 				image: config.toolchainImageVersion,
-				e2bTemplate: config.e2bTemplateVersion,
-				daytonaSnapshot: config.daytonaSnapshotDefault,
-				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
-				novitaTemplate: config.novitaTemplateVersion,
-				runloopBlueprint: config.runloopBlueprintVersion,
-				blaxelImage: bakedArtifactName("blaxel", "version"),
+				artifacts: Object.fromEntries(
+					promoted.reports.flatMap((report) =>
+						report.artifactRef === undefined ? [] : [[report.provider, report.artifactRef]],
+					),
+				),
 			},
 			reports: promoted.reports,
 		});
@@ -198,7 +236,7 @@ if (import.meta.main) {
 	} else {
 		log(`>>> no provider in scope reads ${baseImageRef} — not resolving it`);
 	}
-	// Mutable: a native-snapshot build reports its boot ref only once it has run.
+	// Mutable: each build reports the ref its candidate boots only once it has run.
 	const buildResults: Partial<Record<BakedProviderId, string>> = {};
 	const candidateRefs: CandidateArtifactRefs = {
 		toolchainImage: pinnedBaseImage,
@@ -210,17 +248,15 @@ if (import.meta.main) {
 		async (target) => {
 			if (isBakedProviderId(target.id)) {
 				log(`>>> ${target.id}: baking candidate…`);
-				const builtRef = await buildBakedProviderArtifact(
-					target.id,
-					"candidate",
-					pinnedBaseImage,
-					(m) => log(`    ${m}`),
+				const built = await buildProviderArtifact(target.id, {
+					phase: "candidate",
+					base: pinnedBaseImage,
+					log: (m) => log(`    ${m}`),
+				});
+				buildResults[target.id] = built.ref;
+				log(
+					`>>> ${describeReplacement(target.id, bakedArtifactName(target.id, "candidate"), built)}`,
 				);
-				if (target.id === "freestyle") {
-					if (typeof builtRef !== "string")
-						throw new Error("Freestyle bake did not return its immutable snapshot ID");
-					buildResults.freestyle = builtRef;
-				}
 			} else {
 				log(`>>> ${target.id}: ${nonBakedArtifactAction(target.id, "candidate")}`);
 			}
@@ -256,15 +292,8 @@ if (import.meta.main) {
 	}));
 
 	writeReport({
-		candidate: {
-			freestyleSnapshotId: buildResults.freestyle,
-			image: pinnedBaseImage,
-			e2bTemplate: config.e2bTemplateCandidate,
-			daytonaSnapshot: config.daytonaSnapshotCandidate,
-			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
-			novitaTemplate: config.novitaTemplateCandidate,
-			runloopBlueprint: config.runloopBlueprintCandidate,
-		},
+		// `artifacts` is what a later promote pins: the ref each candidate build returned.
+		candidate: { image: pinnedBaseImage, artifacts: buildResults },
 		reports,
 	});
 

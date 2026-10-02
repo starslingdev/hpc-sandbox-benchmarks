@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { DriverModuleMap, DriverProviderId } from "./index.ts";
-import { DRIVERS, loadDriverModule } from "./index.ts";
+import { baseImageUse, PROVIDER_IDS, REGISTRY } from "@sandbox-benchmarks/schema/providers";
+import type { ArtifactBuilderProviderId, DriverModuleMap, DriverProviderId } from "./index.ts";
+import { ARTIFACT_BUILDERS, DRIVERS, loadArtifactBuilder, loadDriverModule } from "./index.ts";
 
 type Equal<Left, Right> =
 	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2
@@ -44,5 +45,32 @@ describe("generated driver loader", () => {
 		const loadUnknownProvider = () => loadDriverModule("not-a-provider");
 		void loadUnknownProvider;
 		expect(true).toBe(true);
+	});
+});
+
+describe("generated artifact-builder loader", () => {
+	test("is a frozen table of lazy loaders", () => {
+		expect(Object.values(ARTIFACT_BUILDERS).every((load) => typeof load === "function")).toBe(true);
+		expect(Object.isFrozen(ARTIFACT_BUILDERS)).toBe(true);
+	});
+
+	// The generated assertions prove the key set is the baked partition; this proves each loader
+	// resolves a builder for its own id, OCI or derived from the driver's snapshot capability.
+	test("every loader resolves the builder registered under its key", async () => {
+		const kinds: Record<string, string> = {};
+		for (const id of Object.keys(ARTIFACT_BUILDERS) as ArtifactBuilderProviderId[]) {
+			const builder: { readonly provider: string; readonly bakes: string } =
+				await loadArtifactBuilder(id);
+			expect(builder.provider).toBe(id);
+			kinds[id] = builder.bakes;
+		}
+		expect(kinds).toEqual(
+			Object.fromEntries(
+				PROVIDER_IDS.filter((id) => REGISTRY[id].artifact.kind === "baked").map((id) => [
+					id,
+					baseImageUse(id) === "bakes" ? "oci" : "native-snapshot",
+				]),
+			),
+		);
 	});
 });

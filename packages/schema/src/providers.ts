@@ -28,6 +28,7 @@ export type {
 	BaseImageUse,
 	CandidateArtifact,
 	CandidateArtifactRefs,
+	NativeSnapshotProviderId,
 } from "./provider-artifacts.ts";
 export {
 	bakedArtifactName,
@@ -35,6 +36,7 @@ export {
 	candidateArtifact,
 	isBakedProviderId,
 	isMirroredProviderId,
+	isNativeSnapshotProviderId,
 	releaseUnscopable,
 } from "./provider-artifacts.ts";
 export type { ProviderId } from "./provider-ids.ts";

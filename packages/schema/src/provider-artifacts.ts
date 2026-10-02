@@ -10,11 +10,26 @@ import type { ProviderArtifact } from "./provider-meta.ts";
 import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "./toolchain.ts";
 
 export type ArtifactPhase = "candidate" | "version";
+
+/** Baked providers whose artifact is a native snapshot prepared in a booted sandbox. */
+export type NativeSnapshotProviderId = {
+	[P in BakedProviderId]: (typeof REGISTRY)[P]["artifact"] extends {
+		readonly source: "native-snapshot";
+	}
+		? P
+		: never;
+}[BakedProviderId];
 export type BaseImageUse = "bakes" | "boots" | "none";
 
 /** Runtime narrowing paired with the compiler-derived {@link BakedProviderId} partition. */
 export function isBakedProviderId(id: ProviderId): id is BakedProviderId {
 	return REGISTRY[id].artifact.kind === "baked";
+}
+
+/** Runtime narrowing paired with the compiler-derived {@link NativeSnapshotProviderId} partition. */
+export function isNativeSnapshotProviderId(id: ProviderId): id is NativeSnapshotProviderId {
+	const artifact: ProviderArtifact = REGISTRY[id].artifact;
+	return artifact.kind === "baked" && artifact.source === "native-snapshot";
 }
 
 /** Runtime narrowing paired with the compiler-derived {@link MirroredProviderId} partition. */

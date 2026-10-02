@@ -131,14 +131,30 @@ including ADR-0008's kit tier, which admits a module built over it.
 is a union by how the provider bakes:
 
 - an **OCI baker** (`defineArtifactBuilder(id, build)`, a provider package's `./artifact`) takes a
-  derived name, a digest-pinned base, the toolchain images directory, parsed credentials, the target
-  spec and a `replace` permission. It returns the exact `ref` its driver boots plus how a same-name
-  predecessor was replaced (`none`, `atomic`, or `destructive` for Daytona's delete-then-create);
+  derived name, a digest-pinned base, the toolchain images directory, the Docker config directory,
+  parsed credentials, the target spec and a `replace` permission. It returns the exact `ref` its
+  driver boots plus how a same-name predecessor was replaced (`none`, `atomic`, or `destructive` for a
+  vendor that can only delete, then create). Builders that drive a vendor CLI or Docker take the
+  kit's `BuildCommandRunner` transport (`runBuildCommand` is the real one);
 - a **native-snapshot baker** gets no base and no `./artifact`: `snapshotArtifactBuilder(module,
-  { stockBase })` derives it from the driver's snapshot capability. It boots the stock base (or, on a
-  version build, the revalidated candidate), awaits the lane's injected `prepare(session)` (recipe
-  and smoke), captures a snapshot, and destroys the sandbox with cleanup confirmation. A snapshot
-  captured by a failed build is deleted.
+  snapshotBuild)` derives it from the driver's snapshot capability and the `snapshotBuild` options its
+  driver entry exports (the stock base, and how to read the immutable identity a build booted). It
+  boots the stock base (or, on a version build, the revalidated candidate), awaits the lane's
+  injected `prepare(session, { base })` (recipe, smoke and provenance), captures a `durable` snapshot,
+  and destroys the sandbox with cleanup confirmation. A snapshot captured by a failed build is
+  deleted. The stock base is a mutable alias, so a driver boots it only from a build context: one
+  whose resolved artifact is that alias, which a benchmark lane never resolves.
+
+Snapshot capture takes a `retention`: `ephemeral` (a lifecycle measurement's snapshot, which the
+vendor may expire) or `durable` (a release artifact, which a driver refuses rather than let expire).
+
+The generated `ARTIFACT_BUILDERS` join in `@sandbox-benchmarks/drivers` sits beside `DRIVERS`: one
+lazy loader per baked provider, typed per id, deriving the native-snapshot builders. The release lane
+(`apps/cli/src/lib/bake/provider-artifacts.ts`) derives the name, resolves the digest-pinned base
+once when an in-scope provider bakes from it, calls the loader, and records each build's `ref` as the
+candidate's `buildResults`. Bake reports carry those refs, and promote pins them (`--bake-reports`),
+so a native snapshot is promoted by the immutable ID its bake validated. Mirrored artifacts (Vercel)
+promote by a registry retag in the CLI, which imports no vendor library for it.
 
 `DriverError.vendorHttpStatus` carries HTTP response status; `vendorExitCode` carries process exit
 status. Only the HTTP field participates in the 429 retry rule. CLI readiness can return
@@ -158,8 +174,9 @@ Everything else that names providers is derived from that registry rather than r
   `declaredIsolationClass` (the class a guest probe can contradict);
 - one generator, `bun run generate-providers`, which validates the metadata (including that an npm
   `sdkPackage` is a runtime dependency of its own provider package and that a `{ cli }` vendor has a
-  setup action pinning an exact version) and writes the registry assembly, the driver loader, each
-  package's provenance, and the managed workflow, env and docs regions. `bun run check:providers` is
+  setup action pinning an exact version) and `./artifact` exactness (an OCI baker exports one; no other
+  provider does; a native-snapshot baker's driver exports `snapshotBuild`), and writes the registry
+  assembly, the driver and artifact-builder loaders, each package's provenance, and the managed workflow, env and docs regions. `bun run check:providers` is
   its drift check.
 
 Exec transport is not metadata: each driver module's `execution` policy declares its synchronous cap

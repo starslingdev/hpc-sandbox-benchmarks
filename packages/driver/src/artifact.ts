@@ -32,7 +32,11 @@ interface ArtifactBuildCommon<Env> {
 	readonly spec: TargetSpec;
 	/** The provider's declared inputs, already parsed. */
 	readonly env: Env;
-	/** Whether an existing artifact of this name may be replaced (candidate, forced republish). */
+	/**
+	 * Whether an existing artifact of this name may be replaced. `forbidden` obliges a builder that
+	 * can only replace destructively (delete, then create) to refuse before it deletes; a builder
+	 * whose vendor publishes over a name atomically leaves the predecessor standing either way.
+	 */
 	readonly replace: "allowed" | "forbidden";
 	readonly log: (line: string) => void;
 	readonly signal: AbortSignal;
@@ -50,6 +54,21 @@ export interface OciArtifactBuildRequest<Env> extends ArtifactBuildCommon<Env> {
 	 * relative to its own source.
 	 */
 	readonly imagesDir: string;
+	/**
+	 * The Docker client configuration directory holding the release lane's registry logins, for a
+	 * builder whose remote builder must pull the base with them (Blaxel). Resolved by the release
+	 * lane for the same reason as `imagesDir`.
+	 */
+	readonly dockerConfig: string;
+}
+
+/** What the release lane's preparation of a native-snapshot build sandbox is told. */
+export interface SnapshotPreparation extends DriverOperationOptions {
+	/**
+	 * The immutable identity the build sandbox booted: the candidate on a version build, else the
+	 * stock base as the vendor resolved it. The recipe's provenance records it.
+	 */
+	readonly base: string;
 }
 
 /** A native snapshot captured from a prepared sandbox. */
@@ -68,7 +87,7 @@ export interface SnapshotArtifactBuildRequest<P extends ProviderId>
 	 * The release lane's preparation of the booted sandbox: the install recipe and smoke on a
 	 * candidate build, provenance verification on a version build. Rejecting fails the build.
 	 */
-	readonly prepare: (session: SandboxSession, options: DriverOperationOptions) => Promise<void>;
+	readonly prepare: (session: SandboxSession, preparation: SnapshotPreparation) => Promise<void>;
 }
 
 export type ArtifactBuildRequest<P extends ProviderId> =
@@ -104,6 +123,41 @@ export type ArtifactBuilder<P extends ProviderId> =
 	| OciArtifactBuilder<P>
 	| SnapshotArtifactBuilder<P>;
 
+export interface BuildCommandOptions {
+	readonly cwd?: string;
+	/** Added to the inherited environment, so a builder passes its credential explicitly. */
+	readonly env?: Readonly<Record<string, string>>;
+	/** Written to the command's stdin and closed: for a secret that must stay out of argv. */
+	readonly stdin?: string;
+}
+
+/**
+ * Runs one build command (a pinned vendor CLI, or Docker) and resolves its exit code. The build
+ * log streams to the release lane's own stdio. OCI builders take it as an injectable transport so
+ * their translation is testable without the binary.
+ */
+export type BuildCommandRunner = (
+	argv: readonly [string, ...string[]],
+	options?: BuildCommandOptions,
+) => Promise<number>;
+
+/** The real {@link BuildCommandRunner}: the release lane's environment plus `options.env`. */
+export const runBuildCommand: BuildCommandRunner = async (argv, options = {}) => {
+	const proc = Bun.spawn([...argv], {
+		...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+		...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+		...(options.stdin === undefined ? {} : { stdin: "pipe" as const }),
+		stdout: "inherit",
+		stderr: "inherit",
+	});
+	if (options.stdin !== undefined && proc.stdin) {
+		proc.stdin.write(options.stdin);
+		// Close the pipe before waiting, so a command reading stdin to EOF cannot block on it.
+		await proc.stdin.end();
+	}
+	return proc.exited;
+};
+
 /** Define an OCI baker: its provider package's `./artifact` export. */
 export function defineArtifactBuilder<P extends ProviderId, Env = EnvOf<P>>(
 	provider: P,
@@ -125,17 +179,34 @@ async function converge(session: SandboxSession): Promise<void> {
 }
 
 /**
+ * What a native-snapshot provider package tells {@link snapshotArtifactBuilder} about its vendor;
+ * the package exports it beside its driver as `snapshotBuild`.
+ */
+export interface SnapshotBuildOptions<P extends ProviderId, Handle> {
+	/**
+	 * The stock snapshot a candidate build boots, from the provider's own inputs. A build context is
+	 * the only one whose resolved artifact may be this ref; the driver accepts it there alone.
+	 */
+	readonly stockBase: (env: EnvOf<P>) => string;
+	/**
+	 * The immutable identity the booted build sandbox reports. Omitted when every ref the build
+	 * boots is already immutable, in which case the booted ref is the identity.
+	 */
+	readonly bootedBase?: (
+		session: SandboxSession<Handle>,
+		options: DriverOperationOptions,
+	) => Promise<string>;
+}
+
+/**
  * Derive a native-snapshot baker from a driver module's snapshot capability: boot the stock base
- * (or the revalidated candidate), let the release lane prepare it, capture it, and destroy the
- * sandbox with cleanup confirmation whatever happened. A snapshot captured by a build that then
- * fails is deleted.
+ * (or the revalidated candidate), let the release lane prepare it, capture a durable snapshot, and
+ * destroy the sandbox with cleanup confirmation whatever happened. A snapshot captured by a build
+ * that then fails is deleted.
  */
 export function snapshotArtifactBuilder<P extends ProviderId, Handle>(
 	module: DriverModule<P, Handle>,
-	options: {
-		/** The stock snapshot a candidate build boots, from the provider's own inputs. */
-		readonly stockBase: (env: EnvOf<P>) => string;
-	},
+	options: SnapshotBuildOptions<P, Handle>,
 ): SnapshotArtifactBuilder<P> {
 	const provider = module.id;
 	const build = async (request: SnapshotArtifactBuildRequest<P>): Promise<ArtifactBuildResult> => {
@@ -165,9 +236,13 @@ export function snapshotArtifactBuilder<P extends ProviderId, Handle>(
 		let failure: { readonly error: unknown } | undefined;
 		try {
 			request.signal.throwIfAborted();
-			await request.prepare(session, { signal: request.signal });
+			const base =
+				options.bootedBase === undefined
+					? ref
+					: await options.bootedBase(session, { signal: request.signal });
+			await request.prepare(session as SandboxSession, { signal: request.signal, base });
 			request.signal.throwIfAborted();
-			snapshotId = (await snapshots.create(session)).snapshotId;
+			snapshotId = (await snapshots.create(session, { retention: "durable" })).snapshotId;
 		} catch (error) {
 			failure = { error };
 		}

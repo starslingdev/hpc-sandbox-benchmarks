@@ -6,10 +6,11 @@ dissolves what remains into schema, the harness, and the provider packages.
 
 **Public surface (`.`):** the validated `config` gatekeeper (toolchain and artifact names, vendor
 namespaces and targets the release lane reads), the cost-evidence sanitizers and hook types the
-harness persists through, and Novita's pinned regional connection for the template bake.
+harness persists through.
 `./config` and `./support` expose the gatekeeper and the sanitizers without the rest.
 
-**Depends on:** `@sandbox-benchmarks/schema` and `arktype`; `novita-sandbox` for types only.
+**Depends on:** `@sandbox-benchmarks/schema` and `arktype`. It imports no vendor library: artifact
+builders live in their provider packages (`./artifact`).
 
 Cost-evidence hooks live on DriverModules (for example `packages/modal/src/shared.ts`). Billing API
 calls never belong in the SDK-free results package, and observed evidence must identify the

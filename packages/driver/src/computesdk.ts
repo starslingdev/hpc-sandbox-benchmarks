@@ -32,6 +32,7 @@ import type {
 	SandboxObservation,
 	SandboxRef,
 	SandboxSession,
+	SnapshotOptions,
 } from "@sandbox-benchmarks/driver";
 import {
 	DriverError,
@@ -340,6 +341,7 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 		create(
 			compute: TCompute,
 			session: SandboxSession<ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>,
+			options?: SnapshotOptions,
 		): Promise<{ readonly snapshotId: string }>;
 		delete(compute: TCompute, snapshotId: string): Promise<void>;
 	};
@@ -1564,6 +1566,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 						create: async (
 							compute: TCompute,
 							session: SandboxSession<ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>,
+							snapshotOptions?: SnapshotOptions,
 						) => {
 							const canonical = validateRef(
 								provider,
@@ -1576,7 +1579,12 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 								await invokeComputeSdkProviderCallbackAsync(
 									provider,
 									"snapshot create",
-									() => snapshots.create(compute, { ...session, sandboxRef: canonical }),
+									() =>
+										snapshots.create(
+											compute,
+											{ ...session, sandboxRef: canonical },
+											snapshotOptions,
+										),
 									{ code: "snapshot-failed", ref: canonical },
 								),
 								canonical,

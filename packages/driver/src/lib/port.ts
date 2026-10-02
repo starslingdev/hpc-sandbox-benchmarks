@@ -112,8 +112,23 @@ export interface ControlPlaneProbes {
 	list?(): Promise<unknown>;
 }
 
+/**
+ * How long a captured snapshot must outlive its capture. `ephemeral` (the default) is a lifecycle
+ * measurement's snapshot, which its caller deletes; a driver may let the vendor expire it.
+ * `durable` is a release artifact kept until deleted: a driver whose vendor would expire it must
+ * reject rather than return it.
+ */
+export type SnapshotRetention = "ephemeral" | "durable";
+
+export interface SnapshotOptions {
+	readonly retention?: SnapshotRetention;
+}
+
 export interface SnapshotCapability<Handle = unknown> {
-	create(session: SandboxSession<Handle>): Promise<{ readonly snapshotId: string }>;
+	create(
+		session: SandboxSession<Handle>,
+		options?: SnapshotOptions,
+	): Promise<{ readonly snapshotId: string }>;
 	delete(snapshotId: string): Promise<void>;
 }
 

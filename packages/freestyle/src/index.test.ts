@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CreateRequest } from "@sandbox-benchmarks/driver";
+import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { BENCH_JOB_CEILING_MINUTES } from "@sandbox-benchmarks/schema";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
@@ -13,6 +13,7 @@ import {
 	FREESTYLE_VM_TTL_SECONDS,
 	freestyleCommand,
 	freestyleSpec,
+	snapshotBuild,
 } from "./index.ts";
 
 const context = {
@@ -42,6 +43,7 @@ function fixture(
 		init?: RequestInit,
 	) => Response | undefined | Promise<Response | undefined>,
 	options: FreestyleSpecOptions = {},
+	driverContext: DriverContext<"freestyle"> = context,
 ) {
 	let deleted = false;
 	const calls: { path: string; method: string; body: Record<string, unknown>; headers: Headers }[] =
@@ -72,8 +74,8 @@ function fixture(
 		},
 		{ preconnect: fetch.preconnect },
 	);
-	const spec = freestyleSpec(context, { ...options, fetch: mockFetch });
-	const driver = driverFromComputeSpec("freestyle", spec, context.resolvedArtifact, [
+	const spec = freestyleSpec(driverContext, { ...options, fetch: mockFetch });
+	const driver = driverFromComputeSpec("freestyle", spec, driverContext.resolvedArtifact, [
 		context.env.FREESTYLE_API_KEY,
 	]);
 	return { calls, spec, driver };
@@ -478,6 +480,70 @@ describe("Freestyle native SDK driver", () => {
 			ttlSeconds: 600,
 		});
 		await driver.snapshots?.delete("sh-test");
+		await session.destroy();
+	});
+});
+
+describe("Freestyle as a native-snapshot build target", () => {
+	const stock = { kind: "baked", ref: "freestyle/ubuntu" } as const;
+	const buildContext: DriverContext<"freestyle"> = { ...context, resolvedArtifact: stock };
+
+	test("boots the stock alias only from a build context and skips the immutable-ID check", async () => {
+		const { driver } = fixture(undefined, {}, buildContext);
+		const session = await driver.create({ ...request, artifact: stock });
+		expect(session.reportedArtifact).toBeUndefined();
+		await session.destroy();
+		// A benchmark context resolves an immutable ID, so the same request is refused there.
+		const benchmark = fixture();
+		await expect(benchmark.driver.create({ ...request, artifact: stock })).rejects.toMatchObject({
+			code: "invalid-create-request",
+		});
+		expect(benchmark.calls).toHaveLength(0);
+	});
+
+	test("reads the immutable ID a build booted from the VM record", async () => {
+		const { driver } = fixture(undefined, {}, buildContext);
+		const session = await driver.create({ ...request, artifact: stock });
+		expect(
+			await snapshotBuild.bootedBase?.(session as never, { signal: AbortSignal.timeout(1000) }),
+		).toBe("sh-test");
+		await session.destroy();
+		expect(snapshotBuild.stockBase({ FREESTYLE_API_KEY: "k" })).toBe("freestyle/ubuntu");
+		expect(
+			snapshotBuild.stockBase({ FREESTYLE_API_KEY: "k", FREESTYLE_BASE_SNAPSHOT_ID: "sh-base" }),
+		).toBe("sh-base");
+	});
+
+	test("captures a durable release snapshot without automatic deletion", async () => {
+		const { driver, calls } = fixture((path) =>
+			path === "/v5/vms/vm-test/snapshot"
+				? Response.json({ snapshotId: "sh-release", snapshot: { autoDeleteSeconds: null } })
+				: undefined,
+		);
+		const session = await driver.create(request);
+		expect(await driver.snapshots?.create(session, { retention: "durable" })).toEqual({
+			snapshotId: "sh-release",
+		});
+		expect(calls.find((call) => call.path.endsWith("/snapshot"))?.body).toEqual({
+			autoDeleteSeconds: -1,
+		});
+		await session.destroy();
+	});
+
+	test("deletes and refuses a durable snapshot the plan would expire", async () => {
+		const { driver, calls } = fixture((path) =>
+			path === "/v5/vms/vm-test/snapshot"
+				? Response.json({ snapshotId: "sh-test", snapshot: { ttlSeconds: 86_400 } })
+				: undefined,
+		);
+		const session = await driver.create(request);
+		const failure = await driver.snapshots
+			?.create(session, { retention: "durable" })
+			.catch((error: unknown) => error);
+		expect(failure).toMatchObject({ code: "snapshot-failed" });
+		expect(
+			calls.some((call) => call.method === "DELETE" && call.path === "/v5/snapshots/sh-test"),
+		).toBe(true);
 		await session.destroy();
 	});
 });

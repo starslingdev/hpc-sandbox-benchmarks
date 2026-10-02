@@ -596,19 +596,186 @@ function tsProperty(id: ProviderId): string {
 	return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id) ? id : JSON.stringify(id);
 }
 
-/** The root entry contains only the correlated lazy loader; every specifier stays statically known. */
+/** How a baked provider's artifact builder is reached, or `null` when it does not bake. */
+export type ArtifactBuilderSource =
+	| {
+			readonly kind: "oci";
+			readonly subpath: string;
+			readonly specifier: string;
+			readonly file: string;
+	  }
+	| { readonly kind: "native-snapshot"; readonly specifier: string; readonly file: string };
+
+/**
+ * An OCI baker exports its builder as `./artifact` beside its driver entry (`./<entry>/artifact`
+ * for an isolation variant). A native-snapshot baker has none: its builder is derived from the
+ * driver entry's own module and the `snapshotBuild` options exported beside it.
+ */
+export function artifactBuilderSource(id: ProviderId): ArtifactBuilderSource | null {
+	const artifact = providerMeta(id).artifact;
+	if (artifact.kind !== "baked") return null;
+	const { directory, packageName, subpath, specifier, file } = providerPackage(id);
+	if (artifact.source === "native-snapshot") return { kind: "native-snapshot", specifier, file };
+	const entry = subpath === "." ? "" : `${subpath.slice(2)}/`;
+	return {
+		kind: "oci",
+		subpath: `./${entry}artifact`,
+		specifier: `${packageName}/${entry}artifact`,
+		file: `packages/${directory}/src/${entry}artifact.ts`,
+	};
+}
+
+const ARTIFACT_EXPORT = /^\.\/(?:.+\/)?artifact$/;
+
+/**
+ * Check `./artifact` exactness against the registry without importing any provider module: every
+ * OCI baker exports its builder from the projected file, which default-exports; no other subpath of
+ * a provider package is an artifact export; and every native-snapshot baker's driver entry exports
+ * the `snapshotBuild` options its derived builder needs.
+ */
+export function assertArtifactBuilders(root = REPO_ROOT): void {
+	const transpiler = new Bun.Transpiler({ loader: "ts" });
+	const exportsOf = (file: string) =>
+		transpiler.scan(readFileSync(resolve(root, file), "utf8")).exports;
+	const expected = new Map<string, Map<string, string>>();
+	for (const id of PROVIDER_IDS) {
+		const { directory } = providerPackage(id);
+		const subpaths = expected.get(directory) ?? new Map<string, string>();
+		expected.set(directory, subpaths);
+		const source = artifactBuilderSource(id);
+		if (source === null) continue;
+		if (source.kind === "native-snapshot") {
+			if (!exportsOf(source.file).includes("snapshotBuild"))
+				throw new Error(
+					`${source.file}: ${id} bakes a native snapshot, so its driver entry must export snapshotBuild`,
+				);
+			continue;
+		}
+		subpaths.set(source.subpath, id);
+		const manifestFile = `packages/${directory}/package.json`;
+		const exports = mapping(packageManifest(root, directory).exports, `${manifestFile}: exports`);
+		if (exports[source.subpath] !== source.file.replace(`packages/${directory}/`, "./"))
+			throw new Error(
+				`${manifestFile}: ${id} bakes from the OCI base, so it must export ${source.subpath} from ${source.file}`,
+			);
+		if (!existsSync(resolve(root, source.file)))
+			throw new Error(`${source.file}: missing artifact builder for ${id}`);
+		if (!exportsOf(source.file).includes("default"))
+			throw new Error(`${source.file}: artifact builder must default-export`);
+	}
+	for (const [directory, subpaths] of expected) {
+		const manifestFile = `packages/${directory}/package.json`;
+		const exports = mapping(packageManifest(root, directory).exports, `${manifestFile}: exports`);
+		for (const subpath of Object.keys(exports))
+			if (ARTIFACT_EXPORT.test(subpath) && !subpaths.has(subpath))
+				throw new Error(
+					`${manifestFile}: exports ${subpath}, but no provider it serves bakes from the OCI base there (a native-snapshot baker derives its builder from its driver)`,
+				);
+	}
+}
+
+/**
+ * The root entry contains only the correlated lazy loaders; every specifier stays statically
+ * known. `DRIVERS` covers every provider; `ARTIFACT_BUILDERS` covers exactly the baked ones.
+ */
 export function renderDriversIndex(): string {
-	const map = PROVIDER_IDS.map(
-		(id) => `\t${tsProperty(id)}: typeof import("${providerPackage(id).specifier}").default;`,
-	).join("\n");
-	const loaders = PROVIDER_IDS.map((id) => {
-		const expression = `import("${providerPackage(id).specifier}").then((module) => module.default),`;
-		const prefix = `\t${tsProperty(id)}: () =>`;
+	const lazy = (key: string, expression: string) => {
+		const prefix = `\t${key}: () =>`;
 		return prefix.length + expression.length + 1 > 100
 			? `${prefix}\n\t\t${expression}`
 			: `${prefix} ${expression}`;
-	}).join("\n");
-	return `${GENERATED_HEADER}\n// Every registered provider has exactly one driver module; the assertions below prove it.\n\nimport type { DriverModule, ProviderId } from "@sandbox-benchmarks/driver";\n\nexport interface DriverModuleMap {\n${map}\n}\n\ntype Assert<Condition extends true> = Condition;\ntype _EveryDriverIdIsRegistered = Assert<keyof DriverModuleMap extends ProviderId ? true : false>;\ntype _EveryRegisteredIdHasADriver = Assert<ProviderId extends keyof DriverModuleMap ? true : false>;\n\nexport type DriverProviderId = keyof DriverModuleMap;\ntype DriverModuleConformance = {\n\t[P in DriverProviderId]: DriverModuleMap[P] extends DriverModule<P, infer _Handle> ? true : false;\n};\ntype _EveryDriverModuleMatchesItsId = Assert<\n\tDriverModuleConformance[DriverProviderId] extends true ? true : false\n>;\n\nexport const DRIVERS: {\n\treadonly [P in DriverProviderId]: () => Promise<DriverModuleMap[P]>;\n} = Object.freeze({\n${loaders}\n});\n\nexport const loadDriverModule = <P extends DriverProviderId>(id: P): Promise<DriverModuleMap[P]> =>\n\tDRIVERS[id]();\n`;
+	};
+	const map = PROVIDER_IDS.map(
+		(id) => `\t${tsProperty(id)}: typeof import("${providerPackage(id).specifier}").default;`,
+	).join("\n");
+	const loaders = PROVIDER_IDS.map((id) =>
+		lazy(
+			tsProperty(id),
+			`import("${providerPackage(id).specifier}").then((module) => module.default),`,
+		),
+	).join("\n");
+	const baked = PROVIDER_IDS.flatMap((id) => {
+		const source = artifactBuilderSource(id);
+		return source === null ? [] : [{ id, source }];
+	});
+	const builderMap = baked
+		.map(({ id, source }) =>
+			source.kind === "oci"
+				? `\t${tsProperty(id)}: typeof import("${source.specifier}").default;`
+				: `\t${tsProperty(id)}: SnapshotArtifactBuilder<${JSON.stringify(id)}>;`,
+		)
+		.join("\n");
+	const builderLoaders = baked
+		.map(({ id, source }) =>
+			source.kind === "oci"
+				? lazy(tsProperty(id), `import("${source.specifier}").then((module) => module.default),`)
+				: `\t${tsProperty(id)}: () =>\n\t\timport("${source.specifier}").then((module) =>\n\t\t\tsnapshotArtifactBuilder(module.default, module.snapshotBuild),\n\t\t),`,
+		)
+		.join("\n");
+	return `${GENERATED_HEADER}
+// Every registered provider has exactly one driver module, and every baked provider exactly one
+// artifact builder; the assertions below prove it.
+
+import type { ArtifactOf, DriverModule, ProviderId } from "@sandbox-benchmarks/driver";
+import type { ArtifactBuilder, SnapshotArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
+import { snapshotArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
+
+export interface DriverModuleMap {
+${map}
+}
+
+type Assert<Condition extends true> = Condition;
+type _EveryDriverIdIsRegistered = Assert<keyof DriverModuleMap extends ProviderId ? true : false>;
+type _EveryRegisteredIdHasADriver = Assert<ProviderId extends keyof DriverModuleMap ? true : false>;
+
+export type DriverProviderId = keyof DriverModuleMap;
+type DriverModuleConformance = {
+\t[P in DriverProviderId]: DriverModuleMap[P] extends DriverModule<P, infer _Handle> ? true : false;
+};
+type _EveryDriverModuleMatchesItsId = Assert<
+\tDriverModuleConformance[DriverProviderId] extends true ? true : false
+>;
+
+export const DRIVERS: {
+\treadonly [P in DriverProviderId]: () => Promise<DriverModuleMap[P]>;
+} = Object.freeze({
+${loaders}
+});
+
+export const loadDriverModule = <P extends DriverProviderId>(id: P): Promise<DriverModuleMap[P]> =>
+\tDRIVERS[id]();
+
+/** OCI bakers export \`./artifact\`; a native-snapshot baker's builder derives from its driver. */
+export interface ArtifactBuilderMap {
+${builderMap}
+}
+
+type BakedProviderId = {
+\t[P in ProviderId]: ArtifactOf<P> extends { readonly kind: "baked" } ? P : never;
+}[ProviderId];
+type _EveryBuilderIsBaked = Assert<keyof ArtifactBuilderMap extends BakedProviderId ? true : false>;
+type _EveryBakedIdHasABuilder = Assert<
+\tBakedProviderId extends keyof ArtifactBuilderMap ? true : false
+>;
+
+export type ArtifactBuilderProviderId = keyof ArtifactBuilderMap;
+type ArtifactBuilderConformance = {
+\t[P in ArtifactBuilderProviderId]: ArtifactBuilderMap[P] extends ArtifactBuilder<P> ? true : false;
+};
+type _EveryArtifactBuilderMatchesItsId = Assert<
+\tArtifactBuilderConformance[ArtifactBuilderProviderId] extends true ? true : false
+>;
+
+export const ARTIFACT_BUILDERS: {
+\treadonly [P in ArtifactBuilderProviderId]: () => Promise<ArtifactBuilderMap[P]>;
+} = Object.freeze({
+${builderLoaders}
+});
+
+export const loadArtifactBuilder = <P extends ArtifactBuilderProviderId>(
+\tid: P,
+): Promise<ArtifactBuilderMap[P]> => ARTIFACT_BUILDERS[id]();
+`;
 }
 
 /** Generate only workspace dependency edges; each provider owns its SDK dependencies. */
@@ -633,6 +800,7 @@ export function renderDriversPackage(root = REPO_ROOT): string {
 /** Every file the wiring half of `generate-providers` owns, keyed by repository-relative path. */
 export function renderProviderWiringFiles(root = REPO_ROOT): Map<string, string> {
 	assertDriverModules(root);
+	assertArtifactBuilders(root);
 	const rendered = new Map<string, string>();
 	for (const region of generatedProviderRegions()) {
 		const source = rendered.get(region.file) ?? readFileSync(resolve(root, region.file), "utf8");

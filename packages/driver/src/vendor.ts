@@ -23,6 +23,7 @@ import type {
 	ProviderCostEvidenceCapability,
 	ProviderId,
 	SandboxObservation,
+	SnapshotRetention,
 } from "@sandbox-benchmarks/driver";
 import { isDriverError, pollUntilReady, shellQuote } from "@sandbox-benchmarks/driver";
 import type {
@@ -130,7 +131,11 @@ export interface VendorHandle<Raw, Native> {
  * capability unchanged. Not a port plane — omission records an unsupported capability.
  */
 export interface VendorSnapshots<Raw, Native> {
-	create(handle: VendorHandle<Raw, Native>, op: Op): Promise<{ readonly snapshotId: string }>;
+	create(
+		handle: VendorHandle<Raw, Native>,
+		op: Op,
+		retention: SnapshotRetention,
+	): Promise<{ readonly snapshotId: string }>;
 	delete(snapshotId: string, op: Op): Promise<void>;
 }
 
@@ -636,11 +641,11 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		},
 		...(snapshots && {
 			snapshots: {
-				create: (_compute, session) =>
+				create: (_compute, session, options) =>
 					call(
 						"snapshot capture",
 						undefined,
-						(o) => snapshots.create(session.native, o),
+						(o) => snapshots.create(session.native, o, options?.retention ?? "ephemeral"),
 						timing.snapshotTimeoutMs,
 					),
 				delete: (_compute, snapshotId) =>

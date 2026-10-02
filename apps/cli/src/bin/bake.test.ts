@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { requestedBaseImage, requestedProviders } from "./bake.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { candidateBuildResults, requestedBaseImage, requestedProviders } from "./bake.ts";
 
 describe("requestedProviders", () => {
 	test("no flag → undefined (drive every registered provider, the local default)", () => {
@@ -49,5 +52,58 @@ describe("requestedBaseImage", () => {
 		expect(() => requestedBaseImage(["--base-image", "--provider", "runcloud"])).toThrow(
 			/non-empty image reference/,
 		);
+	});
+});
+
+describe("candidateBuildResults", () => {
+	function reports(files: Record<string, unknown>): string {
+		const dir = mkdtempSync(join(tmpdir(), "bake-reports-"));
+		for (const [name, report] of Object.entries(files))
+			writeFileSync(join(dir, name), JSON.stringify(report));
+		return dir;
+	}
+
+	test("no flag → nothing recorded", () => {
+		expect(candidateBuildResults(["--promote"])).toEqual({});
+	});
+
+	test("merges every cell's recorded candidate refs, so promote pins what bake validated", () => {
+		const dir = reports({
+			"bake-freestyle.json": { candidate: { image: "x", artifacts: { freestyle: "sh-abc" } } },
+			"bake-e2b.json": { candidate: { artifacts: { e2b: "toolchain-v9-candidate" } } },
+			"bake-modal-gvisor.json": { candidate: { artifacts: {} } },
+			"notes.txt": "ignored",
+		});
+		try {
+			expect(candidateBuildResults(["--promote", "--bake-reports", dir])).toEqual({
+				freestyle: "sh-abc",
+				e2b: "toolchain-v9-candidate",
+			});
+			expect(candidateBuildResults([`--bake-reports=${dir}`])).toMatchObject({
+				freestyle: "sh-abc",
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects a non-baked id, an empty ref, and reports that disagree", () => {
+		const cases = [
+			{ "a.json": { candidate: { artifacts: { "modal-gvisor": "x" } } } },
+			{ "a.json": { candidate: { artifacts: { freestyle: "" } } } },
+			{
+				"a.json": { candidate: { artifacts: { freestyle: "sh-a" } } },
+				"b.json": { candidate: { artifacts: { freestyle: "sh-b" } } },
+			},
+		];
+		for (const files of cases) {
+			const dir = reports(files);
+			try {
+				expect(() => candidateBuildResults(["--bake-reports", dir])).toThrow();
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		}
+		expect(() => candidateBuildResults(["--bake-reports"])).toThrow(/requires the directory/);
 	});
 });

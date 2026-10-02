@@ -115,4 +115,42 @@ describe("generate-providers", () => {
 		expect(stale.exitCode).toBe(1);
 		expect(stale.output).toContain(".github/actions/setup-tamarind/action.yml");
 	});
+
+	test("an OCI baker without its ./artifact export fails generation", () => {
+		const root = copyTree();
+		edit(root, "packages/runloop/package.json", '"./artifact": "./src/artifact.ts",\n', "");
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(
+			"packages/runloop/package.json: runloop bakes from the OCI base, so it must export ./artifact from packages/runloop/src/artifact.ts",
+		);
+	});
+
+	test("an ./artifact export on a provider that does not bake from the OCI base fails generation", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/freestyle/package.json",
+			'"./transport": "./src/transport.ts",',
+			'"./transport": "./src/transport.ts",\n    "./artifact": "./src/transport.ts",',
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(
+			"packages/freestyle/package.json: exports ./artifact, but no provider it serves bakes from the OCI base there",
+		);
+	});
+
+	test("a native-snapshot baker without its snapshotBuild options fails generation", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/freestyle/src/index.ts",
+			"export const snapshotBuild",
+			"const snapshotBuild",
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain("its driver entry must export snapshotBuild");
+	});
 });

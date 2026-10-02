@@ -45,17 +45,14 @@
         "recover-experiment-cleanup": "./src/bin/recover-experiment-cleanup.ts",
         "audit-account-journals": "./src/bin/audit-account-journals.ts",
         "dataset-impact": "./src/bin/dataset-impact.ts",
+        "workflow-repair": "./src/bin/workflow-repair.ts",
       },
       "dependencies": {
         "@actions/artifact": "6.2.1",
         "@actions/core": "1.11.1",
-        "@daytona/api-client": "catalog:computesdk",
-        "@daytona/sdk": "catalog:computesdk",
-        "@runloop/api-client": "catalog:computesdk",
         "@sandbox-benchmarks/driver": "workspace:*",
         "@sandbox-benchmarks/drivers": "workspace:*",
         "@sandbox-benchmarks/figures": "workspace:*",
-        "@sandbox-benchmarks/freestyle": "workspace:*",
         "@sandbox-benchmarks/harness": "workspace:*",
         "@sandbox-benchmarks/modal": "workspace:*",
         "@sandbox-benchmarks/providers": "workspace:*",
@@ -64,9 +61,7 @@
         "@sandbox-benchmarks/templates": "workspace:*",
         "arktype": "catalog:",
         "dotenv": "catalog:",
-        "freestyle": "catalog:computesdk",
         "modal": "catalog:computesdk",
-        "novita-sandbox": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
@@ -123,6 +118,7 @@
       "name": "@sandbox-benchmarks/daytona",
       "version": "0.0.0",
       "dependencies": {
+        "@daytona/api-client": "catalog:computesdk",
         "@daytona/sdk": "catalog:computesdk",
         "@sandbox-benchmarks/driver": "workspace:*",
         "arktype": "catalog:",
@@ -168,6 +164,7 @@
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -298,7 +295,6 @@
       "dependencies": {
         "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
-        "novita-sandbox": "catalog:computesdk",
       },
       "devDependencies": {
         "@repo/tsconfig": "workspace:*",

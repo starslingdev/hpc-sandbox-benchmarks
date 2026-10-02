@@ -10,6 +10,7 @@ import type {
 } from "@sandbox-benchmarks/driver/artifact";
 import {
 	defineArtifactBuilder,
+	runBuildCommand,
 	snapshotArtifactBuilder,
 } from "@sandbox-benchmarks/driver/artifact";
 import type { Vendor } from "@sandbox-benchmarks/driver/vendor";
@@ -38,6 +39,7 @@ test("an OCI baker is a frozen join of its provider id and its build", async () 
 		bakes: "oci",
 		base: { digestRef: "ghcr.io/example/base@sha256:0123" },
 		imagesDir: "/images",
+		dockerConfig: "/docker",
 		env: { E2B_API_KEY: "key" },
 	};
 	expect(await builder.build(request)).toEqual({ ref: request.name, replaced: "atomic" });
@@ -47,10 +49,13 @@ test("an OCI baker is a frozen join of its provider id and its build", async () 
 });
 
 describe("a native-snapshot baker derived from the driver's snapshot capability", () => {
-	function bake(options: { withSnapshots?: boolean; removeFails?: boolean } = {}) {
+	function bake(
+		options: { withSnapshots?: boolean; removeFails?: boolean; bootedBase?: string } = {},
+	) {
 		const world = memoryVendor();
 		const booted: string[] = [];
 		const captured: string[] = [];
+		const retentions: string[] = [];
 		const deleted: string[] = [];
 		const vendor: Vendor<MemoryRow, MemoryRow> = {
 			...world.vendor,
@@ -68,8 +73,9 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 			},
 			...(options.withSnapshots !== false && {
 				snapshots: {
-					create: async (handle) => {
+					create: async (handle, _op, retention) => {
 						captured.push(handle.record.id);
+						retentions.push(retention);
 						return { snapshotId: `sh-${handle.record.id}` };
 					},
 					delete: async (snapshotId) => {
@@ -85,7 +91,11 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 			timing: { pollMs: 0 },
 			vendor: () => vendor,
 		});
-		const builder = snapshotArtifactBuilder(module, { stockBase: () => "freestyle/ubuntu" });
+		const bootedBase = options.bootedBase;
+		const builder = snapshotArtifactBuilder(module, {
+			stockBase: () => "freestyle/ubuntu",
+			...(bootedBase !== undefined && { bootedBase: async () => bootedBase }),
+		});
 		const request = (
 			overrides: Partial<SnapshotArtifactBuildRequest<"freestyle">> = {},
 		): SnapshotArtifactBuildRequest<"freestyle"> => ({
@@ -98,30 +108,44 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 			},
 			...overrides,
 		});
-		return { world, builder, request, booted, captured, deleted };
+		return { world, builder, request, booted, captured, deleted, retentions };
 	}
 
-	test("a candidate build boots the stock base, prepares, captures, and destroys", async () => {
-		const { world, builder, request, booted, captured } = bake();
-		const prepared: string[] = [];
+	test("a candidate build boots the stock base, prepares, captures durably, and destroys", async () => {
+		const { world, builder, request, booted, captured, retentions } = bake({
+			bootedBase: "sh-stock",
+		});
+		const prepared: { id: string; base: string }[] = [];
 		const result = await builder.build(
 			request({
-				prepare: async (session) => {
-					prepared.push(session.sandboxRef.id);
+				prepare: async (session, { base }) => {
+					prepared.push({ id: session.sandboxRef.id, base });
 				},
 			}),
 		);
 		expect(builder).toMatchObject({ provider: "freestyle", bakes: "native-snapshot" });
 		expect(booted).toEqual(["freestyle/ubuntu"]);
-		expect(prepared).toEqual(captured);
+		// The preparation is told the immutable identity the vendor resolved the stock alias to.
+		expect(prepared).toEqual(captured.map((id) => ({ id, base: "sh-stock" })));
+		// A release artifact must outlive the build; a lifecycle snapshot may expire.
+		expect(retentions).toEqual(["durable"]);
 		expect(result).toEqual({ ref: `sh-${captured[0]}`, replaced: "none" });
 		expect(world.allocations()).toBe(0);
 	});
 
 	test("a version build boots the revalidated candidate instead of rebuilding", async () => {
 		const { builder, request, booted } = bake();
-		await builder.build(request({ candidate: { ref: "sh-candidate" } }));
+		const bases: string[] = [];
+		await builder.build(
+			request({
+				candidate: { ref: "sh-candidate" },
+				prepare: async (_session, { base }) => {
+					bases.push(base);
+				},
+			}),
+		);
 		expect(booted).toEqual(["sh-candidate"]);
+		expect(bases).toEqual(["sh-candidate"]);
 	});
 
 	test("a failed preparation captures nothing and still destroys the build sandbox", async () => {
@@ -151,5 +175,33 @@ describe("a native-snapshot baker derived from the driver's snapshot capability"
 		const { world, builder, request } = bake({ withSnapshots: false });
 		await expect(builder.build(request())).rejects.toThrow(/no snapshot capability/);
 		expect(world.calls).toEqual([]);
+	});
+});
+
+describe("the build-command transport", () => {
+	test("adds the builder's credential to the inherited environment and feeds stdin", async () => {
+		const path = `${import.meta.dir}/.artifact-command-${process.pid}`;
+		try {
+			const exit = await runBuildCommand(
+				[
+					"sh",
+					"-c",
+					'read -r line; printf "%s:%s:%s" "$line" "$BUILD_SECRET" "$HOME" > "$1"',
+					"sh",
+					path,
+				],
+				{ env: { BUILD_SECRET: "s3cret" }, stdin: "from-stdin\n" },
+			);
+			expect(exit).toBe(0);
+			expect(await Bun.file(path).text()).toBe(`from-stdin:s3cret:${process.env.HOME}`);
+		} finally {
+			await Bun.file(path)
+				.delete()
+				.catch(() => {});
+		}
+	});
+
+	test("resolves a failing command's exit code instead of throwing", async () => {
+		expect(await runBuildCommand(["sh", "-c", "exit 7"], { cwd: import.meta.dir })).toBe(7);
 	});
 });

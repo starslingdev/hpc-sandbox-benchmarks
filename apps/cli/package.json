@@ -51,15 +51,9 @@
     "@sandbox-benchmarks/harness": "workspace:*",
     "@sandbox-benchmarks/results": "workspace:*",
     "@sandbox-benchmarks/figures": "workspace:*",
-    "@daytona/api-client": "catalog:computesdk",
-    "@daytona/sdk": "catalog:computesdk",
-    "@runloop/api-client": "catalog:computesdk",
     "modal": "catalog:computesdk",
-    "freestyle": "catalog:computesdk",
-    "novita-sandbox": "catalog:computesdk",
     "dotenv": "catalog:",
     "@sandbox-benchmarks/modal": "workspace:*",
-    "@sandbox-benchmarks/freestyle": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

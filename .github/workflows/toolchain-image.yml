@@ -693,6 +693,14 @@ jobs:
           candidate="$(bun -e 'import { config } from "@sandbox-benchmarks/providers"; console.log(config.vercelImageCandidate)')"
           digest="$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest.Digest}}' | jq -er '.')"
           echo "digest-ref=${candidate%:*}@${digest}" >> "$GITHUB_OUTPUT"
+      # A native snapshot boots the immutable ID its bake cell returned, which no name derives. Promote
+      # pins exactly the IDs the bake cells recorded (and validated) instead of resolving a name.
+      - name: Download bake reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bake-*-${{ github.run_id }}
+          path: bake-reports
+          merge-multiple: true
       - name: Promote candidate → version
         id: promote
         env:
@@ -745,7 +753,7 @@ jobs:
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
           set -euo pipefail
-          args=(--promote --require "${REQUIRED}" --provider "${RELEASE_PROVIDERS}")
+          args=(--promote --require "${REQUIRED}" --provider "${RELEASE_PROVIDERS}" --bake-reports bake-reports)
           # --force (manual force_republish dispatch only) republishes over an existing immutable
           # version; never set on the automated push path. bake.ts refuses --force on a scoped promote,
           # and release-validate rejects the combination before the release spends anything.

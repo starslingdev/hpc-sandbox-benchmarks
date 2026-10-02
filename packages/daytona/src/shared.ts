@@ -10,7 +10,7 @@ import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
 import { type } from "arktype";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 
-type DaytonaId = "daytona-vm" | "daytona-container";
+export type DaytonaId = "daytona-vm" | "daytona-container";
 export const DAYTONA_SANDBOX_ID = type("string.uuid");
 const createInput = type({ name: "string >= 1", snapshot: "string >= 1" });
 /**

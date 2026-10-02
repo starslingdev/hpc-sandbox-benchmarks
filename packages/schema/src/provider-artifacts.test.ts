@@ -6,12 +6,13 @@ import {
 	candidateArtifact,
 	isBakedProviderId,
 	isMirroredProviderId,
+	isNativeSnapshotProviderId,
 	releaseUnscopable,
 } from "./provider-artifacts.ts";
 import { PROVIDER_IDS } from "./provider-ids.ts";
 import { REGISTRY } from "./provider-meta/index.ts";
 import type { ProviderArtifact } from "./provider-meta.ts";
-import type { BakedProviderId } from "./providers.ts";
+import type { BakedProviderId, NativeSnapshotProviderId } from "./providers.ts";
 import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "./toolchain.ts";
 
 describe("artifact partitions", () => {
@@ -31,6 +32,20 @@ describe("artifact partitions", () => {
 				(id) => isMirroredProviderId(id) === (REGISTRY[id].artifact.kind === "mirror"),
 			),
 		).toBe(true);
+	});
+
+	test("narrows every and only native-snapshot descriptor: the baked ids that do not bake the base", () => {
+		expect(
+			PROVIDER_IDS.every(
+				(id) =>
+					isNativeSnapshotProviderId(id) === (isBakedProviderId(id) && baseImageUse(id) === "none"),
+			),
+		).toBe(true);
+		const native: NativeSnapshotProviderId = "freestyle";
+		expect(isNativeSnapshotProviderId(native)).toBe(true);
+		// @ts-expect-error an OCI baker is not a native-snapshot baker
+		const oci: NativeSnapshotProviderId = "e2b";
+		expect(isNativeSnapshotProviderId(oci)).toBe(false);
 	});
 
 	test("keeps the compiler-derived partition exact", () => {

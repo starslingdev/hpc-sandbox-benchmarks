@@ -6,6 +6,7 @@ import {
 	cleanupOwnedSandboxes,
 	createOwnedSandbox,
 	releaseOwnedSandbox,
+	withCleanupPreservingPrimaryError,
 	withOwnedSandbox,
 } from "./sandbox-owner.ts";
 
@@ -323,5 +324,42 @@ describe("sandbox process ownership", () => {
 			proc.kill();
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("withCleanupPreservingPrimaryError", () => {
+	it("runs cleanup and preserves the operation error when both fail", async () => {
+		const primary = new Error("push failed");
+		const cleanup = new Error("logout failed");
+		const suppressed: unknown[] = [];
+
+		await expect(
+			withCleanupPreservingPrimaryError(
+				async () => {
+					throw primary;
+				},
+				async () => {
+					throw cleanup;
+				},
+				(error) => suppressed.push(error),
+			),
+		).rejects.toBe(primary);
+		expect(suppressed).toEqual([cleanup]);
+	});
+
+	it("surfaces a cleanup error when the operation succeeded", async () => {
+		const cleanup = new Error("logout failed");
+
+		await expect(
+			withCleanupPreservingPrimaryError(
+				async () => "uploaded",
+				async () => {
+					throw cleanup;
+				},
+				() => {
+					throw new Error("cleanup error must not be suppressed after success");
+				},
+			),
+		).rejects.toBe(cleanup);
 	});
 });

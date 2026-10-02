@@ -61,3 +61,10 @@ Nested Docker reuses Debian image bytes but changes the measured isolation topol
 inside the Freestyle VM. Accepting missing metrics leaves incomplete experiments and blocks fair
 board inclusion. A native snapshot plus PATH cleanup best fits the existing release lifecycle while
 keeping Freestyle's native VM as the execution boundary.
+
+## Amendment (ADR-0023)
+
+The builder is derived from the Freestyle driver's snapshot capability rather than written in the
+CLI. Release snapshots carry no slug aliases: a candidate's immutable ID travels in its bake report,
+and promotion pins that ID rather than resolving a name. The stock `freestyle/ubuntu` alias is
+bootable only from a build context whose resolved artifact is that alias.

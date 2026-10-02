@@ -23,11 +23,12 @@
 //
 // A rerun after a mid-promote failure is clean (the version tag was never written); once published it
 // is refused at step 1 — bump the version, or force_republish, to publish again. Under `--force` the
-// version's artifacts already exist, and step 3 regenerates them in place: the image retag and e2b
-// `template create` publish a new artifact over the old name (the prior one stands until the new one
-// lands), but daytona has no snapshot overwrite — it deletes, then creates. So a forced republish whose
-// daytona create fails leaves that snapshot ABSENT, not stale. Recovery is a rerun with force_republish
-// (a plain rerun is refused at step 1, since the base image is still there).
+// version's artifacts already exist, and step 3 regenerates them in place. Most builders publish over
+// the old name (the prior artifact stands until the new one lands), but one whose vendor has no
+// overwrite deletes, then creates, and reports that replacement as `destructive`. A forced republish
+// whose destructive rebuild fails leaves that artifact ABSENT, not stale, and the builder's error says
+// so. Recovery is a rerun with force_republish (a plain rerun is refused at step 1, since the base
+// image is still there).
 import { requiredProviders, unmetRequirements } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers/config";
 import type {
@@ -40,7 +41,6 @@ import { bakedArtifactName, baseImageUse, PROVIDERS } from "@sandbox-benchmarks/
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
-import { resolveFreestyleSnapshotId } from "./freestyle.ts";
 import {
 	imageDigest,
 	imageExistsInRegistry,
@@ -49,7 +49,8 @@ import {
 	resolveImageDigestRef,
 } from "./image.ts";
 import {
-	buildBakedProviderArtifact,
+	buildProviderArtifact,
+	describeReplacement,
 	isBakedProviderId,
 	isMirroredProviderId,
 	nonBakedArtifactAction,
@@ -81,6 +82,11 @@ export interface PromoteOptions {
 	 * here rather than passed alongside `only`, so the two can never describe different releases.
 	 */
 	only?: readonly ProviderId[];
+	/**
+	 * The refs the candidate bake recorded, per baked provider (its bake reports). A native snapshot
+	 * boots exactly the immutable ID recorded here; no name resolves to it.
+	 */
+	candidates?: Readonly<Partial<Record<BakedProviderId, string>>>;
 }
 
 /** Promotion diagnostics plus the transaction outcome. Optional-provider failures remain visible in
@@ -141,7 +147,7 @@ export function effectivePromotionRequirements(
 }
 
 export async function promoteAll(log: Log, options: PromoteOptions = {}): Promise<PromoteResult> {
-	const { force = false, only } = options;
+	const { force = false, only, candidates = {} } = options;
 	const partial = isPartialScope(only);
 	const reports: BakeReport[] = [];
 	const scope = only ? only.join(", ") : "every provider";
@@ -166,19 +172,18 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//    "not published" — refuse rather than risk overwriting an existing :v1 we couldn't see.
 	//    `force` (manual dispatch only — see toolchain-image.yml) deliberately republishes over an
 	//    existing version for dev iteration; automated push-to-main never sets it, so the invariant
-	//    holds in production. The image retag and e2b `template create` overwrite by name, replacing
-	//    the artifact only once the new one is built. Daytona does NOT: it deletes the existing
-	//    snapshot before creating, so a forced republish drops the published snapshot for the length
-	//    of the rebuild, and leaves it absent if the rebuild fails. Forced republish is therefore a
-	//    destructive regenerate, and is why `force` is manual-dispatch-only.
+	//    holds in production. Most builders overwrite by name, replacing the artifact only once the
+	//    new one is built; a builder whose vendor has no overwrite deletes first, so its published
+	//    artifact is absent for the length of the rebuild, and left absent if the rebuild fails. Each
+	//    build reports which it did. That is why `force` is manual-dispatch-only.
 	//    A PARTIAL promote inverts the same probe: it attaches to an existing version instead of
 	//    creating one, so the base MUST already be there. Both polarities share the refuse-on-uncertain
 	//    posture — an unreadable registry is not evidence either way, so we decline rather than act blind.
 	if (force) {
 		log(
 			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present ` +
-				`(daytona: both ${config.daytonaSnapshotDefault} and ${config.daytonaContainerSnapshotDefault} ` +
-				`are deleted and rebuilt, so each is briefly absent — and left absent if its rebuild fails)`,
+				"(a provider artifact replaced destructively is absent until its rebuild lands, and stays " +
+				"absent if the rebuild fails; each build below reports how it replaced its name)",
 		);
 	} else {
 		let alreadyPublished: boolean;
@@ -226,8 +231,8 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	}
 
 	// 2b. A backfill verifies each provider's CANDIDATE artifact (step 2) but builds its version artifact
-	//     from the PUBLISHED base (step 3). For a provider that BAKES its artifact from the base —
-	//     e2b/novita templates, daytona snapshots — those are the same bytes only while the candidate
+	//     from the PUBLISHED base (step 3). For a provider that BAKES its artifact from the base (an
+	//     OCI baker: `baseImageUse` "bakes"), those are the same bytes only while the candidate
 	//     base still IS the published version; if a later `build: full` moved the candidate on, the run
 	//     would verify one image and publish an artifact built from another. Require that identity when
 	//     such a provider is in scope. The rest don't bake from the base at all (vercel's version artifact
@@ -254,27 +259,13 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 			);
 		}
 	}
-	// Native snapshots boot the immutable id resolved below, not a derived name.
-	const buildResults: Partial<Record<BakedProviderId, string>> = {};
+	// A native snapshot boots the immutable ID its candidate bake recorded, not a derived name; one
+	// missing from the bake reports fails that provider's re-validation as unresolved.
 	const candidateRefs: CandidateArtifactRefs = {
 		toolchainImage: pinnedBaseImage,
 		mirrored: { vercel: config.vercelImageCandidate } satisfies Record<MirroredProviderId, string>,
-		buildResults,
+		buildResults: candidates,
 	};
-	if (
-		(only ?? PROVIDERS.map((provider) => provider.id)).includes("freestyle") &&
-		process.env.FREESTYLE_API_KEY
-	)
-		try {
-			buildResults.freestyle = await resolveFreestyleSnapshotId(
-				bakedArtifactName("freestyle", "candidate"),
-			);
-		} catch (error) {
-			// Optional native builds must remain an ordinary provider validation failure.
-			log(
-				`Freestyle candidate could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		}
 	log(`>>> re-validating ${scope} against ${pinnedBaseImage} before promote…`);
 	const validateRuns = await validateCandidates(candidateRefs, log, only);
 	if (validateRuns.some(blocks)) {
@@ -299,10 +290,9 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	//    candidate base, or the published version base on a partial promote). Built BEFORE the base
 	//    retag, so a failure here leaves the version base unwritten and a rerun is clean. Shares the
 	//    skip-vs-fail loop with bake.
-	//    Under `--force` these names already exist and are live. e2b/image replace on success; daytona
-	//    deletes first (no snapshot overwrite in the SDK), so a failed daytona create removes the
-	//    published snapshot — `bakeDaytonaSnapshot` says so in its error, which lands in the report's
-	//    `reason`. The base is still never written, so the version tag itself stays consistent.
+	//    Under `--force` these names already exist and are live. A builder that replaces destructively
+	//    says in its error that a failed rebuild removed the published artifact, and that lands in the
+	//    report's `reason`. The base is still never written, so the version tag itself stays consistent.
 	const runs =
 		promotionScope.eligible.length === 0
 			? []
@@ -310,13 +300,16 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 					async (target) => {
 						if (isBakedProviderId(target.id)) {
 							log(`>>> ${target.id}: building version artifact from ${pinnedBaseImage}…`);
-							const artifactRef = await buildBakedProviderArtifact(
-								target.id,
-								"version",
-								target.id === "freestyle" ? (buildResults.freestyle ?? "") : pinnedBaseImage,
-								(m) => log(`    ${m}`),
+							const built = await buildProviderArtifact(target.id, {
+								phase: "version",
+								base: pinnedBaseImage,
+								...(candidates[target.id] !== undefined && { candidate: candidates[target.id] }),
+								log: (m) => log(`    ${m}`),
+							});
+							log(
+								`>>> ${describeReplacement(target.id, bakedArtifactName(target.id, "version"), built)}`,
 							);
-							return typeof artifactRef === "string" ? artifactRef : undefined;
+							return built.ref;
 						} else if (isMirroredProviderId(target.id)) {
 							log(`>>> ${target.id}: ${nonBakedArtifactAction(target.id, "version")}…`);
 							await promoteMirroredProviderArtifact(target.id, (m) => log(`    ${m}`));
@@ -364,15 +357,16 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 
 	// A REQUIRED provider's artifact failed → do NOT publish the base. The version tag stays unwritten,
 	// so a rerun (after fixing the cause) reconciles cleanly. Nothing public was half-written — EXCEPT
-	// under `--force`, where step 3 regenerates already-published artifacts in place and daytona's
-	// delete-then-create can leave its published snapshot absent (the report's `reason` says so).
+	// under `--force`, where step 3 regenerates already-published artifacts in place and a destructive
+	// replacement can leave its published artifact absent (the report's `reason` says so).
 	if (reports.some(blocks)) {
 		log(
 			`!!! promote aborted before publish: a required ${config.toolchainImageVersion} provider artifact failed; ` +
 				`${baseUntouched} ` +
 				(force
 					? "This was a forced republish, so the failed provider's already-published artifact may have " +
-						"been regenerated — or, for daytona, deleted and not recreated (see its reason above). "
+						"been regenerated — or, if its builder replaces destructively, deleted and not recreated " +
+						"(see its reason above). "
 					: "") +
 				rerunHint,
 		);

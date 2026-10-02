@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { normalizeProviderInput } from "@sandbox-benchmarks/schema/provider-meta";
 import { REGISTRY } from "@sandbox-benchmarks/schema/providers";
 import { ENV_KEYS } from "./config.ts";
-import { NOVITA_E2B_DOMAIN, novitaConnection } from "./index.ts";
 
 describe("@sandbox-benchmarks/providers", () => {
 	// The failure this prevents is not hypothetical: TAMA_CLI was declared in the registry as an
@@ -29,20 +28,5 @@ describe("@sandbox-benchmarks/providers", () => {
 		for (const name of new Set(optionalVariables)) {
 			expect(covered).toContain(name);
 		}
-	});
-
-	it("keeps the account key in the SDK's apiKey channel — never in connection headers", () => {
-		// SECURITY PIN: the SDK replays connection `headers` into the envd RPC transport, so a
-		// credential riding `headers` is delivered to the daemon INSIDE the guest on every
-		// command/filesystem call — where TLS has already terminated and any root process (including
-		// a supply-chain-compromised benchmark suite) can read it. `apiKey` becomes an X-API-KEY
-		// header inside the control-plane ApiClient only. If a future revision reintroduces a headers
-		// override (e.g. to dodge a key-format guard again), this must fail.
-		const connection = novitaConnection("nvta_unit-test-key");
-		expect(connection).toEqual({
-			apiKey: "nvta_unit-test-key",
-			domain: NOVITA_E2B_DOMAIN,
-		});
-		expect(connection).not.toHaveProperty("headers");
 	});
 });

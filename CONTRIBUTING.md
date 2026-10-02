@@ -63,15 +63,23 @@ bun run check:providers                                        # fail if any gen
    through `module.specFor`; kit behaviour is already tested in `packages/driver`. Its `execution`
    policy (synchronous cap and durable route) is the only declaration of the provider's exec
    transport, and its `package.json` must depend on the `sdkPackage` library. Run
-   `bun run generate-providers`, then review the generated registry index, driver loader,
-   provenance, and managed workflow/docs/env regions. Filename, tuple key, and declared id
+   `bun run generate-providers`, then review the generated registry index, driver and
+   artifact-builder loaders, provenance, and managed workflow/docs/env regions. Filename, tuple key, and declared id
    disagreement is a compile error; malformed descriptor semantics, a missing driver module, and an
    `sdkPackage` the package does not depend on fail the generator. Then update and review the one
    registry snapshot (`bun test -u src/provider-registry.test.ts` in `packages/schema`), which records
    every fact the registry answers for the new provider.
-3. **Artifact implementation** — only when the descriptor's `artifact.kind` requires one, add the
-   provider-specific bake/template implementation. Providers using a stock or shared image do not get
-   no-op bakers.
+3. **Artifact builder** — only a provider whose registry artifact bakes from the OCI toolchain base
+   (`baseImageUse(id) === "bakes"`) adds `src/artifact.ts` (`src/<entry>/artifact.ts` for an isolation
+   variant), exported as `./artifact` (`./<entry>/artifact`): a `defineArtifactBuilder` that receives
+   everything through its build request (derived name, digest-pinned base, target spec, parsed
+   credentials, images directory) and takes its vendor client or CLI transport as a factory parameter,
+   with the default export binding the real one. Its tests drive that factory over fakes. A
+   native-snapshot provider adds no `./artifact`; its driver entry exports `snapshotBuild` (the stock
+   base and how to read the booted identity) and its builder is derived from the driver's snapshot
+   capability. The generator fails when `./artifact` exactness is violated and emits the
+   `ARTIFACT_BUILDERS` join the release lane calls; providers using a stock or shared image get no
+   builder.
 4. **Generated wiring** — do not hand-edit provider choice/input regions. Provider metadata generates
    the smoke dispatch options, three least-privilege workflow input blocks, runner routing,
    `.env.example`, CI configuration docs, and the privileged-environment checklist. The drift gate

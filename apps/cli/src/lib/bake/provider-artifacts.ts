@@ -1,6 +1,13 @@
-// Release composition for provider artifacts. The registry decides which providers participate;
-// this module owns the provider-specific builder implementation for exactly those partitions.
+// Release composition for provider artifacts. The registry decides which providers participate and
+// what each artifact is called; the generated `ARTIFACT_BUILDERS` join supplies each baked
+// provider's builder from its own package. This module only assembles the build request, so it
+// imports no vendor library and names no provider.
 
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { ArtifactBuildResult } from "@sandbox-benchmarks/driver/artifact";
+import { parseDriverEnv } from "@sandbox-benchmarks/driver/env";
+import { loadArtifactBuilder } from "@sandbox-benchmarks/drivers";
 import { config } from "@sandbox-benchmarks/providers/config";
 import type {
 	ArtifactPhase,
@@ -13,44 +20,90 @@ import {
 	bakedArtifactName,
 	isBakedProviderId,
 	isMirroredProviderId,
+	isNativeSnapshotProviderId,
 	REGISTRY,
 } from "@sandbox-benchmarks/schema/providers";
-import { bakeBlaxelImage } from "./blaxel.ts";
-import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
-import { bakeE2bTemplate } from "./e2b.ts";
-import { bakeFreestyleSnapshot } from "./freestyle.ts";
 import { promoteImage } from "./image.ts";
-import { bakeNovitaTemplate } from "./novita.ts";
-import { bakeRunloopBlueprint } from "./runloop.ts";
+import { nativeSnapshotPreparation } from "./native-snapshot.ts";
 import type { Log } from "./types.ts";
 
-export type BakeProviderArtifact = (
-	name: string,
-	baseImage: string,
-	log: Log,
-) => Promise<void> | Promise<string>;
+/** The toolchain images directory an OCI builder assembles a remote build context from. */
+const IMAGES_DIR = join(import.meta.dir, "../../../../../packages/templates/images");
+const DIGEST_PINNED = /@sha256:[a-f0-9]{64}$/;
+
+export interface ArtifactBuildInputs {
+	readonly phase: ArtifactPhase;
+	/** The digest-pinned base, resolved once by the caller; required by an OCI baker. */
+	readonly base?: string;
+	/** A version build of a native snapshot boots the immutable candidate just revalidated. */
+	readonly candidate?: string;
+	readonly log: Log;
+}
 
 /**
- * Exhaustive over baked providers and impossible to populate for any other artifact lifecycle.
- * Candidate bake and version promote call this same map; only the derived name differs.
+ * Build one baked provider's artifact for a release phase through its generated builder. Candidate
+ * bake and version promote call this same function; the registry-derived name and, for a native
+ * snapshot, the candidate it boots are all that differ.
+ *
+ * Every phase may replace the name: a candidate is mutable, version names are unpublished until
+ * the base retag commits them, and `--force` asks for an in-place regeneration. A builder that can
+ * only replace destructively says so in its result.
  */
-export const BAKED_ARTIFACT_BUILDERS = {
-	e2b: bakeE2bTemplate,
-	"daytona-vm": bakeDaytonaVmSnapshot,
-	"daytona-container": bakeDaytonaContainerSnapshot,
-	blaxel: bakeBlaxelImage,
-	novita: bakeNovitaTemplate,
-	runloop: bakeRunloopBlueprint,
-	freestyle: bakeFreestyleSnapshot,
-} as const satisfies Record<BakedProviderId, BakeProviderArtifact>;
-
-export function buildBakedProviderArtifact(
+export async function buildProviderArtifact(
 	id: BakedProviderId,
-	phase: ArtifactPhase,
-	baseImage: string,
-	log: Log,
-): Promise<void> | Promise<string> {
-	return BAKED_ARTIFACT_BUILDERS[id](bakedArtifactName(id, phase), baseImage, log);
+	inputs: ArtifactBuildInputs,
+): Promise<ArtifactBuildResult> {
+	const { phase, log } = inputs;
+	const name = bakedArtifactName(id, phase);
+	const common = {
+		name,
+		spec: config.targetSpec,
+		replace: "allowed",
+		log,
+		signal: new AbortController().signal,
+	} as const;
+	if (isNativeSnapshotProviderId(id)) {
+		if (phase === "version" && inputs.candidate === undefined)
+			throw new Error(`${id} version build needs the revalidated candidate's immutable ref`);
+		const builder = await loadArtifactBuilder(id);
+		return builder.build({
+			...common,
+			bakes: "native-snapshot",
+			env: parseDriverEnv(id, process.env),
+			artifact: REGISTRY[id].artifact,
+			...(phase === "version" && inputs.candidate !== undefined
+				? { candidate: { ref: inputs.candidate } }
+				: {}),
+			prepare: nativeSnapshotPreparation(id, phase, name),
+		});
+	}
+	const base = inputs.base;
+	if (base === undefined || !DIGEST_PINNED.test(base))
+		throw new Error(`${id} builds from the OCI base, which must be digest-pinned (got ${base})`);
+	// The join is correlated per id; a runtime id meets the union of builders, all OCI here.
+	const builder = (await loadArtifactBuilder(id)) as {
+		build(request: object): Promise<ArtifactBuildResult>;
+	};
+	return builder.build({
+		...common,
+		bakes: "oci",
+		env: parseDriverEnv(id, process.env),
+		base: { digestRef: base },
+		imagesDir: IMAGES_DIR,
+		dockerConfig: process.env.DOCKER_CONFIG ?? join(homedir(), ".docker"),
+	});
+}
+
+/** Say what a build replaced; a destructive replacement left the name unresolvable meanwhile. */
+export function describeReplacement(id: ProviderId, name: string, result: ArtifactBuildResult) {
+	switch (result.replaced) {
+		case "none":
+			return `${id}: built ${result.ref}`;
+		case "atomic":
+			return `${id}: built ${result.ref}, replacing ${name} in place`;
+		case "destructive":
+			return `${id}: built ${result.ref} after deleting the previous ${name} (it did not resolve in between)`;
+	}
 }
 
 type PromoteMirror = (log: Log) => Promise<void>;
@@ -91,7 +144,7 @@ function nonBakedArtifactActionFor(
 			return `builds recipe ${artifact.recipe} at runtime — no release artifact to build`;
 		case "baked":
 			// The type excludes baked ids; retain a runtime assertion for corrupted/generated JS callers.
-			throw new Error(`baked provider ${id} must use buildBakedProviderArtifact`);
+			throw new Error(`baked provider ${id} must use buildProviderArtifact`);
 	}
 }
 

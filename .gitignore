@@ -148,11 +148,13 @@ data/index.json
 # the normalized result — so a local copy is never the thing to commit.
 benchmark-results/
 
-# Generated from packages/templates/src/pins.ts by build.sh / the publish workflow (the
-# e2b CLI requires this file on disk; the TypeScript config is its single source of truth).
+# Generated from packages/templates/src/pins.ts by build.sh, and per build by the e2b artifact
+# builder (packages/e2b/src/artifact.ts) with the template name it creates (the e2b CLI requires
+# this file on disk).
 packages/templates/images/e2b/e2b.toml
-# Generated per-bake by `bake` (apps/cli/src/lib/bake/e2b.ts): the committed e2b/Dockerfile with its
-# base pinned to the candidate/version registry ref, since e2b CLI 2.x can't inject a build-arg.
+# Generated per build by the e2b artifact builder (packages/e2b/src/artifact.ts): the committed
+# e2b/Dockerfile with its base pinned to the digest-pinned base, since e2b CLI 2.x can't inject a
+# build-arg.
 packages/templates/images/e2b/Dockerfile.generated
 
 # macOS Finder litter - never content, and the artifact gate compares docs/figures exactly.

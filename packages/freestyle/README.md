@@ -39,9 +39,14 @@ Create a candidate with credentials loaded (Bun reads `.env`):
 BAKE_REPORT_FILE=/tmp/freestyle-bake.json bun apps/cli/src/bin/bake.ts --provider freestyle --require freestyle
 ```
 
-The builder records the actual immutable stock base ID, recipe SHA-256 and requested shape in
-`/freestyle-snapshot-build.json`, retains `/freestyle-snapshot-setup.sh`, runs shared toolchain smoke,
-captures a persistent snapshot and validates a fresh boot. The report records its immutable ID.
+There is no `./artifact`: the release lane's builder is derived from this driver by
+`snapshotArtifactBuilder` with the `snapshotBuild` options `src/index.ts` exports. The driver boots
+the stock `freestyle/ubuntu` alias only from such a build context (whose resolved artifact is the
+alias); benchmark execution always boots an immutable ID. The release lane's preparation records the
+actual immutable stock base ID, recipe SHA-256 and requested shape in
+`/freestyle-snapshot-build.json`, retains `/freestyle-snapshot-setup.sh` and runs shared toolchain
+smoke; the builder captures a `durable` snapshot and the bake validates a fresh boot. The report
+records its immutable ID under `candidate.artifacts.freestyle`.
 GitHub anonymous quota failures retry for up to twenty minutes while keeping mise's attestation
 verification enabled. Transient PTS result servers stop before capture.
 Set `FREESTYLE_BASE_SNAPSHOT_ID` to that recorded base ID to regenerate from the same base. The recipe
@@ -50,8 +55,10 @@ repository-wide cache scan; payload verification and all installed-profile check
 It seeds the same definitions in `ubuntu`'s own PTS state while sharing the baked installed payloads,
 so the runtime user can resolve every pinned profile without a fresh OpenBenchmarking download.
 
-Promotion revalidates and snapshots the exact candidate ID without reinstalling; it rejects a changed
-recipe or an existing version name. Replaced candidate IDs remain available for pinned experiments.
+Promotion reads the candidate ID from the bake reports (`--bake-reports`), never by name, then
+revalidates and snapshots that exact candidate without reinstalling; it rejects a changed recipe.
+Snapshots carry no name aliases: every candidate and version is addressed by its immutable ID, and
+earlier IDs remain available for pinned experiments.
 Use the returned ID for `FREESTYLE_SNAPSHOT_ID` and the frozen planner's `BENCH_ARTIFACT_FREESTYLE`.
 Actions derives the planner input from the repository variable `FREESTYLE_SNAPSHOT_ID`.
 The [default-matrix promotion evidence](../../docs/freestyle-default-matrix-2026-09-30.md) records
