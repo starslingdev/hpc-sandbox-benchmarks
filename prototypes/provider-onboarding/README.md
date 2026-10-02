@@ -1,5 +1,8 @@
 # Provider onboarding prototypes
 
+> The final proposal, which keeps one package per provider, is in [PROPOSAL.md](./PROPOSAL.md).
+> This README is the evidence behind it.
+
 Working prototypes and an evaluation of ways to make adding a sandbox provider a small,
 mostly-declarative change. The goal is to scale to about 100 providers: some API-only, some
 CLI-only, some with TypeScript SDKs.
