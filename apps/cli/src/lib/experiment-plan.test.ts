@@ -1124,6 +1124,10 @@ test("verified authentication failure publishes partial repair with missing cell
 	);
 	expect(result.run?.experiment?.attemptIds).toEqual([f.good.evidence.id]);
 	expect(result.run?.experiment?.unstartedBatches).toEqual(receipts);
+	if (!result.run) throw new Error("fixture Run");
+	expect(renderLeaderboardMarkdown(buildLeaderboard(result.run), [])).toContain(
+		"1 never reached execution and remain missing",
+	);
 	expect(result.run?.providers.find((p) => p.providerId === "vercel")?.metrics ?? []).toEqual([]);
 	expect(
 		aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {

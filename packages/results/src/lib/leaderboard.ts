@@ -352,6 +352,7 @@ interface LeaderboardFields {
 	comparisonCohort?: string;
 	partial?: NonNullable<Run["experiment"]>["partial"];
 	repair?: NonNullable<Run["experiment"]>["repair"];
+	unstartedCells?: number;
 	sha: string;
 	generatedAt: string;
 	/** The requested comparison target recorded on this Run — never substituted from global config. */
@@ -837,6 +838,9 @@ export function buildLeaderboard(
 		runId: run.runId,
 		...(run.experiment?.partial ? { partial: run.experiment.partial } : {}),
 		...(run.experiment?.repair ? { repair: run.experiment.repair } : {}),
+		...(run.experiment?.unstartedBatches
+			? { unstartedCells: run.experiment.unstartedBatches.flatMap((r) => r.cellIds).length }
+			: {}),
 		...(run.experiment?.cohortDigest ? { comparisonCohort: run.experiment.cohortDigest } : {}),
 		sha: run.sha,
 		generatedAt: run.generatedAt,
@@ -1286,7 +1290,7 @@ export function renderLeaderboardMarkdown(
 		...(board.repair
 			? [
 					"",
-					`**Repaired experiment.** ${board.repair.cells.length} originally failed or missing cells were replaced by whole attempts from ${runSourceLinks(board.repair.recoveryRun)}. Original successful cells were preserved. This dataset includes remeasurement selected by original failure; it is not a first-attempt-only comparison.`,
+					`**Repaired experiment.** ${board.repair.cells.length} originally failed or missing cells ${board.unstartedCells ? `were selected for repair in ${runSourceLinks(board.repair.recoveryRun)}. ${board.repair.cells.length - board.unstartedCells} cells have replacement attempts; ${board.unstartedCells} never reached execution and remain missing` : `were replaced by whole attempts from ${runSourceLinks(board.repair.recoveryRun)}`}. Original successful cells were preserved. This dataset includes remeasurement selected by original failure; it is not a first-attempt-only comparison.`,
 				]
 			: []),
 		...(board.partial
