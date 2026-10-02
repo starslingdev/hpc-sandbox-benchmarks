@@ -63,7 +63,10 @@ const errored = (output: string): string[] => [
 export interface TestVerdict {
 	/** Errors outside any test, by package: never excused, since no test names them. */
 	readonly errors: readonly string[];
-	/** Failures that fail alone in the scaffolded tree but pass alone in the unmodified one. */
+	/**
+	 * Failures that fail alone in the scaffolded tree but not in the unmodified one: they pass there,
+	 * or the test (or its whole package) exists only in the scaffold.
+	 */
 	readonly own: readonly string[];
 	/** Failures that pass alone in the scaffolded tree (on a retry at most): the run's load. */
 	readonly underLoad: readonly string[];
@@ -79,7 +82,7 @@ export interface TestVerdict {
  */
 export function judgeTestRun(
 	output: string,
-	passes: (tree: "scaffolded" | "unmodified", failure: string) => boolean,
+	alone: (tree: "scaffolded" | "unmodified", failure: string) => AloneOutcome,
 ): TestVerdict {
 	const verdict = { errors: errored(output), own: [], underLoad: [], environment: [] } as {
 		errors: string[];
@@ -88,21 +91,32 @@ export function judgeTestRun(
 		environment: string[];
 	};
 	for (const failure of failures(output)) {
-		if (passes("scaffolded", failure)) verdict.underLoad.push(failure);
-		else if (passes("unmodified", failure)) verdict.own.push(failure);
-		else verdict.environment.push(failure);
+		// A scaffolded test that cannot be found again is not excused: only "passes" is load.
+		if (alone("scaffolded", failure) === "passes") verdict.underLoad.push(failure);
+		else if (alone("unmodified", failure) === "fails") verdict.environment.push(failure);
+		else verdict.own.push(failure);
 	}
 	return verdict;
 }
 
-/** Run one failing test alone in `root` (by its full name), retrying once: whether it passed. */
-function passesAlone(root: string, failure: string): boolean {
+/** How one failing test fares when run alone: a test missing from a tree is "absent" there. */
+export type AloneOutcome = "passes" | "fails" | "absent";
+
+/** Whether a lone run found nothing to run: no such package, or no test of that name. */
+export const ranNothing = (output: string): boolean =>
+	/No workspace packages matched|matched 0 tests/.test(output);
+
+/** Run one failing test alone in `root` (by its full name), retrying once. */
+function aloneIn(root: string, failure: string): AloneOutcome {
 	const [member = "", ...names] = failure.split(" > ");
 	// `bun test -t` matches the describe and test names joined by spaces.
 	const pattern = `^${names.join(" ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
-	for (let attempt = 0; attempt < 2; attempt++)
-		if (run(root, ["bun", "--filter", member, "test", "-t", pattern]).exitCode === 0) return true;
-	return false;
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const { exitCode, output } = run(root, ["bun", "--filter", member, "test", "-t", pattern]);
+		if (ranNothing(output)) return "absent";
+		if (exitCode === 0) return "passes";
+	}
+	return "fails";
 }
 
 /** A tree's files, tracked or not, minus ignored ones (dependencies, build output). */
@@ -267,7 +281,7 @@ function main(): void {
 			const { exitCode, output } = run(root, ["bun", "run", "test"]);
 			if (exitCode === 0 && errored(output).length === 0) return;
 			const verdict = judgeTestRun(output, (tree, failure) =>
-				passesAlone(tree === "scaffolded" ? root : SOURCE_ROOT, failure),
+				aloneIn(tree === "scaffolded" ? root : SOURCE_ROOT, failure),
 			);
 			const unexplained = exitCode !== 0 && failures(output).length === 0;
 			if (verdict.errors.length > 0 || verdict.own.length > 0 || unexplained)

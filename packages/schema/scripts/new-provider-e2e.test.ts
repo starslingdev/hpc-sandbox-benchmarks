@@ -2,7 +2,7 @@
 // never excused, and each failing test is run again alone in both trees before it is attributed.
 
 import { describe, expect, test } from "bun:test";
-import { judgeTestRun } from "./new-provider-e2e.ts";
+import { judgeTestRun, ranNothing } from "./new-provider-e2e.ts";
 
 /** One `bun run test` line per entry, as `bun --filter` prefixes them. */
 const output = (...lines: string[]) => lines.join("\n");
@@ -20,7 +20,7 @@ describe("judgeTestRun", () => {
 				"@sandbox-benchmarks/harness test: # Unhandled error between tests",
 				"@sandbox-benchmarks/harness test:  1 error",
 			),
-			() => false,
+			() => "fails",
 		);
 		expect(verdict.errors).toEqual(["@sandbox-benchmarks/harness"]);
 		expect(verdict.environment).toEqual([
@@ -33,10 +33,11 @@ describe("judgeTestRun", () => {
 		const runs: string[] = [];
 		const verdict = judgeTestRun(output(FAILING, TIMED_OUT, BROKEN), (tree, failure) => {
 			runs.push(`${tree}: ${failure}`);
-			// The schema test timed out only under the whole run's load; the scaffold broke acme's;
-			// the driver's fails alone everywhere.
-			if (failure.includes("regenerates")) return tree === "scaffolded";
-			return failure.includes("acme") && tree === "unmodified";
+			// The schema test timed out only under the whole run's load; the scaffold broke acme's,
+			// which the unmodified tree does not have; the driver's fails alone everywhere.
+			if (failure.includes("regenerates")) return tree === "scaffolded" ? "passes" : "fails";
+			if (failure.includes("acme")) return tree === "unmodified" ? "absent" : "fails";
+			return "fails";
 		});
 		expect(verdict).toEqual({
 			errors: [],
@@ -48,5 +49,26 @@ describe("judgeTestRun", () => {
 		expect(runs).not.toContain(
 			"unmodified: @sandbox-benchmarks/schema > new-provider > regenerates",
 		);
+	});
+
+	test("a failure the unmodified tree passes is the scaffold's; one it lacks is never excused", () => {
+		const verdict = judgeTestRun(output(FAILING, BROKEN), (tree, failure) =>
+			tree === "scaffolded" ? "fails" : failure.includes("acme") ? "passes" : "absent",
+		);
+		expect(verdict.own).toEqual([
+			"@sandbox-benchmarks/driver > launchDetached > surfaces a failure",
+			"@sandbox-benchmarks/acme > a session runs",
+		]);
+		expect(verdict.environment).toEqual([]);
+		// A scaffolded failure that cannot be found again alone is not counted as load.
+		expect(judgeTestRun(output(BROKEN), () => "absent").own).toEqual([
+			"@sandbox-benchmarks/acme > a session runs",
+		]);
+	});
+
+	test("recognises a lone run that found nothing to run", () => {
+		expect(ranNothing("error: No workspace packages matched the filter")).toBe(true);
+		expect(ranNothing('error: regex "^x$" matched 0 tests. Searched 4 files')).toBe(true);
+		expect(ranNothing(" 1 pass\n 0 fail\nRan 1 test across 1 file.")).toBe(false);
 	});
 });
