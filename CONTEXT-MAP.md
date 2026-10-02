@@ -16,5 +16,7 @@ reading routes are recorded in [domain documentation](./docs/agents/domain.md).
 - Benchmark execution uses sandbox sessions to perform work and observe outcomes.
 - Driver capabilities describe what an integration exposes; benchmark execution records a gap
   when a requested measurement cannot be performed.
+- Provider packages translate their vendor into vendor ports; the driver kit derives sandbox
+  sessions and lifecycle behavior from them, including cleanup confirmation.
 - Driver readiness establishes usability; lifecycle measurement separately observes the first
   successful command according to the benchmark's measurement definition.

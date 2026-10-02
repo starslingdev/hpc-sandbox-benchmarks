@@ -8,6 +8,10 @@ status: accepted
 > their SDK dependencies. `packages/drivers` is only the generated lazy loader; shared bridge
 > mechanics are explicit `@sandbox-benchmarks/driver` subpaths. Daytona and Modal variants share
 > one vendor package. The port, declarative configuration, and behavioral contracts below remain.
+>
+> Amended by [ADR-0023](./0023-provider-packages-behind-a-vendor-port.md): drivers are written
+> against the vendor port (`@sandbox-benchmarks/driver/vendor`); a provider package is its
+> vendor's only importer and exposes `./artifact` when it bakes; `ARTIFACT_BUILDERS` is generated.
 
 ## Context
 

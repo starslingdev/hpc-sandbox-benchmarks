@@ -4,6 +4,10 @@ status: accepted
 
 # Declarative provider onboarding
 
+> Amended by [ADR-0023](./0023-provider-packages-behind-a-vendor-port.md): one `generate-providers`
+> command and drift check; `sdkPackage` becomes `string | { cli } | { http }`; optional `package`
+> and `figureLabel` fields; registry facts are answered by pure projections instead of restated.
+
 ## Context
 
 Adding one benchmarked provider currently touches 25–34 files. Measured over the last four
