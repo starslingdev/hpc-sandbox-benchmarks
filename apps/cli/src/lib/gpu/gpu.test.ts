@@ -13,9 +13,9 @@ import {
 	VLLM_IMAGE_COMMANDS,
 } from "./config.ts";
 import { cudaGraphEvidenceFromLog } from "./cuda-graphs.ts";
-import { gpuSandboxResources, vllmEnvironment } from "./modal.ts";
 import { kernelSeedManifest, kernelSnapshotPointerFromText } from "./prepare-kernels.ts";
 import { modelAssetConfig } from "./prepare-models.ts";
+import { gpuSandboxResources, vllmEnvironment } from "./sandbox.ts";
 
 describe("vLLM image", () => {
 	test("lets vLLM own its dependency stack on the CUDA development base", () => {

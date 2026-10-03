@@ -5,7 +5,7 @@ import { GPU_BENCHMARK } from "./config.ts";
 import type { CudaGraphEvidence } from "./cuda-graphs.ts";
 import { cudaGraphEvidencePassed } from "./cuda-graphs.ts";
 
-type ObservedGpu = Awaited<ReturnType<typeof import("./modal.ts").observeGpuSandbox>>;
+type ObservedGpu = Awaited<ReturnType<typeof import("./sandbox.ts").observeGpuSandbox>>;
 
 export function createGpuBenchmarkMetadata(options: {
 	args: GpuArgs;

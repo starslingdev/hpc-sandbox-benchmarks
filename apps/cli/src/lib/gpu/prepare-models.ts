@@ -1,8 +1,9 @@
 import { writeTextFile } from "@sandbox-benchmarks/driver";
-import type { App, Image, ModalClient, Volume } from "modal";
+import type { ModalGpuPlatform, ModalGpuVolume } from "@sandbox-benchmarks/modal/gpu";
+import { tagModalGpuSandbox } from "@sandbox-benchmarks/modal/gpu";
 import { GPU_BENCHMARK, MODEL_CACHE_ENV, readSource } from "./config.ts";
-import type { GpuSandbox } from "./modal.ts";
-import { withGpuSandbox } from "./modal.ts";
+import type { GpuSandbox } from "./sandbox.ts";
+import { withGpuSandbox } from "./sandbox.ts";
 
 const REMOTE_SCRIPT = "/tmp/prepare-gpu-models.py";
 const REMOTE_CONFIG = "/tmp/gpu-benchmark-assets.json";
@@ -52,34 +53,30 @@ export async function validateModelAssets(sandbox: GpuSandbox): Promise<void> {
 }
 
 export async function prepareModelAssets(options: {
-	client: ModalClient;
-	app: App;
-	image: Image;
-	volume: Volume;
-	volumeName: string;
+	platform: ModalGpuPlatform;
+	volume: ModalGpuVolume;
 	cpu: number;
 	cpuLimit: number;
 	timeoutMinutes: number;
 }): Promise<void> {
 	await withGpuSandbox(
+		options.platform,
 		{
-			client: options.client,
-			app: options.app,
-			image: options.image,
-			options: {
+			image: options.platform.baseImage,
+			resources: {
 				cpu: options.cpu,
 				cpuLimit: options.cpuLimit,
 				memoryMiB: GPU_BENCHMARK.modelPreparation.memoryMiB,
 				memoryLimitMiB: GPU_BENCHMARK.modelPreparation.memoryLimitMiB,
 				timeoutMs: options.timeoutMinutes * 60_000,
-				env: { ...MODEL_CACHE_ENV },
-				volumes: { [GPU_BENCHMARK.paths.modelMount]: options.volume },
 			},
+			env: { ...MODEL_CACHE_ENV },
+			mounts: { [GPU_BENCHMARK.paths.modelMount]: { volume: options.volume, writable: true } },
 		},
 		async (sandbox) => {
-			await sandbox.session.native.native.setTags({
+			await tagModalGpuSandbox(sandbox.session, {
 				"gpu-benchmark-role": "model-cache",
-				"model-volume": options.volumeName,
+				"model-volume": options.volume.name,
 			});
 			console.error(`Modal model-cache sandbox: ${sandbox.session.sandboxRef.id}`);
 			await runModelPreparation(
