@@ -154,6 +154,8 @@ export function vendorContract<Raw, Native>(
 	});
 }
 
+export type { E2bProtocolStubOptions, E2bProtocolStubRow } from "./lib/vendor-e2b.fixture.ts";
+export { e2bProtocolStub } from "./lib/vendor-e2b.fixture.ts";
 export type {
 	RestRequest,
 	RestRoute,
