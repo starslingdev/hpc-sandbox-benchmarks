@@ -16,7 +16,8 @@
     "./native": "./src/native.ts",
     "./errors": "./src/errors.ts",
     "./vendor": "./src/vendor.ts",
-    "./artifact": "./src/artifact.ts"
+    "./artifact": "./src/artifact.ts",
+    "./vendor/testing": "./src/vendor-testing.ts"
   },
   "scripts": {
     "test": "bun test",
