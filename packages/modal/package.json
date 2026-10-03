@@ -11,7 +11,8 @@
     "./vm": "./src/vm.ts",
     "./allocation": "./src/allocation.ts",
     "./package.json": "./package.json",
-    "./gpu": "./src/gpu.ts"
+    "./gpu": "./src/gpu.ts",
+    "./cleanup-observation": "./src/cleanup-observation.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -21,7 +22,8 @@
     "@sandbox-benchmarks/driver": "workspace:*",
     "arktype": "catalog:",
     "modal": "catalog:computesdk",
-    "nice-grpc": "catalog:computesdk"
+    "nice-grpc": "catalog:computesdk",
+    "@sandbox-benchmarks/schema": "workspace:*"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

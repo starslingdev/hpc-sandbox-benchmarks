@@ -1,5 +1,6 @@
 import type { CleanupRecovery } from "@sandbox-benchmarks/schema";
 import { ModalClient } from "modal";
+import { MODAL_APP_NAME, modalListingPages } from "./vendor.ts";
 
 /** Read-only clearance of the reviewed native-create App, never a guess at a missing ID. */
 export async function observeModalCleanupApp(
@@ -16,35 +17,26 @@ export async function observeModalCleanupApp(
 		],
 	}),
 ): Promise<CleanupRecovery["observation"]> {
-	const appName = "sandbox-benchmarks";
+	const appName = MODAL_APP_NAME;
 	const app = await client.apps.fromName(appName, { createIfMissing: false });
 	// A retained original allocation must appear in this App's server-side history. An empty App
 	// in a different account/environment cannot certify cleanup of the original run.
 	let anchored = false;
-	let beforeTimestamp: number | undefined;
-	for (let page = 0; page < 100; page++) {
+	const history = modalListingPages(async (beforeTimestamp) => {
 		signal.throwIfAborted();
-		const result = await client.cpClient.sandboxListV2({
-			appId: app.appId,
-			includeFinished: true,
-			beforeTimestamp,
-		});
-		if (
-			result.sandboxes.some(
-				(sandbox) => sandbox.id === anchorSandboxId && sandbox.appId === app.appId,
-			)
-		) {
+		return (
+			await client.cpClient.sandboxListV2({
+				appId: app.appId,
+				includeFinished: true,
+				beforeTimestamp,
+			})
+		).sandboxes;
+	}, 100);
+	for await (const page of history) {
+		if (page.some((sandbox) => sandbox.id === anchorSandboxId && sandbox.appId === app.appId)) {
 			anchored = true;
 			break;
 		}
-		const last = result.sandboxes.at(-1);
-		if (!last) break;
-		if (
-			!Number.isFinite(last.createdAt) ||
-			(beforeTimestamp !== undefined && last.createdAt >= beforeTimestamp)
-		)
-			throw new Error("Modal history pagination did not advance");
-		beforeTimestamp = last.createdAt;
 	}
 	if (!anchored)
 		throw new Error("Modal App history does not contain the original run's anchor sandbox");
