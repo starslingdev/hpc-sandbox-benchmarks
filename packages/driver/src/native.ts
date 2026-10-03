@@ -1,7 +1,7 @@
 // Project native SDK handles into the shared session machinery without passing through
 // ComputeSDK's error-erasing wrappers. The SDK's exact native type survives inference.
 import type { DriverOperationOptions } from "@sandbox-benchmarks/driver";
-import type { ComputeSdkSandboxLike } from "./computesdk.ts";
+import type { ComputeSdkSandboxLike } from "./computesdk-compat.ts";
 import { detachedShellCommand } from "./lib/shell.ts";
 
 export function nativeSdkCompute<Options, Native>(

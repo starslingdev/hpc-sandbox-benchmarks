@@ -12,7 +12,7 @@
     "./env": "./src/env.ts",
     "./schemas": "./src/schemas.ts",
     "./package.json": "./package.json",
-    "./computesdk": "./src/computesdk.ts",
+    "./computesdk": "./src/computesdk-compat.ts",
     "./native": "./src/native.ts",
     "./errors": "./src/errors.ts",
     "./vendor": "./src/vendor.ts"

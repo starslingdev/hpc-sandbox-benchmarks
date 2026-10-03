@@ -14,8 +14,8 @@ import type {
 	ComputeSdkLike,
 	ComputeSdkNativeOf,
 	ComputeSdkSandboxLike,
-} from "./computesdk.ts";
-import { computeSdkSpec, defineComputeSdkDriver } from "./computesdk.ts";
+} from "./computesdk-compat.ts";
+import { computeSdkSpec, defineComputeSdkDriver } from "./computesdk-compat.ts";
 
 const request: CreateRequest = {
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
