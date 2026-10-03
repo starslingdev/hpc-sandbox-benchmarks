@@ -3,8 +3,8 @@ import {
 	shutdownOwnedSandboxes,
 	withCleanupPreservingPrimaryError,
 } from "@sandbox-benchmarks/harness";
-import type { ModalClient } from "modal";
-import { ModalClient as Client } from "modal";
+import type { ModalGpuPlatform } from "@sandbox-benchmarks/modal/gpu";
+import { openModalGpuPlatform } from "@sandbox-benchmarks/modal/gpu";
 import type { GpuArgs } from "../lib/gpu/args.ts";
 import { parseGpuArgs } from "../lib/gpu/args.ts";
 import {
@@ -16,23 +16,14 @@ import { runGpuFleet } from "../lib/gpu/fleet.ts";
 import { prepareKernelSnapshot, resolveKernelSnapshot } from "../lib/gpu/prepare-kernels.ts";
 import { prepareModelAssets } from "../lib/gpu/prepare-models.ts";
 
-async function run(args: GpuArgs, client: ModalClient): Promise<void> {
-	const app = await client.apps.fromName(GPU_BENCHMARK.appName, { createIfMissing: true });
-	const baseImage = await client.images
-		.fromRegistry(GPU_BENCHMARK.software.cudaImage)
-		.dockerfileCommands([...VLLM_IMAGE_COMMANDS])
-		.dockerfileCommands([...GPU_RUNTIME_IMAGE_COMMANDS])
-		.build(app);
-	const modelVolume = await client.volumes.fromName(args.modelVolume, {
-		createIfMissing: args.operation === "models",
+async function run(args: GpuArgs, platform: ModalGpuPlatform): Promise<void> {
+	const modelVolume = await platform.volume(args.modelVolume, {
+		create: args.operation === "models",
 	});
 	if (args.operation === "models") {
 		await prepareModelAssets({
-			client,
-			app,
-			image: baseImage,
+			platform,
 			volume: modelVolume,
-			volumeName: args.modelVolume,
 			cpu: args.cpuRequested,
 			cpuLimit: args.cpuLimit,
 			timeoutMinutes: args.timeoutMinutes,
@@ -41,32 +32,16 @@ async function run(args: GpuArgs, client: ModalClient): Promise<void> {
 		return;
 	}
 
-	const registryVolume = await client.volumes.fromName(args.kernelSnapshotRegistryVolume, {
-		createIfMissing: args.operation === "kernels",
+	const registryVolume = await platform.volume(args.kernelSnapshotRegistryVolume, {
+		create: args.operation === "kernels",
 	});
-	const cachedKernelImage = await resolveKernelSnapshot({
-		client,
-		app,
-		baseImage,
-		registryVolume,
-		registryVolumeName: args.kernelSnapshotRegistryVolume,
-		args,
-	});
+	const cachedKernelImage = await resolveKernelSnapshot({ platform, registryVolume, args });
 	if (args.operation === "kernels") {
 		const pointer = cachedKernelImage
 			? { status: "already-prepared", kernelSnapshotImageId: cachedKernelImage.imageId }
 			: {
 					status: "prepared",
-					...(await prepareKernelSnapshot({
-						client,
-						app,
-						baseImage,
-						modelVolume,
-						modelVolumeName: args.modelVolume,
-						registryVolume,
-						registryVolumeName: args.kernelSnapshotRegistryVolume,
-						args,
-					})),
+					...(await prepareKernelSnapshot({ platform, modelVolume, registryVolume, args })),
 				};
 		console.log(JSON.stringify(pointer, null, 2));
 		return;
@@ -76,23 +51,24 @@ async function run(args: GpuArgs, client: ModalClient): Promise<void> {
 			"no compatible vLLM kernel snapshot is registered; run --prepare kernels first",
 		);
 	}
-	await runGpuFleet({ client, app, baseImage, kernelImage: cachedKernelImage, modelVolume, args });
+	await runGpuFleet({ platform, kernelImage: cachedKernelImage, modelVolume, args });
 }
 
 async function main(): Promise<void> {
 	const args = parseGpuArgs(process.argv.slice(2));
-	if (!process.env.MODAL_TOKEN_ID || !process.env.MODAL_TOKEN_SECRET) {
-		throw new Error("MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are required");
-	}
-	const client = new Client();
+	const platform = await openModalGpuPlatform({
+		appName: GPU_BENCHMARK.appName,
+		registryImage: GPU_BENCHMARK.software.cudaImage,
+		layers: [VLLM_IMAGE_COMMANDS, GPU_RUNTIME_IMAGE_COMMANDS],
+	});
 	await withCleanupPreservingPrimaryError(
-		() => run(args, client),
+		() => run(args, platform),
 		async () => {
 			let failures: unknown[];
 			try {
 				failures = await shutdownOwnedSandboxes("GPU benchmark exit");
 			} finally {
-				client.close();
+				platform.close();
 			}
 			if (failures.length > 0) {
 				throw new AggregateError(failures, "GPU sandbox cleanup failed");

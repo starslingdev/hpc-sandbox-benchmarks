@@ -2,12 +2,20 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { succeeded } from "@sandbox-benchmarks/driver";
 import { collectResults } from "@sandbox-benchmarks/harness";
-import type { App, Image, ModalClient, Volume } from "modal";
+import type {
+	ModalGpuImage,
+	ModalGpuPlatform,
+	ModalGpuVolume,
+} from "@sandbox-benchmarks/modal/gpu";
+import { tagModalGpuSandbox } from "@sandbox-benchmarks/modal/gpu";
 import { installLineTagging, withLineTag } from "../log-prefix.ts";
 import { runPooled } from "../replicates.ts";
 import type { GpuArgs } from "./args.ts";
 import { GPU_BENCHMARK } from "./config.ts";
 import { cudaGraphEvidenceFromLog, cudaGraphEvidencePassed } from "./cuda-graphs.ts";
+import { validateModelAssets } from "./prepare-models.ts";
+import type { GpuFleetFailure, GpuFleetReplicate } from "./report.ts";
+import { createGpuBenchmarkMetadata, renderGpuFleetReport } from "./report.ts";
 import {
 	gpuSandboxResources,
 	observeGpuSandbox,
@@ -15,10 +23,7 @@ import {
 	stageGpuProducer,
 	vllmEnvironment,
 	withGpuSandbox,
-} from "./modal.ts";
-import { validateModelAssets } from "./prepare-models.ts";
-import type { GpuFleetFailure, GpuFleetReplicate } from "./report.ts";
-import { createGpuBenchmarkMetadata, renderGpuFleetReport } from "./report.ts";
+} from "./sandbox.ts";
 
 function writeJson(path: string, value: unknown): void {
 	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -39,11 +44,9 @@ function writeReport(
 }
 
 async function runGpuReplicate(options: {
-	client: ModalClient;
-	app: App;
-	baseImage: Image;
-	kernelImage: Image;
-	modelVolume: Volume;
+	platform: ModalGpuPlatform;
+	kernelImage: ModalGpuImage;
+	modelVolume: ModalGpuVolume;
 	args: GpuArgs;
 	index: number;
 	outputRoot: string;
@@ -53,22 +56,15 @@ async function runGpuReplicate(options: {
 	mkdirSync(outputDirectory, { recursive: true });
 	const startedAt = new Date();
 	return withGpuSandbox(
+		options.platform,
 		{
-			client: options.client,
-			app: options.app,
 			image: options.kernelImage,
-			options: {
-				...gpuSandboxResources(args),
-				env: vllmEnvironment(args),
-				volumes: {
-					[GPU_BENCHMARK.paths.modelMount]: options.modelVolume.withMountOptions({
-						readOnly: true,
-					}),
-				},
-			},
+			resources: gpuSandboxResources(args),
+			env: vllmEnvironment(args),
+			mounts: { [GPU_BENCHMARK.paths.modelMount]: { volume: options.modelVolume } },
 		},
 		async (sandbox) => {
-			await sandbox.session.native.native.setTags({
+			await tagModalGpuSandbox(sandbox.session, {
 				"gpu-benchmark-role": "benchmark-replicate",
 				"gpu-benchmark-replicate": String(index),
 				profile: GPU_BENCHMARK.profile.name,
@@ -124,7 +120,7 @@ async function runGpuReplicate(options: {
 			const metadata = createGpuBenchmarkMetadata({
 				args,
 				replicateIndex: index,
-				baseImageId: options.baseImage.imageId,
+				baseImageId: options.platform.baseImage.imageId,
 				kernelSnapshotImageId: options.kernelImage.imageId,
 				sandboxId: sandbox.session.sandboxRef.id,
 				startedAt,
@@ -147,11 +143,9 @@ type FleetOutcome =
 	| { replicate?: never; failure: GpuFleetFailure };
 
 export async function runGpuFleet(options: {
-	client: ModalClient;
-	app: App;
-	baseImage: Image;
-	kernelImage: Image;
-	modelVolume: Volume;
+	platform: ModalGpuPlatform;
+	kernelImage: ModalGpuImage;
+	modelVolume: ModalGpuVolume;
 	args: GpuArgs;
 }): Promise<void> {
 	const indices = options.args.replicateIndices;
