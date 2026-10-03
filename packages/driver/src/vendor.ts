@@ -571,3 +571,544 @@ class Allocation<Raw, Native> implements VendorHandle<Raw, Native> {
 		this.#native = { value: native };
 	}
 }
+
+/** Lower one bound vendor onto the ComputeSDK bridge. */
+function vendorSpec<P extends ProviderId, Raw, Native>(
+	provider: P,
+	context: DriverContext<P>,
+	traits: VendorTraits,
+	vendor: Vendor<Raw, Native>,
+) {
+	const timing: VendorTiming = { ...DEFAULT_TIMING, ...traits.timing };
+	const { control, data, snapshots } = kitPort(vendor, {
+		provider,
+		...(traits.recovery?.lookup && { lookup: traits.recovery.lookup }),
+		controlTimeoutMs: timing.controlTimeoutMs,
+	});
+	const { files, launch } = data;
+	const { refused, transient } = control;
+	const spelling = traits.markerSpelling ?? VERBATIM_MARKER;
+	const dedicated = traits.account === "dedicated";
+	const provesAbsence = traits.recovery?.provesAbsence ?? true;
+	// Markers of attempts whose allocation may exist although no lookup can show it yet.
+	const unresolved = new Set<string>();
+	if (dedicated && !control.find)
+		throw new Error(`${provider}: a dedicated account recovers by replay and needs control.find`);
+	if (vendor.control.find && traits.recovery?.lookup)
+		throw new Error(`${provider}: recovery looks a marker up by control.find or by get, not both`);
+	if (traits.diskProof === "reported" && !data.prepare)
+		throw new Error(`${provider}: a reported disk proof is proven by data.prepare`);
+	executionOf(provider, traits, launch !== undefined);
+	const vendorId = (
+		"fromVendor" in traits.sandboxId ? traits.sandboxId.fromVendor : traits.sandboxId
+	) as { assert(value: unknown): string };
+	const op = (signal?: AbortSignal): Op => ({ signal: signal ?? new AbortController().signal });
+	const isGone = (record: VendorRecord<Raw> | null) => record === null || record.phase === "gone";
+	// On a shared account a record without the kit's marker is foreign. The kit cannot tell an
+	// adapter that dropped a marker from another tenant's unlabelled sandbox, so it does not fail
+	// on a missing marker here; vendorContract proves every adapter echoes the marker from get,
+	// page and find, and marker-based recovery refuses anything it cannot attribute.
+	const owned = (record: VendorRecord<Raw>) =>
+		dedicated || (record.marker?.startsWith(MARKER_PREFIX) ?? false);
+
+	/** One control-plane call outside a poll, bounded by `controlTimeoutMs`. */
+	async function call<T>(
+		label: string,
+		outer: AbortSignal | undefined,
+		work: (o: Op) => Promise<T>,
+		timeoutMs = timing.controlTimeoutMs,
+	): Promise<T> {
+		const deadline = Date.now() + timeoutMs;
+		const o = op(budget(timeoutMs, outer));
+		const expired = () => !outer?.aborted && (o.signal.aborted || Date.now() >= deadline);
+		try {
+			const result = await untilAborted(
+				Promise.resolve().then(() => work(o)),
+				o.signal,
+			);
+			// A response can arrive after the bound but before the timer callback gets a turn.
+			if (Date.now() >= deadline) throw new Error("late response");
+			return result;
+		} catch (error) {
+			if (expired()) throw new Error(`${provider} ${label} did not answer within ${timeoutMs}ms`);
+			throw error;
+		}
+	}
+
+	/**
+	 * Poll within one bounded budget. Every port call shares the bounded signal, which aborts when
+	 * the poll ends however it ends, so a read still in flight at the deadline (an SDK that ignores
+	 * its signal) is cancelled rather than left running; an expiry (rather than the caller's own
+	 * cancellation) becomes `expired()`.
+	 */
+	async function within<T>(
+		deadlineMs: number,
+		outer: AbortSignal | undefined,
+		poll: (o: Op) => Promise<T | null>,
+		expired: () => unknown,
+		intervalMs = timing.pollMs,
+	): Promise<T> {
+		const ended = new AbortController();
+		const o = op(AbortSignal.any([budget(deadlineMs, outer), ended.signal]));
+		try {
+			return await pollUntilReady({
+				provider,
+				deadlineMs,
+				intervalMs,
+				signal: o.signal,
+				poll: () => poll(o),
+			});
+		} catch (error) {
+			const timedOut =
+				o.signal.aborted || (isDriverError(error) && error.code === "readiness-timeout");
+			if (outer?.aborted || !timedOut) throw error;
+			throw expired();
+		} finally {
+			ended.abort(new Error(`${provider} poll ended`));
+		}
+	}
+
+	/**
+	 * One whole listing within `inventoryTimeoutMs`: every page shares that budget and the caller's
+	 * signal (each page is still bounded on its own by `controlTimeoutMs`), and a page in flight when
+	 * the budget ends is cancelled with it.
+	 */
+	async function listing<T>(
+		label: string,
+		outer: AbortSignal | undefined,
+		drain: (signal: AbortSignal) => Promise<T>,
+	): Promise<T> {
+		const timeoutMs = timing.inventoryTimeoutMs;
+		const deadline = Date.now() + timeoutMs;
+		const ended = new AbortController();
+		const signal = AbortSignal.any([budget(timeoutMs, outer), ended.signal]);
+		const expired = () => new Error(`${provider} ${label} did not complete within ${timeoutMs}ms`);
+		try {
+			signal.throwIfAborted();
+			const result = await untilAborted(drain(signal), signal);
+			// The last page can answer after the budget but before the timer callback gets a turn.
+			if (Date.now() >= deadline) throw expired();
+			return result;
+		} catch (error) {
+			if (!outer?.aborted && (signal.aborted || Date.now() >= deadline)) throw expired();
+			throw error;
+		} finally {
+			ended.abort(new Error(`${provider} ${label} ended`));
+		}
+	}
+
+	const pageCap = { ...(traits.pageCap !== undefined && { pageCap: traits.pageCap }) };
+
+	async function liveRecords(outer?: AbortSignal): Promise<VendorRecord<Raw>[]> {
+		const records = await listing("listing", outer, (signal) =>
+			drainPages(
+				provider,
+				(cursor) => call("listing page", signal, (o) => control.page(cursor, o)),
+				op(signal),
+				pageCap,
+			),
+		);
+		return records.filter((record) => !isGone(record));
+	}
+
+	/**
+	 * One read of a poll: `undefined` when the read outlived `controlTimeoutMs`, so the poll reads
+	 * again at its cadence until its own deadline, as it would wait out a slow boot. Every other
+	 * failure, and the caller's cancellation, still ends the poll.
+	 */
+	async function reread(
+		read: (id: string, o: Op) => Promise<VendorRecord<Raw> | null>,
+		id: string,
+		o: Op,
+	): Promise<VendorRecord<Raw> | null | undefined> {
+		try {
+			return await read(id, o);
+		} catch (error) {
+			if (error instanceof ControlReadTimeout) return undefined;
+			throw error;
+		}
+	}
+
+	// Ids this kit has observed gone (or proven removed): a held session is never deleted again.
+	const observedGone = new Set<string>();
+
+	/**
+	 * Cleanup confirmation: request removal, then observe removal; an acknowledged delete is not
+	 * removal. `observe-first` (destroy-by-id, recovery: no proof the allocation is live) looks
+	 * before it deletes and never sends a delete to a record already observed gone. `remove-first`
+	 * (a session the kit created and holds) requests removal straight away. A transient refusal of
+	 * the request, or a removal whose own lookup (`RemoveOp.current`) outlived `controlTimeoutMs`, is
+	 * asked again at a later read, no sooner than `removeRetryMs` after the last request, while the
+	 * delete budget remains. Resolves whether this teardown requested the removal (false: the
+	 * sandbox was already gone or going).
+	 */
+	async function destroy(
+		id: string,
+		signal?: AbortSignal,
+		order: "observe-first" | "remove-first" = "observe-first",
+	): Promise<boolean> {
+		const retryMs = timing.removeRetryMs ?? timing.deletePollMs ?? timing.pollMs;
+		let requested = false;
+		let accepted = false;
+		let lastRequest = Number.NEGATIVE_INFINITY;
+		// The last transient refusal: if the budget ends on it, it is the diagnostic, not the timeout.
+		let refusal: { readonly error: unknown } | undefined;
+		const request = async (o: Op) => {
+			requested = true;
+			lastRequest = Date.now();
+			try {
+				const outcome = await control.remove(id, o);
+				accepted = true;
+				refusal = undefined;
+				return outcome === "removed" ? true : null;
+			} catch (error) {
+				if (!(error instanceof ControlReadTimeout) && !transient?.(error)) throw error;
+				refusal = { error };
+				return null;
+			}
+		};
+		await within(
+			timing.deleteTimeoutMs,
+			signal,
+			async (o) => {
+				const first = order === "remove-first" && !requested;
+				if (first && (await request(o))) return true;
+				const record = await reread(control.get, id, o);
+				if (record === undefined) return null;
+				if (isGone(record)) return true;
+				const due = Date.now() - lastRequest >= retryMs;
+				if (!first && !accepted && due && record?.phase !== "deleting") return request(o);
+				return null;
+			},
+			() =>
+				refusal
+					? refusal.error
+					: new Error(
+							`${provider} sandbox ${id} was not observed removed within ${timing.deleteTimeoutMs}ms`,
+						),
+			timing.deletePollMs,
+		);
+		observedGone.add(id);
+		return requested;
+	}
+
+	async function awaitReady(record: VendorRecord<Raw>, outer?: AbortSignal) {
+		if (record.phase === "ready") return record;
+		const observe = control.settle ?? control.get;
+		return within(
+			timing.readyTimeoutMs,
+			outer,
+			async (o) => {
+				const current = await reread(observe, record.id, o);
+				if (current === undefined) return null;
+				if (isGone(current)) observedGone.add(record.id);
+				if (current === null) throw new Error(`${provider} sandbox disappeared before readiness`);
+				if (current.phase === "ready") return current;
+				// A boot the vendor's host gave up on is marked retryable; the bridge honours the mark
+				// only once teardown has proven nothing remains allocated.
+				if (current.phase !== "pending")
+					throw new DriverError(
+						"create-failed",
+						`${provider} sandbox entered ${current.phase} before readiness${current.detail ? `: ${current.detail}` : ""}`,
+						{ provider, ...(current.retryCreate && { retryable: true }) },
+					);
+				return null;
+			},
+			() =>
+				new Error(`${provider} sandbox ${record.id} not ready within ${timing.readyTimeoutMs}ms`),
+		);
+	}
+
+	/** The live allocations an ambiguous create's marker attributes to it, as parsed vendor ids. */
+	async function recoveryIds(marker: string, signal?: AbortSignal): Promise<string[]> {
+		const lookup = control.find;
+		const records = lookup
+			? await listing("recovery lookup", signal, (bound) =>
+					drainPages(
+						provider,
+						(cursor) => call("recovery lookup", bound, (o) => lookup(marker, cursor, o)),
+						op(bound),
+						{
+							...pageCap,
+							// A lookup may be a loose filter; the kit, not each adapter, refuses to tear down
+							// anything the marker does not attribute to this attempt. A dedicated account's
+							// replay may omit the marker, but never carries a different one.
+							inspect: (page) => {
+								for (const record of page)
+									if (record.marker !== marker && !(dedicated && record.marker === undefined))
+										throw new Error(`${provider} recovery returned an unrelated sandbox`);
+							},
+						},
+					),
+				)
+			: (await liveRecords(signal)).filter((record) => record.marker === marker);
+		return records.filter((record) => !isGone(record)).map((record) => vendorId.assert(record.id));
+	}
+
+	/** Teardown of a session the kit created and holds: its allocation is known to exist. */
+	const release = (id: string, signal?: AbortSignal) =>
+		destroy(id, signal, observedGone.has(id) ? "observe-first" : "remove-first");
+
+	// Create is only the vendor call: once it returns an id, every later step (attach, readiness,
+	// admission, preparation, the disk proof) runs on the bridge's post-create path, which tears the
+	// allocation down by that id and, if teardown fails, retains a cleanup that retries by id.
+	const compute = {
+		sandbox: {
+			async create(attempt: CreateAttempt, operation: DriverOperationOptions = {}) {
+				operation.signal?.throwIfAborted();
+				const handle = new Allocation<Raw, Native>(
+					await control.create(attempt, op(operation.signal)).catch((error: unknown) => {
+						if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
+						throw error;
+					}),
+				);
+				return {
+					sandboxId: handle.record.id,
+					getInstance: () => handle,
+					// The plain exec is synchronous; a background request runs through the kit's shell
+					// launcher, and `data.launch` (bound below as the bridge's commands) owns native ones.
+					runCommand: (
+						command: string,
+						options?: ExecOptions & { readonly background?: boolean },
+					) =>
+						data.exec(
+							handle.native,
+							options?.background ? detachedShellCommand(command) : command,
+							options?.signal ? { signal: options.signal } : undefined,
+						),
+					...(files && {
+						filesystem: {
+							readFile: (path: string) => files.read(handle.native, path),
+							exists: async (path: string) =>
+								files.exists
+									? files.exists(handle.native, path)
+									: (await data.exec(handle.native, `test -e ${shellQuote(path)}`)).exitCode === 0,
+							writeFile: (path: string, text: string) => files.write(handle.native, path, text),
+						},
+					}),
+				};
+			},
+		},
+	};
+
+	const spec: ComputeSdkDriverSpec<typeof compute> = {
+		compute,
+		sandboxId: traits.sandboxId,
+		createOptions: {
+			coverage: traits.coverage,
+			map: (request, unsupported) => {
+				// The artifact guard: a request may only boot the artifact this context resolved.
+				const resolved = context.resolvedArtifact;
+				const same =
+					request.artifact.kind === resolved.kind &&
+					(resolved.kind === "none" ||
+						(request.artifact.kind !== "none" && request.artifact.ref === resolved.ref));
+				if (!same) unsupported(`request artifact differs from the resolved ${provider} artifact`);
+				const refusal = traits.unsupported?.(request);
+				if (refusal !== undefined) unsupported(refusal);
+				return { request, marker: `${MARKER_PREFIX}${randomUUID()}` };
+			},
+		},
+		...(launch && {
+			commands: {
+				exec: (sandbox, command, options) =>
+					data.exec(sandbox.getInstance().native, command, options),
+				launch: (sandbox, command, options) =>
+					launch(sandbox.getInstance().native, command, options),
+			},
+		}),
+		lifecycle: {
+			destroy: async (sandbox, ref, operation) => {
+				await release(ref?.id ?? sandbox.getInstance().record.id, operation.signal);
+			},
+		},
+		createRecovery: {
+			absenceConfirmationMs: traits.recovery?.absenceConfirmationMs ?? 2_000,
+			maxAttempts: traits.recovery?.maxAttempts ?? 4,
+			locator: (attempt) => ({
+				kind: "marker",
+				key: traits.markerKey ?? `${provider}-marker`,
+				value: spelling.toVendor(attempt.marker),
+			}),
+			...((refused || transient) && {
+				isDefinitive: (error: unknown) => refused?.(error) !== undefined,
+				isRetryableCreate: (error: unknown) =>
+					refused?.(error)?.retryable === true || transient?.(error) === true,
+			}),
+			cleanup: async (_compute, locator, operation) => {
+				const marker = spelling.fromVendor(locator.value);
+				if (marker === undefined)
+					throw new Error(`${provider} recovery locator spells no ownership marker`);
+				const ids = await recoveryIds(marker, operation.signal);
+				if (ids.length === 0) {
+					if (unresolved.has(marker))
+						throw new Error(
+							`${provider} create has no allocation verdict; an empty lookup cannot prove it absent`,
+						);
+					return { status: "absent" };
+				}
+				// Each teardown is independently bounded; run them together, then surface every failure.
+				const outcomes = await Promise.allSettled(ids.map((id) => destroy(id, operation.signal)));
+				const failures = outcomes.flatMap((outcome) =>
+					outcome.status === "rejected" ? [outcome.reason] : [],
+				);
+				if (failures.length > 0)
+					throw new AggregateError(
+						failures,
+						`${provider} recovery could not tear down ${failures.length} of ${ids.length} sandboxes`,
+					);
+				unresolved.delete(marker);
+				// Listed but already gone by the time teardown observed them: the account was not empty
+				// a moment ago, so the bridge restarts its absence-confirmation clock.
+				return outcomes.some((outcome) => outcome.status === "fulfilled" && outcome.value)
+					? { status: "destroyed" }
+					: { status: "absent", contradictedPriorAbsence: true };
+			},
+		},
+		prepareAndVerifyCreatedRequest: async (_sandbox, handle, request, operation) => {
+			handle.attach(await data.attach(handle.record, op(operation.signal)));
+			const ready = await awaitReady(handle.record, operation.signal);
+			const reason = control.admit?.(ready);
+			if (reason) throw new Error(`${provider} rejected the allocation: ${reason}`);
+			const prepared = await data.prepare?.(
+				{ record: ready, native: handle.native },
+				request,
+				op(operation.signal),
+			);
+			if (prepared?.status === "unsupported") return prepared;
+			const honored = prepared ?? { status: "honored" };
+			const { diskProof } = traits;
+			if (diskProof === "reported" || request.spec.diskGb === undefined) return honored;
+			if (traits.coverage.spec.diskGb !== "runtime-verified" && !diskProof) return honored;
+			const disk = await verifyDisk(
+				provider,
+				request.spec.diskGb,
+				(command) => data.exec(handle.native, command, operation),
+				diskProof,
+			);
+			return disk.status === "honored" ? honored : disk;
+		},
+		hasWorkingFilesystem: files !== undefined,
+		probes: {
+			observe: async (_compute, ref): Promise<SandboxObservation> => ({
+				state: isGone(await call("observe", undefined, (o) => control.get(ref.id, o)))
+					? "absent"
+					: "running",
+			}),
+			describe: async (_compute, ref) =>
+				(await call("describe", undefined, (o) => control.get(ref.id, o)))?.raw,
+			// One page, as a control-plane latency probe rather than a full enumeration.
+			list: async () =>
+				(await call("list probe", undefined, (o) => control.page(undefined, o))).records.map(
+					(record) => record.raw,
+				),
+		},
+		inventory: {
+			list: async (_compute, operation) => {
+				const ownedIds: string[] = [];
+				let foreignCount = 0;
+				for (const record of await liveRecords(operation.signal)) {
+					if (owned(record)) ownedIds.push(record.id);
+					else if (!record.stopped) foreignCount += 1;
+				}
+				return { owned: ownedIds, foreignCount };
+			},
+		},
+		destroyById: async (_compute, ref, operation) => {
+			await destroy(ref.id, operation.signal);
+		},
+		...(snapshots && {
+			snapshots: {
+				create: (_compute, session, options) =>
+					call(
+						"snapshot capture",
+						undefined,
+						(o) => snapshots.create(session.native, o, options?.retention ?? "ephemeral"),
+						timing.snapshotTimeoutMs,
+					),
+				delete: (_compute, snapshotId) =>
+					call(
+						"snapshot delete",
+						undefined,
+						(o) => snapshots.delete(snapshotId, o),
+						timing.snapshotTimeoutMs,
+					),
+			},
+		}),
+	};
+	return spec;
+}
+
+/* ---------------------------------- module entry ---------------------------------- */
+
+/** Everything a provider package declares: its traits, its passthroughs, and its vendor binding. */
+export interface VendorDriverSpec<P extends ProviderId, Raw, Native> extends VendorTraits {
+	readonly provenance: SdkProvenance;
+	/** A ComputeSDK-lowered module has no cancellable hard ceiling: only the harness owns create. */
+	readonly createBudget?: Extract<CreateBudget, { readonly owner: "harness" }>;
+	readonly accelerator?: AcceleratorStrategy;
+	readonly costEvidence?: ProviderCostEvidenceCapability<P>;
+	/** The composition point: the only place the package binds its real SDK, client, or transport. */
+	readonly vendor: (context: DriverContext<P>) => Vendor<Raw, Native>;
+}
+
+/** Another vendor or timing to lower a module against (a stubbed transport in tests). */
+export interface VendorOverrides<Raw, Native> {
+	readonly vendor?: Vendor<Raw, Native>;
+	readonly timing?: Partial<VendorTiming>;
+}
+
+/**
+ * Define a provider's DriverModule from its vendor. `specFor` lowers the same module against
+ * another vendor or timing (a stubbed transport in tests), so packages never restate their binding.
+ */
+export function defineVendorDriver<P extends ProviderId, Raw, Native>(
+	provider: P,
+	module: VendorDriverSpec<NoInfer<P>, Raw, Native>,
+) {
+	const { provenance, vendor, createBudget, accelerator, costEvidence, ...traits } = module;
+	// The bridge has no cancellable hard ceiling, so only the harness may own the create budget.
+	if (createBudget !== undefined && createBudget.owner !== "harness")
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} create budget must be owned by the harness`,
+			{ provider },
+		);
+	const specFor = (context: DriverContext<P>, overrides: VendorOverrides<Raw, Native> = {}) =>
+		vendorSpec(
+			provider,
+			context,
+			{ ...traits, timing: { ...traits.timing, ...overrides.timing } },
+			overrides.vendor ?? vendor(context),
+		);
+	const driver = defineComputeSdkDriver(provider, {
+		provenance,
+		// Readiness is proven inside create (the kit polls the control plane before returning).
+		readiness: { startup: "create-returns-ready" },
+		execution: executionOf(provider, traits, undefined),
+		...(createBudget && { createBudget }),
+		...(accelerator && { accelerator }),
+		...(costEvidence && { costEvidence }),
+		spec: (context) => specFor(context),
+	});
+	// DriverModules are frozen; the test seams (the lowering and the declared traits the port
+	// contract reads) travel beside the module, not inside it, and are as immutable as the module.
+	return Object.freeze({ ...driver, specFor, traits: frozenData(traits) as VendorTraits });
+}
+
+/**
+ * Deep-freeze the plain data in `value` (objects and arrays), leaving class instances and
+ * functions (a sandbox-id schema, a marker spelling's methods) as they are.
+ */
+function frozenData<T>(value: T): T {
+	if (typeof value !== "object" || value === null) return value;
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) return value;
+	for (const field of Object.values(value)) frozenData(field);
+	return Object.freeze(value);
+}
+
+/** A module `defineVendorDriver` returned. */
+export type VendorDriverModule<P extends ProviderId, Raw, Native> = ReturnType<
+	typeof defineVendorDriver<P, Raw, Native>
+>;
