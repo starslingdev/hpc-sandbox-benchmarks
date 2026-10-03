@@ -7,7 +7,7 @@ import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
 import { restStub, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
-import brezel from "./driver.ts";
+import brezel from "./index.ts";
 import { brezelVendor } from "./vendor.ts";
 
 const REVISION = "envr_9830e105167d5161682df50b";
