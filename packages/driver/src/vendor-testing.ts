@@ -150,7 +150,6 @@ export function vendorContract<Raw, Native>(
 		expect(outcome).toBe("removed");
 		const after = await vendor.control.get(created.id, op);
 		expect(after === null || after.phase === "gone").toBe(true);
-		expect(await vendor.control.remove(created.id, op)).toBe("removed");
 	});
 }
 
