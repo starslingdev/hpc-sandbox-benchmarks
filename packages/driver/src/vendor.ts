@@ -312,3 +312,262 @@ export interface VendorTraits {
 	 */
 	readonly diskProof?: DiskProof | "reported";
 }
+
+export interface DiskProof {
+	/** The mount the requested capacity must land on (default `/`). */
+	readonly path?: string;
+	/** Capacity a formatted filesystem legitimately loses to its own metadata (default 0). */
+	readonly allowanceGb?: number;
+	/** The same allowance as a fraction of the requested capacity (default 0). */
+	readonly allowanceRatio?: number;
+}
+
+/**
+ * A suite-length sandbox lifetime (the longest suite budgets 155 minutes, plus setup and collection
+ * margin), so an allocation every teardown missed still expires on its own. A create that can state
+ * a vendor-side lifetime states this one.
+ */
+export const LEAK_EXPIRY_MS = 3 * 60 * 60_000;
+
+/** The create-time prefix every kit-minted ownership marker carries. */
+export const MARKER_PREFIX = "benchmark-";
+const MINTED = new RegExp(`^${MARKER_PREFIX}[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`);
+
+/** Whether a vendor value is exactly a kit-minted marker (a sandbox the create named by it). */
+export const isMintedMarker = (value: string): boolean => MINTED.test(value);
+
+/**
+ * The vendor-visible spelling of an ownership marker: the attempt's UUID under the vendor's own
+ * prefix (a sandbox name, a documented purpose). Built by {@link markerSpelling}, so the two
+ * directions cannot disagree.
+ */
+export interface MarkerSpelling {
+	/** The value a create sends for a kit-minted marker. */
+	toVendor(marker: string): string;
+	/** The kit marker a vendor value spells, or `undefined` when it carries no attempt. */
+	fromVendor(value: string): string | undefined;
+}
+
+/** Spell the kit marker's attempt UUID under `prefix` at the vendor. */
+export function markerSpelling(prefix: string): MarkerSpelling {
+	return Object.freeze({
+		toVendor: (marker: string) => `${prefix}${marker.slice(MARKER_PREFIX.length)}`,
+		fromVendor: (value: string) =>
+			value.startsWith(prefix) && value.length > prefix.length
+				? `${MARKER_PREFIX}${value.slice(prefix.length)}`
+				: undefined,
+	});
+}
+/** The marker as the kit mints it, unchanged: the default spelling. */
+export const VERBATIM_MARKER: MarkerSpelling = markerSpelling(MARKER_PREFIX);
+
+const DEFAULT_EXECUTION: ExecutionPolicy = { syncCapMs: 60_000, durable: "shell-detach" };
+const DEFAULT_TIMING: VendorTiming = {
+	pollMs: 250,
+	readyTimeoutMs: 180_000,
+	deleteTimeoutMs: 60_000,
+	controlTimeoutMs: CONTROL_TIMEOUT_MS,
+	inventoryTimeoutMs: 5 * 60_000,
+	snapshotTimeoutMs: 600_000,
+};
+const DEFAULT_PAGE_CAP = 100;
+
+/* --------------------------------- coverage presets --------------------------------- */
+
+type Axis = ComputeSdkCreateRequestCoverage["spec"]["vcpus"];
+type OptionalAxis = ComputeSdkCreateRequestCoverage["env"];
+
+/**
+ * Request coverage with the kit-owned axes fixed: the artifact comes from the context and the
+ * attempt deadline belongs to the harness. GPU and env are unsupported unless a vendor maps them.
+ */
+export function coverage(
+	spec: ComputeSdkCreateRequestCoverage["spec"],
+	options: { readonly env?: OptionalAxis; readonly gpu?: OptionalAxis } = {},
+): ComputeSdkCreateRequestCoverage {
+	const gpu = options.gpu ?? "unsupported";
+	return {
+		spec,
+		artifact: "context",
+		deadlineMs: "harness",
+		gpu: { model: gpu, count: gpu },
+		env: options.env ?? "unsupported",
+	};
+}
+
+/** The artifact pins CPU and memory; disk is proven after boot. */
+export const pinned = (vcpus: number, memoryGb: number): ComputeSdkCreateRequestCoverage =>
+	coverage({
+		vcpus: { artifact: vcpus },
+		memoryGb: { artifact: memoryGb },
+		diskGb: "runtime-verified",
+	});
+
+/** The create request maps every resource axis, with disk mapped, proven, or unsupported. */
+export const mapped = (diskGb: Axis = "mapped"): ComputeSdkCreateRequestCoverage =>
+	coverage({ vcpus: "mapped", memoryGb: "mapped", diskGb });
+
+/* ------------------------------- error classification ------------------------------- */
+
+/** A cause-chain classifier over typed vendor errors, shared by every SDK adapter. */
+export const instanceOfAny =
+	(...classes: ReadonlyArray<abstract new (...args: never[]) => unknown>) =>
+	(error: unknown): boolean =>
+		matchesAnyCause(error, (cause) => classes.some((errorClass) => cause instanceof errorClass));
+
+/**
+ * The HTTP status a typed vendor error carries anywhere in its cause chain, read through `read`.
+ * A status that cannot be read (a hostile getter) proves nothing.
+ */
+export const httpStatus =
+	<E>(errorClass: abstract new (...args: never[]) => E, read: (error: E) => unknown) =>
+	(error: unknown): number | undefined => {
+		let status: number | undefined;
+		matchesAnyCause(error, (cause) => {
+			if (!(cause instanceof errorClass)) return false;
+			try {
+				const value = read(cause);
+				if (typeof value === "number") status = value;
+			} catch {
+				// Keep walking the cause chain.
+			}
+			return status !== undefined;
+		});
+		return status;
+	};
+
+/** `refused` over listed HTTP statuses: each refuses before allocation; only a 429 is retryable. */
+export const refusedOn =
+	(status: (error: unknown) => number | undefined, statuses: readonly number[]) =>
+	(error: unknown): { readonly retryable: boolean } | undefined => {
+		const code = status(error);
+		return code !== undefined && statuses.includes(code) ? { retryable: code === 429 } : undefined;
+	};
+
+/**
+ * The REST reading of a status, for a vendor that documents no narrower one: a 4xx other than a
+ * timeout (408) or conflict (409, which asserts that something already exists) refused before
+ * allocating, retryable only on 429; a timeout, conflict, rate limit or 5xx is transient; a 404 is
+ * the vendor's not-found.
+ */
+export function httpClassifiers(status: (error: unknown) => number | undefined) {
+	return {
+		refused: (error: unknown) => {
+			const code = status(error);
+			return code !== undefined && code >= 400 && code < 500 && code !== 408 && code !== 409
+				? { retryable: code === 429 }
+				: undefined;
+		},
+		transient: (error: unknown) => {
+			const code = status(error);
+			return code === 408 || code === 409 || code === 429 || (code !== undefined && code >= 500);
+		},
+		absent: (error: unknown) => status(error) === 404,
+	} satisfies Pick<ControlPlane, "refused" | "transient" | "absent">;
+}
+
+/* ------------------------------------ mechanics ------------------------------------ */
+
+/** A translation `bun run new-provider` left for the adapter's author: a type error until written. */
+export { type Unfilled, unfilled } from "@sandbox-benchmarks/schema/provider-meta";
+/** The kit's abortable wait, for an adapter that paces its own vendor retries. */
+export { abortableDelay } from "./lib/poll.ts";
+/**
+ * One vendor call bounded by a timeout and the caller's signal, for a call the kit does not bound
+ * itself (a create attempt, a removal step, a data-plane request): raced, so an SDK that takes no
+ * signal still settles at the bound.
+ */
+export { bounded } from "./lib/vendor-port.ts";
+
+/** The disk-capacity probe of `path`; exported so test vendors answer the command the kit runs. */
+export const diskProbe = (path = "/") =>
+	`df -Pk ${path === "/" ? path : shellQuote(path)} | awk 'NR==2 {print $2}'`;
+/** The root filesystem's disk-capacity probe. */
+export const DISK_PROBE = diskProbe();
+
+function budget(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+	return AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
+}
+
+/**
+ * Drain a paged listing; a repeated, omitted, or runaway cursor, or a sandbox listed twice (a
+ * listing that shifted under its cursor), fails closed, never empty. `inspect` sees each page
+ * before it is accepted, so a caller can refuse a record mid-listing.
+ */
+export async function drainPages<Raw>(
+	provider: ProviderId,
+	fetchPage: (cursor: string | undefined) => Promise<VendorPage<Raw>>,
+	op: Op,
+	options: {
+		readonly inspect?: (records: readonly VendorRecord<Raw>[]) => void;
+		readonly pageCap?: number;
+	} = {},
+): Promise<VendorRecord<Raw>[]> {
+	const cap = options.pageCap ?? DEFAULT_PAGE_CAP;
+	const records: VendorRecord<Raw>[] = [];
+	const seen = new Set<string>();
+	const ids = new Set<string>();
+	let cursor: string | undefined;
+	for (let pages = 0; ; pages++) {
+		op.signal.throwIfAborted();
+		if (pages >= cap) throw new Error(`${provider} listing exceeded ${cap} pages`);
+		const page = await fetchPage(cursor);
+		options.inspect?.(page.records);
+		for (const { id } of page.records) {
+			if (ids.has(id)) throw new Error(`${provider} listing returned a duplicate sandbox id`);
+			ids.add(id);
+		}
+		records.push(...page.records);
+		if (page.next === undefined) return records;
+		if (page.next === "" || seen.has(page.next))
+			throw new Error(`${provider} listing repeated or omitted a continuation cursor`);
+		seen.add(page.next);
+		cursor = page.next;
+	}
+}
+
+/** The `df` disk-capacity proof for a disk axis the create request cannot control. */
+async function verifyDisk(
+	provider: ProviderId,
+	requestedGb: number,
+	exec: (command: string) => Promise<ExecOutcome>,
+	{ path = "/", allowanceGb = 0, allowanceRatio = 0 }: DiskProof = {},
+): Promise<Verification> {
+	const result = await exec(diskProbe(path));
+	// A mounted filesystem has capacity: a zero reading is a broken probe, not a small disk.
+	if (result.exitCode !== 0 || !/^[1-9]\d*$/.test(result.stdout.trim()))
+		throw new Error(`${provider} disk capacity probe failed`);
+	const capacityGb = Number(result.stdout.trim()) / 1024 / 1024;
+	return capacityGb + allowanceGb + requestedGb * allowanceRatio >= requestedGb
+		? { status: "honored" }
+		: {
+				status: "unsupported",
+				detail: `requested ${requestedGb} GiB but ${path === "/" ? "allocation" : path} exposes ${capacityGb.toFixed(2)} GiB`,
+			};
+}
+
+function executionOf(
+	provider: ProviderId,
+	traits: VendorTraits,
+	launches: boolean | undefined,
+): ExecutionPolicy {
+	const execution = traits.execution ?? DEFAULT_EXECUTION;
+	if (execution.durable === "native-launch" && launches === false)
+		throw new Error(`${provider}: durable "native-launch" requires data.launch`);
+	return execution;
+}
+
+/* ------------------------------------ lowering ------------------------------------ */
+
+/** A created allocation, whose native handle attach binds on the bridge's post-create path. */
+class Allocation<Raw, Native> implements VendorHandle<Raw, Native> {
+	#native?: { readonly value: Native };
+	constructor(readonly record: VendorRecord<Raw>) {}
+	get native(): Native {
+		if (this.#native === undefined) throw new Error(`sandbox ${this.record.id} is not attached`);
+		return this.#native.value;
+	}
+	attach(native: Native): void {
+		this.#native = { value: native };
+	}
+}
