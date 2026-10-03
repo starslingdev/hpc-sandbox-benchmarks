@@ -3,17 +3,11 @@
 // the inventory partition, recovery mechanics) is tested once in the driver package.
 
 import { describe, expect, test } from "bun:test";
-import type { Runloop } from "@runloop/api-client";
 import { NotFoundError } from "@runloop/api-client";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
-import { sandboxRef } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
-import type { RunloopClient } from "./index.ts";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import runloop, { RUNLOOP_CREATE_TIMEOUT_MS } from "./index.ts";
-
-type DevboxView = Runloop.Devboxes.DevboxView;
 import type { DevboxView, RunloopClient } from "./vendor.ts";
 import {
 	RUNLOOP_ATTEMPT_METADATA_KEY,
@@ -32,115 +26,6 @@ const request: CreateRequest = {
 	artifact: context.resolvedArtifact,
 	deadlineMs: RUNLOOP_CREATE_TIMEOUT_MS,
 };
-
-function devbox(overrides: Partial<DevboxView> = {}): DevboxView {
-	return {
-		id: "dbx_abc123",
-		status: "running",
-		create_time_ms: 1_700_000_000_000,
-		end_time_ms: null,
-		capabilities: [],
-		launch_parameters: {},
-		metadata: {},
-		state_transitions: [],
-		...overrides,
-	} as DevboxView;
-}
-
-/** A Stainless page promise: awaitable for one page, async-iterable across the whole cursor. */
-function page(rows: readonly DevboxView[]) {
-	return Object.assign(Promise.resolve({ getPaginatedItems: () => [...rows] }), {
-		[Symbol.asyncIterator]: async function* () {
-			yield* rows;
-		},
-	});
-}
-
-interface FakeState {
-	rows: DevboxView[];
-	created: unknown[];
-	awaited: unknown[];
-	shutdown: unknown[];
-	commands: string[];
-	async: string[];
-	written: Array<{ path: string; contents: string }>;
-	awaitRunningFailure?: Error;
-	shutdownFailure?: Error;
-	diskCapacityGb: number;
-	exec?: (command: string) => Runloop.Devboxes.DevboxAsyncExecutionDetailView;
-}
-
-function fakeClient(overrides: Partial<FakeState> = {}) {
-	const state: FakeState = {
-		rows: [],
-		created: [],
-		awaited: [],
-		shutdown: [],
-		commands: [],
-		async: [],
-		written: [],
-		diskCapacityGb: 39.6,
-		...overrides,
-	};
-	const completed = (
-		exit_status: number | null,
-		stdout: string,
-		extra: Partial<Runloop.Devboxes.DevboxAsyncExecutionDetailView> = {},
-	): Runloop.Devboxes.DevboxAsyncExecutionDetailView => ({
-		devbox_id: "dbx_abc123",
-		execution_id: "exe_1",
-		status: "completed",
-		exit_status,
-		stdout,
-		stderr: "",
-		...extra,
-	});
-	const client = {
-		api: {
-			devboxes: {
-				create: async (params: unknown) => {
-					state.created.push(params);
-					return devbox({ status: "provisioning" });
-				},
-				awaitRunning: async (id: string, options: unknown) => {
-					state.awaited.push([id, options]);
-					if (state.awaitRunningFailure) throw state.awaitRunningFailure;
-					return devbox({ status: "running" });
-				},
-				retrieve: async (id: string) => {
-					const row = state.rows.find((entry) => entry.id === id);
-					if (!row) throw new NotFoundError(404, undefined, "devbox not found", {});
-					return row;
-				},
-				list: () => page(state.rows),
-				shutdown: async (id: string, params: unknown) => {
-					state.shutdown.push([id, params]);
-					if (state.shutdownFailure) throw state.shutdownFailure;
-					return devbox({ id, status: "shutdown" });
-				},
-				executeAndAwaitCompletion: async (_id: string, params: { command: string }) => {
-					state.commands.push(params.command);
-					if (state.exec) return state.exec(params.command);
-					if (params.command.startsWith("df -Pk"))
-						return completed(0, `${Math.round(state.diskCapacityGb * 1024 * 1024)}\n`);
-					if (params.command.startsWith("test -e")) return completed(0, "");
-					return completed(0, `ran: ${params.command}`);
-				},
-				executeAsync: async (_id: string, params: { command: string }) => {
-					state.async.push(params.command);
-					return { devbox_id: "dbx_abc123", execution_id: "exe_bg", status: "running" };
-				},
-				readFileContents: async (_id: string, params: { file_path: string }) =>
-					`contents of ${params.file_path}`,
-				writeFileContents: async (_id: string, params: { file_path: string; contents: string }) => {
-					state.written.push({ path: params.file_path, contents: params.contents });
-					return { devbox_id: "dbx_abc123", exit_status: 0, stdout: "", stderr: "" };
-				},
-			},
-		},
-	} as unknown as RunloopClient;
-	return { client, state };
-}
 type Execution = Partial<{
 	status: string;
 	exit_status: number | null;
