@@ -21,7 +21,7 @@ export function vendorLifecycle<Raw, Native>(
 	const { refused, transient } = control;
 	const spelling = traits.markerSpelling ?? VERBATIM_MARKER;
 	const dedicated = traits.account === "dedicated";
-	const provesAbsence = traits.recovery?.provesAbsence ?? true;
+	const provesAbsence = traits.recovery?.provesAbsence ?? false;
 	// Markers of attempts whose allocation may exist although no lookup can show it yet.
 	const unresolved = new Set<string>();
 	if (dedicated && !control.find)

@@ -255,9 +255,10 @@ export interface VendorTraits {
 		readonly absenceConfirmationMs?: number;
 		readonly maxAttempts?: number;
 		/**
-		 * `false`: an empty marker lookup cannot prove an ambiguous create absent (the vendor attaches
+		 * Defaults to `false`: an empty marker lookup cannot prove an ambiguous create absent (the vendor attaches
 		 * the marker only after create, or a create can still land after every lookup). Recovery then
 		 * tears down what the marker finds and otherwise keeps the attempt as a cleanup failure.
+		 * Set `true` only when the vendor proves an errored create cannot still allocate later.
 		 */
 		readonly provesAbsence?: boolean;
 		/**

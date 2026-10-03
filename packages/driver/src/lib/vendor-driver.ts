@@ -17,7 +17,10 @@ import { vendorLifecycle } from "./vendor-lifecycle.ts";
 /** A created allocation, whose native handle attach binds on the bridge's post-create path. */
 class Allocation<Raw, Native> implements VendorHandle<Raw, Native> {
 	#native?: { readonly value: Native };
-	constructor(readonly record: VendorRecord<Raw>) {}
+	constructor(
+		readonly record: VendorRecord<Raw>,
+		readonly marker: string,
+	) {}
 	get native(): Native {
 		if (this.#native === undefined) throw new Error(`sandbox ${this.record.id} is not attached`);
 		return this.#native.value;
@@ -60,11 +63,13 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 		sandbox: {
 			async create(attempt: CreateAttempt, operation: DriverOperationOptions = {}) {
 				operation.signal?.throwIfAborted();
+				unresolved.add(attempt.marker);
 				const handle = new Allocation<Raw, Native>(
 					await control.create(attempt, op(operation.signal)).catch((error: unknown) => {
-						if (!provesAbsence && refused?.(error) === undefined) unresolved.add(attempt.marker);
+						if (provesAbsence || refused?.(error) !== undefined) unresolved.delete(attempt.marker);
 						throw error;
 					}),
+					attempt.marker,
 				);
 				return {
 					sandboxId: handle.record.id,
@@ -171,6 +176,8 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			},
 		},
 		prepareAndVerifyCreatedRequest: async (_sandbox, handle, request, operation) => {
+			// The bridge has parsed the allocation id; any later rollback retains cleanup by id.
+			unresolved.delete(handle.marker);
 			handle.attach(await data.attach(handle.record, op(operation.signal)));
 			const ready = await awaitReady(handle.record, operation.signal);
 			const reason = control.admit?.(ready);

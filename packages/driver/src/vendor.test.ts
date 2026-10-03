@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import {
 	describeDriverFailure,
+	isFailedCreateCleanupError,
 	launchDetached,
 	readTextFile,
 	writeTextFile,
@@ -58,6 +59,64 @@ function bind(options: MemoryVendorOptions = {}, extra: Partial<Spec> = {}, admi
 }
 
 describe("end to end through the module's entry point", () => {
+	test("a create resolving after cancellation retains its marker until the allocation is visible", async () => {
+		for (const provesAbsence of [undefined, true]) {
+			const world = memoryVendor();
+			const cancel = new AbortController();
+			let visible = false;
+			const vendor = {
+				...world.vendor,
+				control: {
+					...world.vendor.control,
+					create: async (...args: Parameters<typeof world.vendor.control.create>) => {
+						const record = await world.vendor.control.create(...args);
+						cancel.abort(new Error("deadline elapsed while create was in flight"));
+						return record;
+					},
+					page: (...args: Parameters<typeof world.vendor.control.page>) =>
+						visible ? world.vendor.control.page(...args) : Promise.resolve({ records: [] }),
+				},
+			};
+			const driver = moduleOver(() => vendor, {
+				recovery: { absenceConfirmationMs: 1, provesAbsence },
+			}).driver(context);
+			const failure = await driver
+				.create(request, { signal: cancel.signal })
+				.catch((error: unknown) => error);
+			if (!isFailedCreateCleanupError(failure)) throw new Error("late create has no cleanup owner");
+			await expect(failure.cleanup()).rejects.toThrow();
+			expect(world.allocations()).toBe(1);
+			visible = true;
+			await failure.cleanup();
+			expect(world.allocations()).toBe(0);
+		}
+	});
+
+	test("a timed-out create stays owned while the server accepts it after empty recovery scans", async () => {
+		const world = memoryVendor();
+		let accept: (() => Promise<unknown>) | undefined;
+		const vendor = {
+			...world.vendor,
+			control: {
+				...world.vendor.control,
+				create: async (...args: Parameters<typeof world.vendor.control.create>) => {
+					accept = () => world.vendor.control.create(...args);
+					throw new TypeError("create response timed out before acceptance became visible");
+				},
+			},
+		};
+		const driver = moduleOver(() => vendor).driver(context);
+		const failure = await driver.create(request).catch((error: unknown) => error);
+		if (!isFailedCreateCleanupError(failure)) throw new Error("lost create has no cleanup owner");
+		await expect(failure.cleanup()).rejects.toThrow();
+		expect(world.allocations()).toBe(0);
+		await accept?.();
+		expect(world.allocations()).toBe(1);
+		await failure.cleanup();
+		expect(world.allocations()).toBe(0);
+		expect(world.calls.filter((call) => call === "create")).toHaveLength(1);
+	});
+
 	test("a session lives its whole lifecycle, after recovering an ambiguous create", async () => {
 		const { module, calls, allocations, live } = bind({
 			readyAfterGets: 2,
