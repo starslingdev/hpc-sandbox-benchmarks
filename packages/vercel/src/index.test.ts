@@ -16,7 +16,6 @@ const CLAIMS = { owner_id: "team_test123", project_id: "prj_test456" };
 const OIDC_TOKEN = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify(CLAIMS)).toString("base64url")}.sig`;
 const IMAGE =
 	"vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v1";
-const OWNED_NAME = "sandbox-benchmarks-11111111-1111-4111-8111-111111111111";
 const context: DriverContext<"vercel"> = {
 	env: { VERCEL_OIDC_TOKEN: OIDC_TOKEN },
 	artifact: { kind: "mirror", repository: "sandbox-benchmarks-toolchain-vercel" },
@@ -27,42 +26,6 @@ const request: CreateRequest = {
 	artifact: context.resolvedArtifact,
 	deadlineMs: 300_000,
 };
-
-const credentials = { token: OIDC_TOKEN, teamId: CLAIMS.owner_id, projectId: CLAIMS.project_id };
-
-interface FakeSandboxOptions {
-	readonly name?: string;
-	readonly status?: string;
-	readonly diskCapacityGb?: number;
-	readonly onDelete?: () => void;
-	readonly onCommand?: (params: Record<string, unknown>) => void;
-	readonly exitCode?: number;
-}
-
-function fakeSandbox(options: FakeSandboxOptions = {}): Sandbox {
-	const { diskCapacityGb = 80, exitCode = 0 } = options;
-	return {
-		name: options.name ?? OWNED_NAME,
-		status: options.status ?? "running",
-		delete: async () => {
-			options.onDelete?.();
-		},
-		currentSession: () => ({
-			runCommand: async (params: Record<string, unknown>) => {
-				options.onCommand?.(params);
-				if (params.detached === true) return { cmd: params };
-				const script = (params.args as string[])[1] ?? "";
-				return {
-					exitCode: script.startsWith("df -Pk") ? 0 : exitCode,
-					durationMs: 5,
-					stdout: async () =>
-						script.startsWith("df -Pk") ? `${diskCapacityGb * 1024 * 1024}\n` : "out",
-					stderr: async () => "err",
-				};
-			},
-		}),
-	} as unknown as Sandbox;
-}
 const apiError = (status: number) =>
 	new APIError(new Response(null, { status }), { message: `http ${status}` });
 const owned = (uuid: string) => `${VERCEL_NAME_PREFIX}${uuid}`;
