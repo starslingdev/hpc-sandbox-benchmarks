@@ -206,7 +206,7 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				const record = await call("observe", undefined, (o) => control.get(ref.id, o));
 				return {
 					state:
-						record?.terminal || record?.phase === "failed"
+						(record?.terminal ?? record?.phase === "failed")
 							? "terminal"
 							: isGone(record)
 								? "absent"

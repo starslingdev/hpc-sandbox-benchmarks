@@ -58,8 +58,8 @@ export interface RemoveOp<Raw = unknown> extends Op {
 export interface VendorRecord<Raw = unknown> {
 	readonly id: string;
 	readonly phase: Phase;
-	/** A terminal vendor record retained after its allocation was released. */
-	readonly terminal?: true;
+	/** Overrides phase-derived observation: retained terminal tombstones or a still-running drain. */
+	readonly terminal?: boolean;
 	/** The create-time ownership marker the vendor echoes back (shared accounts). */
 	readonly marker?: string;
 	/**
