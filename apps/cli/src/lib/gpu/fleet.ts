@@ -68,7 +68,7 @@ async function runGpuReplicate(options: {
 			},
 		},
 		async (sandbox) => {
-			await sandbox.session.native.setTags({
+			await sandbox.session.native.native.setTags({
 				"gpu-benchmark-role": "benchmark-replicate",
 				"gpu-benchmark-replicate": String(index),
 				profile: GPU_BENCHMARK.profile.name,

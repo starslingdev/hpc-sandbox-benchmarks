@@ -10,6 +10,7 @@ import type { CreateAttempt } from "@sandbox-benchmarks/driver/vendor";
 import { DISK_PROBE } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { ClientError, Status } from "nice-grpc";
+import { removedOnceUnlisted } from "./allocation.ts";
 import modalGvisor from "./gvisor.ts";
 import type { ModalBackend, ModalControlPlane, ModalControlSandbox } from "./vendor.ts";
 import { MODAL_APP_NAME, modalVendor } from "./vendor.ts";
@@ -166,10 +167,14 @@ function modalAccount(
 }
 
 /** Each variant's own module, lowered over a fake environment instead of the real SDK. */
-function driverOver(account: ReturnType<typeof modalAccount>, module = modalVm) {
+function driverOver(
+	account: ReturnType<typeof modalAccount>,
+	module = modalVm,
+	vendor = account.vendor(module === modalVm ? "v1" : "v2"),
+) {
 	return vendorDriver(module as typeof modalVm, context, {
-		vendor: account.vendor(module === modalVm ? "v1" : "v2") as never,
-		timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
+		vendor: vendor as never,
+		timing: { pollMs: 0, deletePollMs: 0, deleteTimeoutMs: 1_000 },
 	});
 }
 
@@ -177,6 +182,23 @@ vendorContract("modal-vm adapter", modalVm, () => modalAccount().vendor("v1"));
 vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor("v2"));
 
 describe("Modal end to end through each variant's module", () => {
+	it("GPU teardown waits for the terminated sandbox to disappear from the environment listing", async () => {
+		const account = modalAccount();
+		let scans = 0;
+		const driver = driverOver(
+			account,
+			modalVm,
+			removedOnceUnlisted(account.vendor("v1"), async () => ++scans < 3),
+		);
+		const session = await driver.create(request());
+		await session.destroy();
+		expect(scans).toBe(3);
+		expect(account.rows.get(session.sandboxRef.id)?.exitCode).toBe(0);
+		expect(account.calls.filter((call) => call.startsWith("terminate "))).toEqual([
+			"terminate " + session.sandboxRef.id,
+		]);
+	});
+
 	it("a lost create stays owned until its late sandbox is visible and terminated", async () => {
 		for (const module of [modalVm, modalGvisor]) {
 			const account = modalAccount({ lostCreate: true });

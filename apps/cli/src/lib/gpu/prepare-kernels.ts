@@ -113,7 +113,7 @@ export async function resolveKernelSnapshot(options: {
 		},
 		async (registry) => {
 			try {
-				await registry.session.native.setTags({
+				await registry.session.native.native.setTags({
 					"gpu-benchmark-role": "kernel-snapshot-registry-check",
 					"kernel-snapshot-registry-volume": options.registryVolumeName,
 				});
@@ -151,7 +151,7 @@ export async function resolveKernelSnapshot(options: {
 		},
 		async (probe) => {
 			try {
-				await probe.session.native.setTags({
+				await probe.session.native.native.setTags({
 					"gpu-benchmark-role": "kernel-snapshot-check",
 					"kernel-snapshot-image": pointer.snapshotImageId,
 				});
@@ -210,7 +210,7 @@ export async function prepareKernelSnapshot(options: {
 			},
 		},
 		async (sandbox) => {
-			await sandbox.session.native.setTags({
+			await sandbox.session.native.native.setTags({
 				"gpu-benchmark-role": "kernel-cache-seed",
 				profile: GPU_BENCHMARK.profile.name,
 				gpu: args.gpu,
@@ -245,7 +245,7 @@ export async function prepareKernelSnapshot(options: {
 				throw new Error("kernel-cache seed reached no verified CUDA-graph capture");
 			}
 			await writeTextFile(sandbox.session, seedManifestPath, encode(expectedSeed));
-			const snapshot = await sandbox.session.native.snapshotFilesystem({
+			const snapshot = await sandbox.session.native.native.snapshotFilesystem({
 				timeoutMs: 5 * 60_000,
 				ttlMs: GPU_BENCHMARK.kernelSnapshotTtlDays * 24 * 60 * 60_000,
 			});
