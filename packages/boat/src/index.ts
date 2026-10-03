@@ -11,17 +11,13 @@
 // every other SDK call is sent unchanged.
 
 import { randomUUID } from "node:crypto";
-import type { InitOverrideFunction } from "@boatdev/sdk";
 import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type {
-	CreateRequest,
 	DriverContext,
 	DriverOperationOptions,
-	ExecOptions,
 	SandboxObservation,
 } from "@sandbox-benchmarks/driver";
 import { DriverError, isDriverError, pollUntilReady } from "@sandbox-benchmarks/driver";
-import type { ComputeSdkCreatedRequestVerification } from "@sandbox-benchmarks/driver/computesdk";
 import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
@@ -38,7 +34,6 @@ import {
 	BOAT_API_BASE,
 	BOAT_CLEANUP_ATTEMPTS,
 	BOAT_CLEANUP_RETRY_MS,
-	BOAT_COMMAND_TIMEOUT_SECONDS,
 	BOAT_CONTROL_TIMEOUT_MS,
 	BOAT_CREATE_ATTEMPTS,
 	BOAT_CREATE_BUDGET,
@@ -46,9 +41,6 @@ import {
 	BOAT_CREATE_RETRY_MS,
 	BOAT_DELETE_CONFIRM_MS,
 	BOAT_DELETE_POLL_MS,
-	BOAT_EGRESS_POLL_MS,
-	BOAT_EGRESS_PROBE_HOST,
-	BOAT_EGRESS_TIMEOUT_MS,
 	BOAT_EXECUTION,
 	BOAT_INVENTORY_MAX_PAGES,
 	BOAT_INVENTORY_PAGE_SIZE,
@@ -62,108 +54,32 @@ import {
 	BOAT_REQUEST_COVERAGE,
 	BOAT_SANDBOX_ID,
 	BoatBootFailureError,
-	boatCommandResponseSchema,
 	boatCreateOptionsSchema,
 	boatDeletionResponseSchema,
 	boatErrorBodySchema,
 	boatInventoryPageSchema,
 	boatSandboxResponseSchema,
-	diskCapacityKbSchema,
 	READY_STATES,
 	STOPPED_STATES,
-	serializedCreateBodySchema,
 	TERMINAL_BOOT_STATES,
 } from "./legacy-facts.ts";
+import {
+	createRequestInit,
+	delay,
+	execCommand,
+	getSandbox,
+	launchCommand,
+	nonnegativeNumber,
+	positiveInteger,
+	prepareAllocation,
+	requestInit,
+	verifyBoatAllocation,
+} from "./legacy-guest.ts";
 import { BOAT_PROVENANCE } from "./provenance.ts";
 
-export {
-	BOAT_API_BASE,
-	BOAT_CLEANUP_ATTEMPTS,
-	BOAT_CLEANUP_RETRY_MS,
-	BOAT_COMMAND_TIMEOUT_SECONDS,
-	BOAT_CONTROL_TIMEOUT_MS,
-	BOAT_CREATE_ATTEMPTS,
-	BOAT_CREATE_BUDGET,
-	BOAT_CREATE_CEILING_MS,
-	BOAT_CREATE_RATE_LIMIT_RETRY_MS,
-	BOAT_CREATE_RETRY_MS,
-	BOAT_DELETE_CONFIRM_MS,
-	BOAT_DELETE_POLL_MS,
-	BOAT_EGRESS_POLL_MS,
-	BOAT_EGRESS_PROBE_HOST,
-	BOAT_EGRESS_TIMEOUT_MS,
-	BOAT_EXECUTION,
-	BOAT_INVENTORY_MAX_PAGES,
-	BOAT_INVENTORY_PAGE_SIZE,
-	BOAT_INVENTORY_TIMEOUT_MS,
-	BOAT_MACHINE_PROVIDER,
-	BOAT_MACHINE_TYPE,
-	BOAT_READINESS,
-	BOAT_READY_POLL_MS,
-	BOAT_READY_TIMEOUT_MS,
-	BOAT_RECOVERY_NAME_PREFIX,
-	BOAT_REQUEST_COVERAGE,
-	BOAT_SANDBOX_ID,
-	type BoatAllocation,
-	BoatBootFailureError,
-	type BoatClient,
-	type BoatCreateOptions,
-	type BoatSandbox,
-	type BoatSpecOptions,
-} from "./legacy-facts.ts";
+export {} from "./legacy-guest.ts";
 
 export { BOAT_PROVENANCE };
-
-function positiveInteger(value: number | undefined, fallback: number): number {
-	return Math.max(1, Math.floor(value ?? fallback));
-}
-
-function nonnegativeNumber(value: number | undefined, fallback: number): number {
-	return Math.max(0, value ?? fallback);
-}
-
-function controlSignal(options?: DriverOperationOptions, timeoutMs = BOAT_CONTROL_TIMEOUT_MS) {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return options?.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout]);
-}
-
-function requestInit(options?: DriverOperationOptions, timeoutMs?: number): RequestInit {
-	return { signal: controlSignal(options, timeoutMs) };
-}
-
-/**
- * Create's request init with machineProvider merged into the body. The override runs after the SDK
- * has built the JSON object and before it stringifies it, so the body is still an object here.
- */
-function createRequestInit(
-	machineProvider: BoatCreateOptions["machineProvider"],
-	options?: DriverOperationOptions,
-): InitOverrideFunction {
-	return async ({ init }) => ({
-		...requestInit(options),
-		// The SDK stringifies a JSON body after this override, so it must stay an object; a string
-		// would be encoded twice. RequestInit's body type does not model that contract.
-		body: {
-			...serializedCreateBodySchema.assert(init.body),
-			machineProvider,
-		} as unknown as RequestInit["body"],
-	});
-}
-
-function delay(ms: number, signal?: AbortSignal): Promise<void> {
-	if (signal?.aborted) return Promise.reject(signal.reason);
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			"abort",
-			() => {
-				clearTimeout(timer);
-				reject(signal.reason);
-			},
-			{ once: true },
-		);
-	});
-}
 
 export function boatHttpStatus(error: unknown): number | undefined {
 	let status: number | undefined;
@@ -295,16 +211,7 @@ export async function boatErrorDetail(error: ResponseError): Promise<string> {
 	return `HTTP ${status}`;
 }
 
-async function getSandbox(
-	client: BoatClient,
-	sandboxId: string,
-	options?: DriverOperationOptions,
-): Promise<BoatSandbox> {
-	return boatSandboxResponseSchema.assert(await client.get({ sandboxId }, requestInit(options)))
-		.sandbox;
-}
-
-async function waitUntilReady(
+async function _waitUntilReady(
 	client: BoatClient,
 	sandboxId: string,
 	options: BoatSpecOptions,
@@ -323,24 +230,6 @@ async function waitUntilReady(
 			}
 			return null;
 		},
-	});
-}
-
-async function waitForEgress(
-	client: BoatClient,
-	sandboxId: string,
-	options: BoatSpecOptions,
-	operation?: DriverOperationOptions,
-): Promise<void> {
-	const host = BOAT_EGRESS_PROBE_HOST;
-	const probe = `getent hosts ${host} >/dev/null 2>&1 && timeout 3 bash -c 'exec 3<>/dev/tcp/${host}/443'`;
-	await pollUntilReady({
-		provider: "boat",
-		deadlineMs: positiveInteger(options.egressTimeoutMs, BOAT_EGRESS_TIMEOUT_MS),
-		intervalMs: nonnegativeNumber(options.egressPollMs, BOAT_EGRESS_POLL_MS),
-		signal: operation?.signal,
-		poll: async () =>
-			(await execCommand(client, sandboxId, probe, operation)).exitCode === 0 ? true : null,
 	});
 }
 
@@ -510,102 +399,6 @@ async function allocate(
 ): Promise<BoatAllocation> {
 	const sandbox = await createWithIdempotency(client, createOptions, options, operation);
 	return { ...sandbox, recoveryName: createOptions.name };
-}
-
-async function prepareAllocation(
-	client: BoatClient,
-	allocation: BoatAllocation,
-	options: BoatSpecOptions,
-	operation: DriverOperationOptions,
-): Promise<BoatSandbox> {
-	boatSandboxResponseSchema.assert(
-		await client.update(
-			{ sandboxId: allocation.id, updateSandboxRequest: { name: allocation.recoveryName } },
-			requestInit(operation),
-		),
-	);
-	const ready = await waitUntilReady(client, allocation.id, options, operation);
-	await waitForEgress(client, allocation.id, options, operation);
-	return ready;
-}
-
-async function execCommand(
-	client: BoatClient,
-	sandboxId: string,
-	command: string,
-	options?: ExecOptions,
-): Promise<{ readonly exitCode?: number; readonly stdout: string; readonly stderr: string }> {
-	const result = boatCommandResponseSchema.assert(
-		await client.command(
-			{
-				sandboxId,
-				commandRequest: { command, timeoutSeconds: BOAT_COMMAND_TIMEOUT_SECONDS },
-			},
-			requestInit(options),
-		),
-	);
-	if (result.type !== "command.finished") {
-		throw new Error("boat command returned a background envelope for synchronous exec");
-	}
-	return {
-		...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
-		stdout: result.stdout,
-		stderr: result.stderr,
-	};
-}
-
-async function launchCommand(
-	client: BoatClient,
-	sandboxId: string,
-	command: string,
-	options?: ExecOptions,
-): Promise<void> {
-	const result = boatCommandResponseSchema.assert(
-		await client.command(
-			{
-				sandboxId,
-				commandRequest: {
-					command,
-					detached: true,
-					timeoutSeconds: BOAT_COMMAND_TIMEOUT_SECONDS,
-				},
-			},
-			requestInit(options),
-		),
-	);
-	if (result.type !== "command.started") {
-		throw new Error("boat background command returned no process id");
-	}
-}
-
-async function verifyBoatAllocation(
-	client: BoatClient,
-	native: BoatSandbox,
-	request: CreateRequest,
-	options: DriverOperationOptions,
-): Promise<ComputeSdkCreatedRequestVerification> {
-	if (native.vcpu !== undefined && native.vcpu < request.spec.vcpus) {
-		return {
-			status: "unsupported",
-			detail: `requested ${request.spec.vcpus} vCPU but the allocation reports ${native.vcpu}`,
-		};
-	}
-	if (native.memoryGB !== undefined && native.memoryGB < request.spec.memoryGb) {
-		return {
-			status: "unsupported",
-			detail: `requested ${request.spec.memoryGb} GiB but the allocation reports ${native.memoryGB} GiB`,
-		};
-	}
-	if (request.spec.diskGb === undefined) return { status: "honored" };
-	const result = await execCommand(client, native.id, "df -Pk / | awk 'NR==2 {print $2}'", options);
-	if (result.exitCode !== 0) throw new Error(`boat disk capacity probe exited ${result.exitCode}`);
-	const capacityGb = diskCapacityKbSchema.assert(result.stdout.trim()) / 1024 / 1024;
-	return capacityGb >= request.spec.diskGb
-		? { status: "honored" }
-		: {
-				status: "unsupported",
-				detail: `requested ${request.spec.diskGb} GiB but the allocation exposes ${capacityGb.toFixed(2)} GiB`,
-			};
 }
 
 function controlPlaneFetch(timeoutMs: number): typeof fetch {
