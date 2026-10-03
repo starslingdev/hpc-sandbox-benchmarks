@@ -14,7 +14,7 @@ import runcloud, {
 	RUNCLOUD_PROVENANCE,
 	RUNCLOUD_SANDBOX_ID,
 	runcloudTransport,
-} from "./driver.ts";
+} from "./index.ts";
 import type { RuncloudTransport } from "./vendor.ts";
 import { runcloudVendor } from "./vendor.ts";
 
