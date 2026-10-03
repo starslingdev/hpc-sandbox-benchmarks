@@ -13,7 +13,7 @@ import {
 	vendorContract,
 	vendorDriver,
 } from "@sandbox-benchmarks/driver/vendor/testing";
-import novita, { NOVITA_DOMAIN } from "./driver.ts";
+import novita, { NOVITA_DOMAIN } from "./index.ts";
 import type { NovitaSdk } from "./vendor.ts";
 import { novitaVendor } from "./vendor.ts";
 
