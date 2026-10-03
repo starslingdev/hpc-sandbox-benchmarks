@@ -72,6 +72,7 @@ export type {
 	SandboxRef,
 	SandboxSession,
 	SnapshotCapability,
+	SnapshotRetention,
 	TargetSpec,
 } from "./lib/port.ts";
 export { sandboxRef, succeeded } from "./lib/port.ts";

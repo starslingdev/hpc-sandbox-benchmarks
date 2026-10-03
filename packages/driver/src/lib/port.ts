@@ -112,6 +112,9 @@ export interface ControlPlaneProbes {
 	list?(): Promise<unknown>;
 }
 
+/** Snapshot lifetime requested by vendor adapters; release captures must be durable. */
+export type SnapshotRetention = "ephemeral" | "durable";
+
 export interface SnapshotCapability<Handle = unknown> {
 	create(session: SandboxSession<Handle>): Promise<{ readonly snapshotId: string }>;
 	delete(snapshotId: string): Promise<void>;
