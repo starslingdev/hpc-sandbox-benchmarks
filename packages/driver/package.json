@@ -15,7 +15,8 @@
     "./computesdk": "./src/computesdk-compat.ts",
     "./native": "./src/native.ts",
     "./errors": "./src/errors.ts",
-    "./vendor": "./src/vendor.ts"
+    "./vendor": "./src/vendor.ts",
+    "./artifact": "./src/artifact.ts"
   },
   "scripts": {
     "test": "bun test",
