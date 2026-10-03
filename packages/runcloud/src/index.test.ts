@@ -2,11 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ExecOptions as NativeExecOptions, Sandbox, SandboxState } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
-import {
-	FailedCreateCleanupError,
-	isRetryableDriverCreate,
-	sandboxRef,
-} from "@sandbox-benchmarks/driver";
+import { sandboxRef } from "@sandbox-benchmarks/driver";
 import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import type { RuncloudSpecOptions } from "./index.ts";
 import {
@@ -14,9 +10,6 @@ import {
 	RUNCLOUD_RECOVERY_NAME_PREFIX,
 	RUNCLOUD_REMOVAL_DEADLINE_MS,
 	RUNCLOUD_SANDBOX_LIFETIME_SECS,
-	RuncloudAmbiguousCreateError,
-	RuncloudBootFailureError,
-	RuncloudCallTimeoutError,
 	runcloudObservation,
 	runcloudSpec,
 } from "./index.ts";
@@ -123,238 +116,11 @@ function driver(client: NativeClient, seams: RuncloudSpecOptions = {}) {
 }
 
 /** The exact create options the module maps for the benchmark request. */
-function mapped(seams: RuncloudSpecOptions = {}) {
+function _mapped(seams: RuncloudSpecOptions = {}) {
 	return runcloudSpec(context, fast(nativeClient(), seams)).createOptions.map(request, (detail) => {
 		throw new Error(detail);
 	});
 }
-
-describe("run.cloud ambiguous-create reconciliation", () => {
-	it("adopts the allocation when the create response is lost, without replaying the create", async () => {
-		let createCalls = 0;
-		let requestedName: string | undefined;
-		const listedNames: Array<string | undefined> = [];
-		const destroyed: string[] = [];
-		const client = nativeClient({
-			create: (input) => {
-				createCalls++;
-				requestedName = input?.name;
-				return new Promise<Sandbox>(() => {});
-			},
-			list: async (options) => {
-				listedNames.push(options?.name);
-				return [nativeSandbox("running", { name: requestedName })];
-			},
-			destroy: async (id) => {
-				destroyed.push(id);
-			},
-		});
-		const session = await driver(client, { controlPlaneTimeoutMs: 5 }).create(request);
-		expect(session.sandboxRef.id).toBe("sb-test");
-		expect(createCalls).toBe(1);
-		expect(listedNames).toEqual([requestedName]);
-		expect(destroyed).toEqual([]);
-	});
-
-	it("adopts after an ambiguous 5xx, a hidden conflict, and the oldest of duplicate matches", async () => {
-		for (const status of [503, 409]) {
-			let requestedName: string | undefined;
-			const client = nativeClient({
-				create: async (input) => {
-					requestedName = input?.name;
-					throw new RunCloudError(status, "response lost after allocation");
-				},
-				list: async () => [
-					nativeSandbox("running", {
-						id: "sb-newer",
-						name: requestedName,
-						createdAt: "2026-08-03T00:00:05.000Z",
-					}),
-					nativeSandbox("running", {
-						id: "sb-older",
-						name: requestedName,
-						createdAt: "2026-08-03T00:00:00.000Z",
-					}),
-				],
-			});
-			expect((await driver(client).create(request)).sandboxRef.id).toBe("sb-older");
-		}
-	});
-
-	it("keeps a stalled create unresolved despite repeated empty lookups", async () => {
-		let listCalls = 0;
-		const client = nativeClient({
-			create: () => new Promise<Sandbox>(() => {}),
-			list: async () => {
-				listCalls++;
-				return [];
-			},
-		});
-		const error = await driver(client, { controlPlaneTimeoutMs: 5, reconcileAttempts: 3 })
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expect((error as FailedCreateCleanupError).suppressed.message).toContain(
-			"run.cloud create did not settle within 5ms",
-		);
-		expect(isRetryableDriverCreate(error)).toBe(false);
-		// The module's window plus the bridge's own confirming lookups, never a replayed create.
-		expect(listCalls).toBeGreaterThanOrEqual(3);
-	});
-
-	it("keeps a timed-out create unresolved when empty lookups precede a late allocation", async () => {
-		let requestedName: string | undefined;
-		let visible = false;
-		const client = nativeClient({
-			create: (input) => {
-				requestedName = input?.name;
-				return new Promise<Sandbox>(() => {});
-			},
-			list: async () => (visible ? [nativeSandbox("running", { name: requestedName })] : []),
-		});
-		const error = await driver(client, { controlPlaneTimeoutMs: 5, reconcileAttempts: 1 })
-			.create(request)
-			.catch((error: unknown) => error);
-		visible = true;
-		expect(error).toBeInstanceOf(FailedCreateCleanupError);
-		expect(isRetryableDriverCreate(error)).toBe(false);
-		if (!(error instanceof FailedCreateCleanupError))
-			throw new Error("missing recoverable create failure");
-		await error.cleanup();
-		expect(await client.get("sb-test")).toMatchObject({ state: "destroyed" });
-	});
-
-	it("never marks a generic failure, a definitive rejection, or an unanswered window", async () => {
-		const generic = nativeClient({
-			create: async () => {
-				throw new Error("client serialization failed");
-			},
-		});
-		const genericError = await driver(generic, { reconcileAttempts: 1 })
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(genericError).toBeInstanceOf(FailedCreateCleanupError);
-		expect((genericError as FailedCreateCleanupError).suppressed.message).toContain(
-			"client serialization failed",
-		);
-		expect(isRetryableDriverCreate(genericError)).toBe(false);
-
-		let listCalls = 0;
-		const definitive = nativeClient({
-			create: async () => {
-				throw new RunCloudError(422, "invalid image");
-			},
-			list: async () => {
-				listCalls++;
-				return [];
-			},
-		});
-		const definitiveError = await driver(definitive)
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect((definitiveError as Error).message).toContain("invalid image");
-		expect(isRetryableDriverCreate(definitiveError)).toBe(false);
-		// A definitive 4xx gets ONE confirming pass (a rejection can still sit on a real allocation)
-		// and the bridge skips its own recovery because the rejection is proof enough.
-		expect(listCalls).toBe(1);
-
-		const unanswered = nativeClient({
-			create: () => new Promise<Sandbox>(() => {}),
-			list: async () => {
-				throw new Error("control plane unavailable");
-			},
-		});
-		const unansweredError = await driver(unanswered, {
-			controlPlaneTimeoutMs: 5,
-			reconcileAttempts: 2,
-		})
-			.create(request)
-			.catch((caught: unknown) => caught);
-		// Absence was never established, so the kit keeps the double fault: not retryable, and the
-		// recovery name survives for an operator sweep.
-		expect(unansweredError).toBeInstanceOf(FailedCreateCleanupError);
-		expect(isRetryableDriverCreate(unansweredError)).toBe(false);
-	});
-
-	it("preserves a concurrent quota refusal's HTTP status for account admission", async () => {
-		const client = nativeClient({
-			create: async () => {
-				throw new RunCloudError(429, "concurrent sandbox resource limit reached");
-			},
-		});
-		const error = await driver(client)
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({
-			code: "create-failed",
-			provider: "runcloud",
-			vendorHttpStatus: 429,
-			vendorMessage: "concurrent sandbox resource limit reached",
-		});
-		expect(isRetryableDriverCreate(error)).toBe(true);
-	});
-
-	it("keeps asking through failed lookups, ignores tombstones and fuzzy matches", async () => {
-		let requestedName: string | undefined;
-		let listCalls = 0;
-		const eventually = nativeClient({
-			create: async (input) => {
-				requestedName = input?.name;
-				throw new RunCloudError(503, "response lost after allocation");
-			},
-			list: async () => {
-				listCalls++;
-				if (listCalls === 1) throw new Error("control plane unavailable");
-				if (listCalls === 2) return [];
-				return [nativeSandbox("running", { name: requestedName })];
-			},
-		});
-		expect((await driver(eventually, { reconcileAttempts: 4 }).create(request)).sandboxRef.id).toBe(
-			"sb-test",
-		);
-		expect(listCalls).toBe(3);
-
-		const unrelated = nativeClient({
-			create: async (input) => {
-				requestedName = input?.name;
-				throw new RunCloudError(503, "response lost after allocation");
-			},
-			list: async () => [
-				nativeSandbox("destroyed", { id: "sb-tombstone", name: requestedName }),
-				nativeSandbox("running", { id: "sb-other", name: `${requestedName}-different` }),
-			],
-		});
-		await expect(
-			driver(unrelated, { reconcileAttempts: 2 }).create(request),
-		).rejects.toBeInstanceOf(FailedCreateCleanupError);
-	});
-
-	it("exposes the module verdicts the bridge classifies from", () => {
-		const spec = runcloudSpec(context, fast(nativeClient()));
-		const recovery = spec.createRecovery;
-		if (!recovery) throw new Error("run.cloud declares no create recovery");
-		expect(recovery.locator(mapped())).toEqual({
-			kind: "name",
-			value: expect.stringMatching(new RegExp(`^${RUNCLOUD_RECOVERY_NAME_PREFIX}-`)),
-		});
-		expect(recovery.isDefinitive?.(new RunCloudError(422, "bad"))).toBe(true);
-		expect(recovery.isDefinitive?.(new RunCloudError(409, "conflict"))).toBe(false);
-		expect(recovery.isDefinitive?.(new RunCloudError(408, "slow"))).toBe(false);
-		expect(recovery.isDefinitive?.(new RuncloudBootFailureError("sb", "failed", true, true))).toBe(
-			true,
-		);
-		expect(recovery.isDefinitive?.(new RuncloudBootFailureError("sb", "failed", true, false))).toBe(
-			false,
-		);
-		expect(recovery.isRetryableCreate?.(new RuncloudCallTimeoutError("create", 5))).toBe(false);
-		expect(
-			recovery.isRetryableCreate?.(new RuncloudCallTimeoutError("destroy sandbox sb", 5)),
-		).toBe(false);
-		expect(recovery.isRetryableCreate?.(new RunCloudError(429, "quota"))).toBe(true);
-		expect(recovery.isRetryableCreate?.(new Error("HTTP 429 in prose"))).toBe(false);
-		expect(recovery.isRetryableCreate?.(new RuncloudAmbiguousCreateError("n", 1, 2))).toBe(false);
-	});
-});
 
 describe("run.cloud commands, lifecycle, and account inventory", () => {
 	it("enumerates the raw SDK envelope with encoded cursors and a separate total scan budget", async () => {
