@@ -415,3 +415,7 @@ export function httpClassifiers(status: (error: unknown) => number | undefined) 
 		absent: (error: unknown) => status(error) === 404,
 	} satisfies Pick<ControlPlane, "refused" | "transient" | "absent">;
 }
+
+export { abortableDelay } from "./lib/poll.ts";
+export { DISK_PROBE, diskProbe, drainPages } from "./lib/vendor-helpers.ts";
+export { bounded } from "./lib/vendor-port.ts";
