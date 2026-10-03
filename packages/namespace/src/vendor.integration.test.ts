@@ -17,7 +17,7 @@ import {
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError, launchDetached } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
-import namespace from "./driver.ts";
+import namespace from "./index.ts";
 import type { NamespaceClient } from "./vendor.ts";
 import {
 	NAMESPACE_CONTAINER,
