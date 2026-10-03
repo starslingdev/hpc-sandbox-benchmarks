@@ -378,3 +378,487 @@ export function memoryVendor(options: MemoryVendorOptions = {}) {
 		live,
 	};
 }
+
+/**
+ * The port contract, runnable against any adapter, as the module's kit calls it (its declared
+ * not-found read as absence, its `recovery.lookup` as the marker lookup, on its declared account).
+ * `make` returns a fresh adapter over a stubbed transport whose sandboxes become ready within a few
+ * gets and answer `sh -c 'exit 7'` with exit 7. On a shared account every record must carry the
+ * create-time marker the kit attributes it by.
+ */
+export function vendorContract<Raw, Native>(
+	name: string,
+	module: { readonly traits: Pick<VendorTraits, "account" | "recovery" | "timing"> },
+	make: () => Vendor<Raw, Native>,
+) {
+	const account = module.traits.account ?? "shared";
+	const lookup = module.traits.recovery?.lookup;
+	const bound = () => ({
+		vendor: kitPort(make(), {
+			provider: name,
+			...(lookup && { lookup }),
+			...(module.traits.timing?.controlTimeoutMs !== undefined && {
+				controlTimeoutMs: module.traits.timing.controlTimeoutMs,
+			}),
+		}),
+		account,
+	});
+	const op = { signal: new AbortController().signal };
+	const request = {
+		spec: { vcpus: 4, memoryGb: 8 },
+		artifact: { kind: "none" },
+		deadlineMs: 1,
+	} as const;
+	const create = (vendor: KitVendor<Raw, Native>, marker: string) =>
+		vendor.control.create({ request, marker }, op);
+	// Markers of the shape the kit mints: a vendor may encode the attempt UUID in a strict name.
+	const mint = () => `${MARKER_PREFIX}${randomUUID()}`;
+	const drain = (
+		fetch: (
+			cursor: string | undefined,
+		) => Promise<{ records: readonly VendorRecord<Raw>[]; next?: string }>,
+	) =>
+		// The kit's own fail-closed cursor rules, so a looping cursor fails, not hangs.
+		drainPages(name as ProviderId, fetch, op);
+
+	test(`${name}: get of an unknown id is null, not an error`, async () => {
+		expect(await bound().vendor.control.get("does-not-exist", op)).toBeNull();
+	});
+
+	test(`${name}: removing an unknown id is already removed`, async () => {
+		expect(await bound().vendor.control.remove("does-not-exist", op)).toBe("removed");
+	});
+
+	test(`${name}: a created sandbox is observable, listable and attributable`, async () => {
+		const { vendor, account } = bound();
+		const marker = mint();
+		const created = await create(vendor, marker);
+		// The kit attaches every create's record before readiness, so a vendor may mark it there (a
+		// rename).
+		await vendor.data.attach(created, op);
+		const observed = await vendor.control.get(created.id, op);
+		expect(observed?.id).toBe(created.id);
+		const listed = (await drain((cursor) => vendor.control.page(cursor, op))).filter(
+			(record) => record.id === created.id,
+		);
+		expect(listed).toHaveLength(1);
+		if (account === "shared")
+			for (const record of [created, observed, ...listed]) expect(record?.marker).toBe(marker);
+	});
+
+	test(`${name}: a marker lookup returns only what the marker attributes`, async () => {
+		const { vendor, account } = bound();
+		const find = vendor.control.find;
+		if (!find) {
+			expect(account).toBe("shared"); // a dedicated account recovers by replay, through find
+			return;
+		}
+		const marker = mint();
+		const mine = await create(vendor, marker);
+		await create(vendor, mint());
+		const found = await drain((cursor) => find(marker, cursor, op));
+		expect(found.map((record) => record.id)).toContain(mine.id);
+		for (const record of found)
+			if (account === "shared" || record.marker !== undefined) expect(record.marker).toBe(marker);
+	});
+
+	test(`${name}: a server-side readiness wait answers like get`, async () => {
+		const { vendor, account } = bound();
+		const settle = vendor.control.settle;
+		if (!settle) return;
+		expect(await settle("does-not-exist", op)).toBeNull();
+		const marker = mint();
+		const created = await create(vendor, marker);
+		const settled = await settle(created.id, op);
+		expect(settled?.id).toBe(created.id);
+		expect(settled?.phase).toBe("ready");
+		if (account === "shared") expect(settled?.marker).toBe(marker);
+	});
+
+	test(`${name}: removal is eventually observed, and "removed" means gone`, async () => {
+		const { vendor } = bound();
+		const created = await create(vendor, mint());
+		let outcome = await vendor.control.remove(created.id, op);
+		for (let polls = 0; outcome !== "removed" && polls < 20; polls++) {
+			const current = await vendor.control.get(created.id, op);
+			if (current === null || current.phase === "gone") outcome = "removed";
+		}
+		expect(outcome).toBe("removed");
+		const after = await vendor.control.get(created.id, op);
+		expect(after === null || after.phase === "gone").toBe(true);
+	});
+
+	test(`${name}: a created sandbox attaches, and once ready executes and round-trips files`, async () => {
+		const { vendor } = bound();
+		// As in the kit: attach the create's own record, then wait for readiness.
+		let current: VendorRecord<Raw> | null = await create(vendor, mint());
+		const native = await vendor.data.attach(current, op);
+		for (let polls = 0; current?.phase === "pending" && polls < 20; polls++)
+			current = await vendor.control.get(current.id, op);
+		if (current === null) throw new Error("the created sandbox disappeared before readiness");
+		expect(current.phase).toBe("ready");
+		const seven = await vendor.data.exec(native, "sh -c 'exit 7'");
+		expect(seven.exitCode).toBe(7);
+		const files = vendor.data.files;
+		if (files) {
+			await files.write(native, "/tmp/vendor-contract", "round trip");
+			expect(await files.read(native, "/tmp/vendor-contract")).toBe("round trip");
+			if (files.exists) expect(await files.exists(native, "/tmp/vendor-contract")).toBe(true);
+		}
+	});
+}
+
+/** The stand-in E2B-protocol SDK's own typed errors, for a test that passes no SDK classes. */
+class StubSandboxNotFound extends Error {}
+class StubAuthenticationError extends Error {}
+class StubInvalidArgumentError extends Error {}
+class StubRateLimitError extends Error {}
+
+/** The protocol's nonzero-exit envelope, which the shared adapter reads by shape. */
+class StubCommandExit extends Error {
+	override readonly name = "CommandExitError";
+	constructor(
+		readonly exitCode: number,
+		readonly stdout = "",
+		readonly stderr = "",
+	) {
+		super(`exit ${exitCode}`);
+	}
+}
+
+export interface E2bProtocolStubOptions {
+	readonly pageSize?: number;
+	/** The root filesystem capacity `df` reports (default 80 GiB). */
+	readonly diskGb?: number;
+	/** The first create allocates and then loses its response. */
+	readonly ambiguousFirstCreate?: boolean;
+	/** A listing reports more pages but withholds its continuation token. */
+	readonly omitsToken?: boolean;
+	/** The metadata query is ignored: a lookup returns every live row (a loose filter). */
+	readonly looseLookup?: boolean;
+	/** The process id a background command returns (default 42). */
+	readonly launchPid?: number;
+	/** The error a nonzero foreground exit throws (default: a `CommandExitError`-shaped error). */
+	readonly exitError?: (exitCode: number) => unknown;
+	/** `false`: killing an unknown sandbox resolves `false` (E2B). Default: it throws not-found. */
+	readonly killMissing?: "false" | "throws";
+	/** The SDK's own error classes, where the test exercises them (default: local stand-ins). */
+	readonly errors?: {
+		readonly SandboxNotFoundError: new (message: string) => Error;
+		readonly AuthenticationError: abstract new (...args: never[]) => unknown;
+		readonly InvalidArgumentError: abstract new (...args: never[]) => unknown;
+		readonly RateLimitError: abstract new (...args: never[]) => unknown;
+	};
+	/** Further fields every `getInfo` answer carries (a template id, a CPU count). */
+	readonly info?: Readonly<Record<string, unknown>>;
+}
+
+export interface E2bProtocolStubRow {
+	readonly sandboxId: string;
+	/** `running` or `paused`; anything else stands in for a state the adapter does not know. */
+	state: string;
+	readonly metadata: Record<string, string>;
+	readonly files: Map<string, string>;
+}
+
+/**
+ * A whole-account stand-in for an E2B-protocol SDK's statics (`Sandbox.create/getInfo/kill/list`,
+ * the typed errors, and `Template` for `e2bProtocolArtifactBuilder`), shared by every package whose
+ * adapter is `e2bProtocolVendor`. A template records its steps (`["fromImage", image]`,
+ * `["runCmd", command, options]`); `Template.build` records them with its name and options as a
+ * `Template.build` call, and streams one build log line. Sandboxes
+ * are running once created, answer `df` with `diskGb`, `sh -c 'exit N'` with exit N and any other
+ * foreground command with `out`/`err`; a background `echo X > path` writes the file. Every call
+ * records its options, so a test can see the channel a credential rode. `Sdk` is the package's own
+ * SDK type, which the stand-in satisfies structurally.
+ */
+export function e2bProtocolStub<Sdk>(options: E2bProtocolStubOptions = {}) {
+	const errors = options.errors ?? {
+		SandboxNotFoundError: StubSandboxNotFound,
+		AuthenticationError: StubAuthenticationError,
+		InvalidArgumentError: StubInvalidArgumentError,
+		RateLimitError: StubRateLimitError,
+	};
+	const exitError = options.exitError ?? ((exitCode: number) => new StubCommandExit(exitCode));
+	const rows = new Map<string, E2bProtocolStubRow>();
+	const calls: Array<{ readonly name: string; readonly options: unknown }> = [];
+	let next = 0;
+	let ambiguous = options.ambiguousFirstCreate ?? false;
+	const allocate = (metadata: Record<string, string>, state = "running") => {
+		const sandboxId = `i${++next}`;
+		rows.set(sandboxId, { sandboxId, state, metadata, files: new Map() });
+		return sandboxId;
+	};
+	const reachable = (id: string) => {
+		const found = rows.get(id);
+		if (found?.state !== "running") throw new Error(`sandbox ${id} is not running`);
+		return found;
+	};
+	const native = (sandboxId: string) => ({
+		sandboxId,
+		commands: {
+			run: async (command: string, runOptions: { readonly background?: boolean }) => {
+				calls.push({ name: "commands.run", options: runOptions });
+				const guest = reachable(sandboxId);
+				if (runOptions.background) {
+					const echo = /echo (\S+) > ([^\s']+)/.exec(command);
+					if (echo) guest.files.set(echo[2] ?? "", `${echo[1]}\n`);
+					return { pid: options.launchPid ?? 42 };
+				}
+				if (command.startsWith("df -Pk"))
+					return { exitCode: 0, stdout: `${(options.diskGb ?? 80) * 1024 * 1024}\n`, stderr: "" };
+				const exit = /^sh -c 'exit (\d+)'$/.exec(command);
+				if (exit) throw exitError(Number(exit[1]));
+				return { exitCode: 0, stdout: "out\n", stderr: "err\n" };
+			},
+		},
+		files: {
+			read: async (path: string, fileOptions: unknown) => {
+				calls.push({ name: "files.read", options: fileOptions });
+				const text = reachable(sandboxId).files.get(path);
+				if (text === undefined) throw new Error(`${path}: no such file`);
+				return text;
+			},
+			write: async (path: string, text: string, fileOptions: unknown) => {
+				calls.push({ name: "files.write", options: fileOptions });
+				reachable(sandboxId).files.set(path, text);
+				return { path };
+			},
+			exists: async (path: string, fileOptions: unknown) => {
+				calls.push({ name: "files.exists", options: fileOptions });
+				return reachable(sandboxId).files.has(path);
+			},
+		},
+	});
+	const Sandbox = {
+		create: async (template: string, createOptions: { metadata: Record<string, string> }) => {
+			calls.push({ name: "create", options: { template, ...createOptions } });
+			const sandboxId = allocate(createOptions.metadata);
+			if (ambiguous) {
+				ambiguous = false;
+				throw new TypeError("connection reset after the vendor accepted the create");
+			}
+			return native(sandboxId);
+		},
+		getInfo: async (id: string, getOptions: unknown) => {
+			calls.push({ name: "getInfo", options: getOptions });
+			const found = rows.get(id);
+			if (!found) throw new errors.SandboxNotFoundError(id);
+			return {
+				sandboxId: id,
+				...options.info,
+				state: found.state,
+				metadata: found.metadata,
+			};
+		},
+		kill: async (id: string, killOptions: unknown) => {
+			calls.push({ name: "kill", options: killOptions });
+			if (rows.delete(id)) return true;
+			if (options.killMissing === "false") return false;
+			throw new errors.SandboxNotFoundError(id);
+		},
+		list: (listOptions: {
+			readonly query: { readonly state?: string[]; readonly metadata?: Record<string, string> };
+			readonly nextToken?: string;
+		}) => {
+			calls.push({ name: "list", options: listOptions });
+			const { state, metadata } = listOptions.query;
+			const items = [...rows.values()]
+				.filter((row) => !state || state.includes(row.state))
+				.filter(
+					(row) =>
+						options.looseLookup ||
+						!metadata ||
+						Object.entries(metadata).every(([key, wanted]) => row.metadata[key] === wanted),
+				)
+				.map(({ sandboxId, state: live, metadata: labels }) => ({
+					sandboxId,
+					state: live,
+					metadata: labels,
+				}));
+			// Stateless like the SDK's paginator: a token resumes a fresh listing at its offset, and
+			// `hasNext` is true exactly while a token is held.
+			const size = options.pageSize ?? 100;
+			let token = listOptions.nextToken;
+			let fetched = false;
+			return {
+				get hasNext() {
+					return !fetched || token !== undefined;
+				},
+				get nextToken() {
+					return options.omitsToken ? undefined : token;
+				},
+				nextItems: async (pageOptions?: unknown) => {
+					calls.push({ name: "nextItems", options: pageOptions });
+					const from = Number(token?.replace("token-", "") ?? 0);
+					fetched = true;
+					token = from + size < items.length ? `token-${from + size}` : undefined;
+					return items.slice(from, from + size);
+				},
+			};
+		},
+	};
+	interface StubTemplate {
+		readonly steps: readonly unknown[][];
+		fromImage(image: string): StubTemplate;
+		runCmd(command: string, runOptions?: unknown): StubTemplate;
+	}
+	const template = (steps: readonly unknown[][]): StubTemplate => ({
+		steps,
+		fromImage: (image) => template([...steps, ["fromImage", image]]),
+		runCmd: (command, runOptions) => template([...steps, ["runCmd", command, runOptions]]),
+	});
+	let builds = 0;
+	const Template = Object.assign(() => template([]), {
+		build: async (
+			built: StubTemplate,
+			name: string,
+			buildOptions: { readonly onBuildLogs?: (entry: unknown) => void },
+		) => {
+			calls.push({
+				name: "Template.build",
+				options: { name, steps: built.steps, ...buildOptions },
+			});
+			buildOptions.onBuildLogs?.(`building ${name}`);
+			builds += 1;
+			return { templateId: `tpl-${name}`, buildId: `build-${builds}` };
+		},
+	});
+	return {
+		/** The stand-in, typed as the package's SDK it satisfies structurally. */
+		sdk: { Sandbox, Template, ...errors } as unknown as Sdk,
+		rows,
+		calls,
+		/** Place a sandbox directly in the account (another tenant's, or one in a given state). */
+		allocate,
+		count: (name: string) => calls.filter((call) => call.name === name).length,
+	};
+}
+
+/** The sandboxes of a stand-in account ({@link restStub}, {@link sdkStub}), each with its own guest. */
+function stubAccount<Row extends { readonly id: string }>(
+	options: Pick<RestStubOptions<Row>, "newId" | "diskGb">,
+) {
+	const rows = new Map<string, Row>();
+	const guests = new Map<string, ReturnType<ReturnType<typeof guestOf>>>();
+	const guest = guestOf(options);
+	let next = 0;
+	const add = (fields: Omit<Row, "id">): Row => {
+		next += 1;
+		const row = { ...fields, id: options.newId?.(next) ?? `sb-${next}` } as Row;
+		rows.set(row.id, row);
+		guests.set(row.id, guest());
+		return row;
+	};
+	/** The guest of sandbox `id` (a fresh one for a row placed in `rows` directly). */
+	const guestFor = (id: string) => {
+		const found = guests.get(id) ?? guest();
+		guests.set(id, found);
+		return found;
+	};
+	return { rows, add, guestFor };
+}
+
+/** The stand-in SDK's own typed not-found, for a test that passes no SDK class. */
+class SdkNotFound extends Error {
+	constructor(id: string) {
+		super(`sandbox ${id} not found`);
+	}
+}
+
+/** The account a {@link sdkStub} surface translates onto. */
+export interface SdkAccount<Row extends { readonly id: string }> {
+	/** The account's sandboxes by id. */
+	readonly rows: Map<string, Row>;
+	/** Allocate a sandbox under the next id, with its own guest. */
+	add(fields: Omit<Row, "id">): Row;
+	/** The sandbox `id` names; throws the account's not-found for one it lacks. */
+	row(id: string): Row;
+	/** Run `command` in sandbox `id`'s guest: exit codes, the kit's files fallback, `df`. */
+	run(id: string, command: string): { exitCode: number; stdout: string; stderr: string };
+	/** Sandbox `id`'s files, which its guest reads and writes. */
+	files(id: string): Map<string, string>;
+	/** The class `row` throws for an unknown id, unless `notFound` says otherwise. */
+	readonly NotFound: new (
+		id: string,
+	) => Error;
+}
+
+export interface SdkStubOptions<Row> extends Pick<RestStubOptions<Row>, "newId" | "diskGb"> {
+	/** The SDK's own not-found error for `id`, where the test exercises it. */
+	readonly notFound?: (id: string) => unknown;
+}
+
+/**
+ * A whole-account stand-in for a vendor SDK, parallel to {@link restStub}: `surface` states the
+ * SDK's shape over the account's sandboxes (`add`, `row`, `rows`), each a row with its own guest
+ * shell (`run`, `files`) as in {@link memoryVendor}, so the kit's exec, files fallback and disk
+ * proof run for real. `Sdk` is the package's own SDK type, which the surface satisfies
+ * structurally.
+ */
+export function sdkStub<Sdk, Row extends { readonly id: string } = { readonly id: string }>(
+	surface: (account: SdkAccount<Row>) => unknown,
+	options: SdkStubOptions<Row> = {},
+) {
+	const { rows, add, guestFor } = stubAccount<Row>(options);
+	const row = (id: string): Row => {
+		const found = rows.get(id);
+		if (found !== undefined) return found;
+		throw options.notFound?.(id) ?? new SdkNotFound(id);
+	};
+	const account: SdkAccount<Row> = {
+		rows,
+		add,
+		row,
+		run: (id, command) => {
+			const { code, stdout, stderr } = guestFor(row(id).id).run(command);
+			return { exitCode: code, stdout, stderr };
+		},
+		files: (id) => guestFor(row(id).id).files,
+		NotFound: SdkNotFound,
+	};
+	return {
+		/** The stand-in, typed as the package's SDK it satisfies structurally. */
+		sdk: surface(account) as Sdk,
+		...account,
+	};
+}
+
+/** One request a {@link restStub} route answers. */
+export interface RestRequest<Row extends { readonly id: string }> {
+	readonly method: string;
+	readonly url: URL;
+	/** The route's `:name` segments, decoded. */
+	readonly params: Readonly<Record<string, string>>;
+	readonly headers: Headers;
+	/** A string body parsed as JSON (or the string, if it is not JSON), a binary body as text. */
+	// biome-ignore lint/suspicious/noExplicitAny: a route reads the body its own API defines.
+	readonly body: any;
+	readonly signal: AbortSignal | undefined;
+	/** The account's sandboxes by id. */
+	readonly rows: Map<string, Row>;
+	/** Allocate a sandbox under the next id, with its own guest. */
+	add(fields: Omit<Row, "id">): Row;
+	/** The sandbox `:id` names; a route naming `:id` answers 404 for one the account lacks. */
+	readonly row: Row;
+	/** Run `command` in the `:id` sandbox's guest: exit codes, the kit's files fallback, `df`. */
+	run(command: string): { exitCode: number; stdout: string; stderr: string };
+	/** The `:id` sandbox's files, which its guest reads and writes. */
+	readonly files: Map<string, string>;
+}
+
+/** A route's handler: a `Response`, `undefined` (204), or any other value (200 JSON). */
+export type RestRoute<Row extends { readonly id: string }> = (request: RestRequest<Row>) => unknown;
+
+export interface RestStubOptions<Row> {
+	/** The vendor's id for the `n`th sandbox (default `sb-<n>`). */
+	readonly newId?: (n: number) => string;
+	/** The guest's root filesystem capacity (default 80 GiB). */
+	readonly diskGb?: number;
+	/** How `:id` resolves (default: by id), for an API that also addresses a sandbox by name. */
+	readonly lookup?: (id: string, rows: ReadonlyMap<string, Row>) => Row | undefined;
+	/** How late the API answers a request (a slow transport); a request's signal still aborts it. */
+	readonly latencyMs?: (method: string, path: string) => number;
+	/** The API's not-found answer (default: 404 `{ error: "not found" }`). */
+	readonly missing?: (id: string) => Response;
+}
