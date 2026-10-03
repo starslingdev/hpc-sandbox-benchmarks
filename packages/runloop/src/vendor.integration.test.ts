@@ -7,7 +7,7 @@ import { NotFoundError } from "@runloop/api-client";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
-import runloop, { RUNLOOP_CREATE_TIMEOUT_MS } from "./driver.ts";
+import runloop, { RUNLOOP_CREATE_TIMEOUT_MS } from "./index.ts";
 import type { DevboxView, RunloopClient } from "./vendor.ts";
 import {
 	RUNLOOP_ATTEMPT_METADATA_KEY,
