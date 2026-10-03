@@ -8,7 +8,7 @@ import { launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import type { Sandbox } from "@vercel/sandbox";
 import { APIError } from "@vercel/sandbox";
-import vercel, { VERCEL_SANDBOX_ID } from "./driver.ts";
+import vercel, { VERCEL_SANDBOX_ID } from "./index.ts";
 import type { VercelSdk } from "./vendor.ts";
 import { VERCEL_NAME_PREFIX, vercelVendor } from "./vendor.ts";
 
