@@ -10,7 +10,7 @@ import { admissionFailures, runConformance } from "@sandbox-benchmarks/driver/co
 import type { Vendor, VendorDriverSpec } from "@sandbox-benchmarks/driver/vendor";
 import { defineVendorDriver, MARKER_PREFIX, mapped } from "@sandbox-benchmarks/driver/vendor";
 import type { MemoryRow, MemoryVendorOptions } from "@sandbox-benchmarks/driver/vendor/testing";
-import { memoryVendor } from "@sandbox-benchmarks/driver/vendor/testing";
+import { memoryVendor, vendorContract } from "@sandbox-benchmarks/driver/vendor/testing";
 import { type } from "arktype";
 
 const SECRET = "nvta_sentinel-credential";
@@ -168,3 +168,9 @@ describe("end to end through the module's entry point", () => {
 		expect(world.allocations()).toBe(0);
 	});
 });
+
+vendorContract(
+	"memory vendor",
+	moduleOver(() => memoryVendor().vendor),
+	() => memoryVendor().vendor,
+);
