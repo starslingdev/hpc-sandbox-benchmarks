@@ -116,6 +116,8 @@ export interface ControlPlane<Raw = unknown> {
 	absent?(error: unknown): boolean;
 	/** One page of the whole account. The kit drains, caps, and fails closed on a bad cursor. */
 	page(cursor: string | undefined, op: Op): Promise<VendorPage<Raw>>;
+	/** A provider-specific latency probe when its historical request differs from inventory paging. */
+	probeList?(op: Op): Promise<unknown>;
 	/**
 	 * Server-side lookup of an ambiguous create by its marker, one page at a time. Required on a
 	 * dedicated account (where it is an idempotent replay). The kit rejects unrelated records.

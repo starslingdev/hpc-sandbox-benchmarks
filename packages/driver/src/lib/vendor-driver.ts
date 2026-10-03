@@ -217,9 +217,11 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 				(await call("describe", undefined, (o) => control.get(ref.id, o)))?.raw,
 			// One page, as a control-plane latency probe rather than a full enumeration.
 			list: async () =>
-				(await call("list probe", undefined, (o) => control.page(undefined, o))).records.map(
-					(record) => record.raw,
-				),
+				control.probeList
+					? call("list probe", undefined, control.probeList)
+					: (await call("list probe", undefined, (o) => control.page(undefined, o))).records.map(
+							(record) => record.raw,
+						),
 		},
 		inventory: {
 			list: async (_compute, operation) => {
