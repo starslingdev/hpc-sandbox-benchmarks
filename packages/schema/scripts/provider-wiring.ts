@@ -16,7 +16,6 @@ import type {
 	ProviderSdkPackage,
 } from "../src/provider-meta.ts";
 import { normalizeProviderInput, PROVIDER_PRE_AUTH_POLICIES } from "../src/provider-meta.ts";
-import { validateProviderModules } from "./provider-meta-schema.ts";
 import { provenanceConstant, providerPackage, vendorClis } from "../src/providers.ts";
 
 export const REPO_ROOT = resolve(import.meta.dir, "../../..");
@@ -45,17 +44,6 @@ export interface QuotaDomainBinding {
 }
 
 export type WiringLane = "matrix" | "batch" | "release-scope";
-
-export interface DriverMigrationWaiver {
-	readonly owner: string;
-	readonly reason: string;
-	readonly expires: string;
-}
-
-export interface DriverFleetProjection {
-	readonly moduleIds: readonly ProviderId[];
-	readonly waivers: Readonly<Partial<Record<ProviderId, DriverMigrationWaiver>>>;
-}
 
 function providerMeta(id: ProviderId): ProviderMetaSource {
 	return REGISTRY[id];
@@ -540,40 +528,6 @@ function providerCatalog(root: string): Readonly<Record<string, string>> {
 	return catalog;
 }
 
-function catalogVersion(catalog: Readonly<Record<string, string>>, packageName: string): string {
-	return exactVersion(
-		catalog[packageName],
-		`package.json: workspaces.catalogs.computesdk[${JSON.stringify(packageName)}]`,
-	);
-}
-
-function tamaCliVersion(root: string): string {
-	const file = ".github/actions/setup-tama/action.yml";
-	const action = mapping(Bun.YAML.parse(readFileSync(resolve(root, file), "utf8")), file);
-	const inputs = mapping(action.inputs, `${file}: inputs`);
-	const version = mapping(inputs.version, `${file}: inputs.version`);
-	return exactVersion(version.default, `${file}: inputs.version.default`);
-}
-
-/** Resolve a provider identity to its package entry without loading its implementation. */
-export function driverModuleLocation(id: ProviderId) {
-	const variants: Partial<Record<ProviderId, readonly [string, string]>> = {
-		"daytona-vm": ["daytona", "vm"],
-		"daytona-container": ["daytona", "container"],
-		"modal-gvisor": ["modal", "gvisor"],
-		"modal-vm": ["modal", "vm"],
-	};
-	const [directory, entry] = variants[id] ?? [id, "index"];
-	const packageName = `@sandbox-benchmarks/${directory}`;
-	return {
-		directory,
-		packageName,
-		subpath: entry === "index" ? "." : `./${entry}`,
-		specifier: entry === "index" ? packageName : `${packageName}/${entry}`,
-		file: `packages/${directory}/src/${entry}.ts`,
-	};
-}
-
 /** The exact version a provider package's dependency resolves to, through the catalog or a pin. */
 function dependencyVersion(
 	catalog: Readonly<Record<string, string>>,
@@ -677,48 +631,6 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 			`${GENERATED_HEADER}\n// Versions follow the root SDK catalog or checksum-pinned CLI setup action.\n\nexport const ${constant} = Object.freeze({\n\tpackageName: ${JSON.stringify(packageName)},\n\tversion: ${JSON.stringify(version)},\n});\n`,
 		]),
 	);
-}
-
-export function parseDriverMigrationWaivers(
-	value: unknown,
-	nowMs = Date.now(),
-	file = "packages/drivers/migration-waivers.json",
-): Partial<Record<ProviderId, DriverMigrationWaiver>> {
-	if (value === null || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`${file}: expected a provider-id mapping`);
-	}
-	const knownIds = new Set<string>(PROVIDER_IDS);
-	const waivers: Partial<Record<ProviderId, DriverMigrationWaiver>> = {};
-	for (const [id, raw] of Object.entries(value)) {
-		if (!knownIds.has(id)) throw new Error(`${file}: ${id} is not a registered provider id`);
-		if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-			throw new Error(`${file}: ${id} waiver must be an object`);
-		}
-		const record = raw as Record<string, unknown>;
-		const keys = Object.keys(record).sort();
-		if (keys.join(",") !== "expires,owner,reason") {
-			throw new Error(`${file}: ${id} waiver must contain exactly owner, reason, and expires`);
-		}
-		const { owner, reason, expires } = record;
-		if (typeof owner !== "string" || owner.trim().length === 0) {
-			throw new Error(`${file}: ${id} waiver owner must be non-empty`);
-		}
-		if (typeof reason !== "string" || reason.trim().length === 0) {
-			throw new Error(`${file}: ${id} waiver reason must be non-empty`);
-		}
-		if (typeof expires !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(expires)) {
-			throw new Error(`${file}: ${id} waiver expiry must be YYYY-MM-DD`);
-		}
-		const expiry = new Date(`${expires}T23:59:59.999Z`);
-		if (Number.isNaN(expiry.valueOf()) || expiry.toISOString().slice(0, 10) !== expires) {
-			throw new Error(`${file}: ${id} waiver expiry must be a real calendar date`);
-		}
-		if (expiry.valueOf() < nowMs) {
-			throw new Error(`${file}: ${id} migration waiver expired on ${expires}`);
-		}
-		waivers[id as ProviderId] = { owner, reason, expires };
-	}
-	return waivers;
 }
 
 /**
