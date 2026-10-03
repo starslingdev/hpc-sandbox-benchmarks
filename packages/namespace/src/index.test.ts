@@ -4,9 +4,6 @@
 // recovery mechanics) is tested once in the driver package.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import type { ServiceImpl } from "@connectrpc/connect";
 import { Code, ConnectError, createClient, createRouterTransport } from "@connectrpc/connect";
@@ -19,7 +16,6 @@ import {
 } from "@namespacelabs/sdk/proto/namespace/cloud/compute/v1beta/compute_pb";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { launchDetached } from "@sandbox-benchmarks/driver";
-import { driverFromComputeSpec } from "@sandbox-benchmarks/driver/computesdk";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import namespace from "./index.ts";
 import type { NamespaceClient } from "./vendor.ts";
@@ -43,54 +39,6 @@ const request: CreateRequest = {
 const bytes = (text: string) => new TextEncoder().encode(text);
 const metadata = (instanceId: string, documentedPurpose = "", status = Status.RUNNING) =>
 	create(InstanceMetadataSchema, { instanceId, documentedPurpose, status });
-
-/** Real generated clients and protobuf serialization, with only service behavior replaced. */
-function fake(
-	compute: Partial<ServiceImpl<typeof ComputeService>> = {},
-	command: Partial<ServiceImpl<typeof CommandService>> = {},
-) {
-	let current = metadata("inst-test", `${NAMESPACE_PURPOSE_PREFIX}attempt`);
-	const commands: string[] = [];
-	const transport = createRouterTransport(({ service }) => {
-		service(ComputeService, {
-			createInstance: (input) => {
-				current = metadata("inst-test", input.documentedPurpose);
-				return {
-					metadata: current,
-					extendedMetadata: { commandServiceEndpoint: "https://commands.example" },
-				};
-			},
-			describeInstance: () => ({ metadata: current }),
-			destroyInstance: () => {
-				current = { ...current, status: Status.DESTROYED };
-				return {};
-			},
-			listInstances: () => ({ instances: [current] }),
-			...compute,
-		});
-		service(CommandService, {
-			runCommandSync: (input) => {
-				expect(input.targetContainerName).toBe(NAMESPACE_CONTAINER);
-				const shell = input.command?.command[2] ?? "";
-				commands.push(shell);
-				const output = shell.includes("df -Pk") ? `${80 * 1024 * 1024}\n` : "";
-				return { stdout: bytes(`${output}\n${NAMESPACE_EXIT_SENTINEL}0\n`) };
-			},
-			...command,
-		});
-	});
-	const client = {
-		compute: createClient(ComputeService, transport),
-		command: (_endpoint: string) => createClient(CommandService, transport),
-	};
-	const spec = namespaceSpec(context, client);
-	return {
-		client,
-		spec,
-		commands,
-		driver: driverFromComputeSpec("namespace", spec, context.resolvedArtifact, []),
-	};
-}
 const exited = (stdout: string, code: number | string) =>
 	bytes(`${stdout}\n${NAMESPACE_EXIT_SENTINEL}${code}\n`);
 
