@@ -4,15 +4,10 @@
 // the driver package.
 
 import { describe, expect, test } from "bun:test";
-import { SandboxInstance } from "@blaxel/core";
 import type { SandboxInstance } from "@blaxel/core";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
-import { sandboxRef } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import blaxel from "./index.ts";
-
-const imageName = "sandbox-benchmarks-toolchain-v8";
-const imageRef = blaxelImageRef(imageName);
 import type { BlaxelSdk } from "./vendor.ts";
 import {
 	BLAXEL_ATTEMPT_LABEL,
@@ -42,65 +37,6 @@ interface ProcessCall {
 	readonly keepAlive?: boolean;
 	readonly waitForCompletion?: boolean;
 	readonly timeout?: number;
-}
-
-function fakeInstance(
-	name: string,
-	options: {
-		readonly volumeCapacityGb?: number;
-		readonly memory?: number;
-		readonly status?: string;
-		readonly labels?: Record<string, string>;
-		readonly keepaliveStatus?: string;
-	} = {},
-) {
-	const processCalls: ProcessCall[] = [];
-	const deletes: string[] = [];
-	const instance = {
-		metadata: { name, labels: options.labels ?? {} },
-		spec: {
-			runtime: { memory: options.memory ?? 8192, image: imageRef },
-			region: BLAXEL_REGION,
-		},
-		status: options.status ?? "DEPLOYED",
-		process: {
-			exec: async (call: ProcessCall) => {
-				processCalls.push(call);
-				const base = { pid: "1234", name: call.name ?? "cmd", logs: "", stderr: "" };
-				if (call.command.startsWith("df -Pk")) {
-					return {
-						...base,
-						status: "completed",
-						exitCode: 0,
-						stdout: `${(options.volumeCapacityGb ?? 44) * 1024 * 1024}\n`,
-					};
-				}
-				if (call.waitForCompletion === false) {
-					return {
-						...base,
-						status: options.keepaliveStatus ?? "running",
-						exitCode: 0,
-						stdout: "",
-					};
-				}
-				return { ...base, status: "completed", exitCode: 0, stdout: "ok" };
-			},
-		},
-		fs: {
-			read: async (path: string) => {
-				if (path.endsWith("/missing")) {
-					throw Object.assign(new Error("not found"), { response: { status: 404 } });
-				}
-				return "content";
-			},
-			write: async () => ({ message: "ok" }),
-		},
-		delete: async () => {
-			deletes.push(name);
-			return {};
-		},
-	};
-	return { instance: instance as unknown as SandboxInstance, processCalls, deletes };
 }
 interface Row {
 	status: string;
