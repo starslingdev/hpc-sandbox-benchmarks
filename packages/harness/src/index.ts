@@ -114,10 +114,12 @@ export {
 	cleanupOwnedSandboxes,
 	createOwnedSandbox,
 	exitAfterSandboxCleanup,
+	ownedSandboxShutdownSignal,
 	releaseOwnedSandbox,
 	shutdownOwnedSandboxes,
 	withCleanupPreservingPrimaryError,
 	withOwnedSandbox,
+	withOwnedShutdownOperation,
 } from "./lib/sandbox-owner.ts";
 
 /**

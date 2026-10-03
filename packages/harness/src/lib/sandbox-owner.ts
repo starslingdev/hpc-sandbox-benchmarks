@@ -56,6 +56,8 @@ const DEFAULT_CLEANUP_RETRY_MS = 250;
 
 let handlersInstalled = false;
 let stopping = false;
+const shutdown = new AbortController();
+const operations = new Set<Promise<unknown>>();
 let signalCleanup: Promise<void> | undefined;
 let beforeExitCleanup: Promise<void> | undefined;
 
@@ -74,7 +76,7 @@ function release(entry: OwnedEntry<DestroyableSandbox>): void {
 	owned.delete(entry);
 	if (entry.handle !== undefined) entriesByHandle.delete(entry.handle);
 	entry.handle = undefined;
-	if (owned.size === 0) uninstallProcessHandlers();
+	if (owned.size === 0 && operations.size === 0) uninstallProcessHandlers();
 }
 
 function trackHandle<T extends DestroyableSandbox>(entry: OwnedEntry<T>, handle: T): T {
@@ -235,9 +237,47 @@ function logCleanupFailures(context: string, failures: readonly unknown[]): void
 /** Stop new creates and drain all owned sandboxes before an ordinary CLI exit. */
 export async function shutdownOwnedSandboxes(context = "process exit"): Promise<unknown[]> {
 	stopping = true;
+	shutdown.abort(new Error(`Process ownership shutting down (${context})`));
 	const failures = await cleanupOwnedSandboxes();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			Promise.allSettled([...operations]),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() => reject(new Error("Release operation cleanup timed out")),
+					DEFAULT_CLEANUP_TIMEOUT_MS,
+				);
+			}),
+		]);
+	} catch (error) {
+		failures.push(error);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
 	logCleanupFailures(context, failures);
 	return failures;
+}
+
+/** Cancellation shared by release work and sandbox ownership during the process drain. */
+export function ownedSandboxShutdownSignal(): AbortSignal {
+	return shutdown.signal;
+}
+
+/** Register release work before it starts; a signal drain waits for its cancellation cleanup. */
+export async function withOwnedShutdownOperation<T>(
+	work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+	if (stopping) throw new Error("Release operation refused during shutdown");
+	installProcessHandlers();
+	const operation = Promise.resolve().then(() => work(shutdown.signal));
+	operations.add(operation);
+	try {
+		return await operation;
+	} finally {
+		operations.delete(operation);
+		if (owned.size === 0 && operations.size === 0) uninstallProcessHandlers();
+	}
 }
 
 /** Exit only after the process has made its bounded cleanup attempts. */
@@ -261,7 +301,7 @@ function onSignal(signal: (typeof signals)[number]): void {
 }
 
 function onBeforeExit(): void {
-	if (owned.size === 0 || beforeExitCleanup !== undefined) return;
+	if ((owned.size === 0 && operations.size === 0) || beforeExitCleanup !== undefined) return;
 	console.error(`[cleanup] process exiting; destroying ${owned.size} sandbox(es)...`);
 	beforeExitCleanup = shutdownOwnedSandboxes("process exit").then((failures) => {
 		if (failures.length > 0) process.exitCode = 1;
