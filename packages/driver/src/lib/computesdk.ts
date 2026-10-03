@@ -32,6 +32,7 @@ import type {
 	SandboxObservation,
 	SandboxRef,
 	SandboxSession,
+	SnapshotOptions,
 } from "@sandbox-benchmarks/driver";
 import {
 	DriverError,
@@ -337,9 +338,12 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 	};
 	/** Honest snapshot projection; omission records an unsupported capability instead of a stub. */
 	readonly snapshots?: {
+		/** A vendor-port adapter explicitly implements the requested retention. */
+		readonly retention?: "explicit";
 		create(
 			compute: TCompute,
 			session: SandboxSession<ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>,
+			options?: SnapshotOptions,
 		): Promise<{ readonly snapshotId: string }>;
 		delete(compute: TCompute, snapshotId: string): Promise<void>;
 	};
@@ -969,7 +973,11 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 	const snapshots =
 		rawSnapshots === undefined
 			? undefined
-			: { create: rawSnapshots.create, delete: rawSnapshots.delete };
+			: {
+					create: rawSnapshots.create,
+					delete: rawSnapshots.delete,
+					retention: rawSnapshots.retention,
+				};
 	const rawInventory = options.inventory;
 	const inventory = rawInventory === undefined ? undefined : { list: rawInventory.list };
 	const destroyById = options.destroyById;
@@ -1564,7 +1572,14 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 						create: async (
 							compute: TCompute,
 							session: SandboxSession<ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>>,
+							options?: SnapshotOptions,
 						) => {
+							if (options?.retention === "durable" && snapshots.retention !== "explicit")
+								throw new DriverError(
+									"snapshot-failed",
+									`${provider} cannot prove durable snapshot retention`,
+									{ provider },
+								);
 							const canonical = validateRef(
 								provider,
 								sandboxIds.canonical,
@@ -1576,7 +1591,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 								await invokeComputeSdkProviderCallbackAsync(
 									provider,
 									"snapshot create",
-									() => snapshots.create(compute, { ...session, sandboxRef: canonical }),
+									() => snapshots.create(compute, { ...session, sandboxRef: canonical }, options),
 									{ code: "snapshot-failed", ref: canonical },
 								),
 								canonical,

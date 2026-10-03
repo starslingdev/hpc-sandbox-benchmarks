@@ -21,6 +21,7 @@ import type {
 	SandboxRef,
 	SandboxSession,
 	SnapshotCapability,
+	SnapshotOptions,
 } from "./port.ts";
 
 type SameType<Left, Right> =
@@ -69,7 +70,11 @@ export interface MethodTable<Handle, Ctx, Native = Handle> {
 		describe?(ctx: Ctx, ref: SandboxRef): Promise<unknown>;
 	};
 	readonly snapshots?: {
-		create(ctx: Ctx, session: SandboxSession<Native>): Promise<{ readonly snapshotId: string }>;
+		create(
+			ctx: Ctx,
+			session: SandboxSession<Native>,
+			options?: SnapshotOptions,
+		): Promise<{ readonly snapshotId: string }>;
 		delete(ctx: Ctx, snapshotId: string): Promise<void>;
 	};
 	readonly inventory?: {
@@ -408,8 +413,8 @@ export function driverFromTable<Handle, Ctx, Native = Handle>(
 		...(tableSnapshots
 			? {
 					snapshots: {
-						create: async (session: SandboxSession<Native>) =>
-							tableSnapshots.create(await ctx(), session),
+						create: async (session: SandboxSession<Native>, options?: SnapshotOptions) =>
+							tableSnapshots.create(await ctx(), session, options),
 						delete: async (snapshotId: string) => tableSnapshots.delete(await ctx(), snapshotId),
 					} satisfies SnapshotCapability<Native>,
 				}
