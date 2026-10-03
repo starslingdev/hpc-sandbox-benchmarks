@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import type { SandboxInstance } from "@blaxel/core";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
-import blaxel from "./driver.ts";
+import blaxel from "./index.ts";
 import type { BlaxelSdk } from "./vendor.ts";
 import {
 	BLAXEL_ATTEMPT_LABEL,
