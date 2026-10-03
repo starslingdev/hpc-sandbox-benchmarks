@@ -1,8 +1,8 @@
 // Provider identity & economics — the static facts the comparison surfaces next to results:
 // isolation technology, pricing model, maturity, and whether the SDK can pin a target spec.
 // Provider identity itself lives in the dependency-free `provider-ids.ts` leaf; this registry owns
-// the metadata keyed by that identity. The harness adapter joins against it and refuses any
-// one-sided provider.
+// the metadata keyed by that identity and answers the facts other packages would otherwise restate
+// (package location, provenance constant, chart label, declared isolation class).
 //
 // Validation status is deliberately NOT declared here: a provider is "validated" exactly when a
 // committed run carries real metrics for it (computed downstream), "pending" otherwise.
@@ -15,18 +15,29 @@ import type {
 	NormalizedProviderInput,
 	ProviderArtifact,
 	ProviderMetaSource,
+	ProviderPackageLocation,
 	ProviderPreAuth,
 	ProviderRunnerPolicy,
+	ProviderSdkPackage,
 } from "./provider-meta.ts";
 import { normalizeProviderInput } from "./provider-meta.ts";
 import type { PricingComponent, PricingQuantityTerm, ProviderPricing } from "./provider-pricing.ts";
 
-export type { ArtifactPhase, BaseImageUse } from "./provider-artifacts.ts";
+export type {
+	ArtifactPhase,
+	BaseImageUse,
+	CandidateArtifact,
+	CandidateArtifactRefs,
+	NativeSnapshotProviderId,
+} from "./provider-artifacts.ts";
 export {
 	bakedArtifactName,
 	baseImageUse,
+	candidateArtifact,
 	isBakedProviderId,
 	isMirroredProviderId,
+	isNativeSnapshotProviderId,
+	releaseUnscopable,
 } from "./provider-artifacts.ts";
 export type { ProviderId } from "./provider-ids.ts";
 export { PROVIDER_IDS } from "./provider-ids.ts";
@@ -45,8 +56,10 @@ export type {
 	ProviderInput,
 	ProviderInputDescriptor,
 	ProviderInputSource,
+	ProviderPackageLocation,
 	ProviderPreAuth,
 	ProviderRunnerPolicy,
+	ProviderSdkPackage,
 } from "./provider-meta.ts";
 export { PROVIDER_PRE_AUTH_CONTRACTS, PROVIDER_PRE_AUTH_POLICIES } from "./provider-meta.ts";
 export * from "./provider-pricing.ts";
@@ -57,50 +70,25 @@ import { TARGET_SPEC } from "./target-spec.ts";
 export type { TargetSpec } from "./target-spec.ts";
 export { TARGET_SPEC } from "./target-spec.ts";
 
-/**
- * Canonical provider ids — the single vocabulary every registry joins on. Adding an id forces a
- * matching {@link REGISTRY} entry (the Record type below makes a missing or extra id a compile
- * error) and, downstream, a harness adapter in @sandbox-benchmarks/providers.
- */
-
 /** Can the SDK request a pinned target spec (vCPU / memory) at create() time? */
 export type SpecPinning = "settable" | "fixed" | "unknown";
 
 /**
- * How a provider's command-exec transport behaves *through its ComputeSDK adapter* — the facts the
- * harness needs to pick a per-step transport instead of hardcoding one provider's quirks (the original
- * sin this models away: the harness forced Daytona's detached+poll on every provider). Owned here
- * alongside the other declared capabilities ({@link SpecPinning}, isolation, maturity) because it is a
- * static, comparable property of the integration, and the schema already names the `@computesdk/*`
- * adapter via {@link ProviderMeta.sdkPackage}.
+ * The per-step exec transport the harness's `StepRunner` reads. It is not provider metadata: the CLI
+ * composition root projects it from the selected driver module's execution policy, so the module
+ * that owns the vendor's exec behaviour is the only place its cap and durable route are declared.
  *
- * Three independent capabilities, each load-bearing for transport selection:
- *
- *   - `streaming` — does the adapter deliver stdout/stderr incrementally (computesdk's
- *     `onStdout`/`onStderr`)? Most shipped adapters drop those callbacks, so a long synchronous exec
- *     buffers silently; run.cloud's native SDK adapter passes them through. Modeled because a streaming
- *     path keeps a connection productive past an idle gateway cap.
- *   - `syncCapMs` — the configured durability threshold for a single *synchronous* exec round-trip,
- *     or `null` when validated as uncapped. It may encode a vendor-enforced limit or a conservative
- *     repository policy where long-lived synchronous transport has not been validated. The harness
- *     compares each step's timeout budget against it: a step that could reach it must not go
- *     synchronous. Daytona returns a
- *     server-side HTTP 408 on multi-minute synchronous execs while the process keeps running
- *     (`docs/evidence/daytona-exec-transport.md`); E2B's `commands.run` defaults to a 60s command
- *     timeout the computesdk wrapper never overrides.
- *   - `detachedPoll` — can the provider run a step fully detached (background exec + OBSERVABLE
- *     completion), the durable path for steps that would outlast `syncCapMs`? Without it there is no
- *     alternative, so such a step stays synchronous and best-effort.
- *
- *     Observable does NOT require a filesystem API. `StepRunner.runDetached` polls the done-file over
- *     the sandbox filesystem where one works and `cat`s it over exec where none does, so an adapter
- *     with no `filesystem` table still detaches. Reading this as "needs a filesystem" is what produced
- *     namespace's wrong `detachedPoll: false` — which stranded a 55-minute benchmark on a synchronous
- *     exec that its own server cut at ~4m19s. If a provider can background a command and answer a
- *     later exec, it can detach.
+ * - `streaming`: whether stdout/stderr arrive incrementally. No transport decision reads it.
+ * - `syncCapMs`: the longest single synchronous exec the step may risk, or `null` when uncapped. A
+ *   step whose timeout budget could reach it must not go synchronous.
+ * - `detachedPoll`: whether a step can run detached (background launch plus observable completion),
+ *   the durable path for steps that would outlast `syncCapMs`. Observable does NOT require a
+ *   filesystem API: `StepRunner.runDetached` polls the done file over the filesystem where one works
+ *   and `cat`s it over exec where none does. Reading this as "needs a filesystem" once stranded a
+ *   55-minute benchmark on a synchronous exec its server cut at ~4m19s.
  */
 export interface ProviderTransport {
-	/** Does the ComputeSDK adapter stream stdout/stderr chunks (`onStdout`/`onStderr`)? */
+	/** Does exec deliver stdout/stderr incrementally? The driver projection reports false today. */
 	streaming: boolean;
 	/** Conservative bound (ms) on a safe single synchronous exec round-trip; `null` when uncapped. */
 	syncCapMs: number | null;
@@ -135,7 +123,7 @@ export type ProviderRuntimeIdentity = "root" | "unprivileged";
 
 /** The static description of a sandbox provider, owned by the schema. */
 export interface ProviderMeta {
-	/** Stable identifier joined against the harness adapter map; one of {@link ProviderId}. */
+	/** Stable identifier joined against the generated driver loader; one of {@link ProviderId}. */
 	id: ProviderId;
 	displayName: string;
 	/** Stable vendor label shared by isolation variants. */
@@ -143,8 +131,12 @@ export interface ProviderMeta {
 	/** The account whose quota this provider consumes; see {@link quotaDomain}. */
 	quotaDomain: string;
 	website: string;
-	/** The npm package the harness adapter wraps, e.g. "@computesdk/e2b". */
-	sdkPackage: string;
+	/** The vendor library the provider package pins; see {@link ProviderSdkPackage}. */
+	sdkPackage: ProviderSdkPackage;
+	/** Declared only for isolation variants; read through {@link providerPackage}. */
+	package?: ProviderPackageLocation;
+	/** Declared only where it differs from the default; read through {@link figureLabel}. */
+	figureLabel?: string;
 	/** Artifact lifecycle declared independently of vendor API syntax. */
 	artifact: ProviderArtifact;
 	/** Normalized provider inputs; consumers never handle descriptor shorthand. */
@@ -155,8 +147,6 @@ export interface ProviderMeta {
 	pricing: ProviderPricing;
 	maturity: ProviderMaturity;
 	specPinning: SpecPinning;
-	/** How the provider's exec transport behaves — the harness selects sync vs detached from this. */
-	transport: ProviderTransport;
 	/** Optional GitHub runner route plus its coupled setup-cache and reaping-budget policy. */
 	runner?: ProviderRunnerPolicy;
 	/** Optional CI authentication preparation owned by generated wiring. */
@@ -164,8 +154,8 @@ export interface ProviderMeta {
 	/**
 	 * Identity the benchmark lane runs as in-sandbox. Omitted means `"root"`: setup, the baked PTS
 	 * state and every adapter target root, and the providers that DO inject an unprivileged user are
-	 * the exception worth declaring — e2b and novita each pin their exec back to root explicitly
-	 * (e2b-root.ts), so only a provider with no such lever is `"unprivileged"`.
+	 * the exception worth declaring — e2b and novita each pin their exec back to root explicitly in
+	 * their drivers, so only a provider with no such lever is `"unprivileged"`.
 	 *
 	 * This exists so the job summary flags DRIFT rather than a supported configuration: a hardcoded
 	 * "expected root" marks every Runloop replicate anomalous on a perfectly healthy run, which trains
@@ -192,7 +182,7 @@ export interface ProviderMeta {
  * `resources.disk`); Modal has no disk knob but its gVisor root reports effectively unbounded disk,
  * so it clears the gate anyway. Blaxel's sandbox root is a RAM-derived tmpfs with no independent disk
  * knob, so it mounts a 40 GiB volume at the PTS data dir where the heavy suites write (see
- * packages/providers/src/lib/blaxel-volume.ts) — clearing the gate like the others. Only e2b/novita
+ * BLAXEL_VOLUME_MOUNT_DIR in packages/blaxel/src/index.ts) — clearing the gate like the others. Only e2b/novita
  * (the `@e2b/cli` `template create` takes only `--cpu-count`/`--memory-mb`), namespace
  * (`NamespaceConfig` has no disk field at all), and Vercel (resources exposes only vCPUs) still
  * CANNOT express disk:
@@ -214,9 +204,8 @@ function deepFreeze<T>(value: T): T {
 /**
  * Every provider the benchmark knows about, in declaration order. Derived from {@link REGISTRY} so
  * the `id` and its key can never disagree, and deep-frozen so a downstream consumer can't mutate
- * shared pricing/identity at runtime. @sandbox-benchmarks/providers binds an adapter to each id via
- * a matching `Record<ProviderId, …>`, so adding a provider here without an adapter there (or vice
- * versa) is a compile error in that package — the two registries cannot drift.
+ * shared pricing/identity at runtime. The generated driver loader is keyed by the same ids, so a
+ * provider without a driver module fails generation rather than drifting.
  */
 export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
 	PROVIDER_IDS.map((id) => {
@@ -333,4 +322,92 @@ export function hourlyCostAtTargetSpec(
 		const component = components.get(id) as PricingComponent;
 		return total + component.usdPerUnitHour * pricingQuantityAtTargetSpec(component, targetSpec);
 	}, 0);
+}
+
+/** Where a provider's driver module lives, derived from its id unless it is an isolation variant. */
+export interface ProviderPackage {
+	/** `packages/<directory>`; isolation variants of one vendor share it. */
+	readonly directory: string;
+	/** `@sandbox-benchmarks/<directory>`. */
+	readonly packageName: string;
+	/** The package export the driver module is published under (`.` or `./<entry>`). */
+	readonly subpath: string;
+	/** The import specifier the generated loader uses. */
+	readonly specifier: string;
+	/** The driver module's source file, relative to the repository root. */
+	readonly file: string;
+}
+
+/** Resolve a provider to its package entry without loading its implementation. */
+export function providerPackage(id: ProviderId): ProviderPackage {
+	const meta: ProviderMetaSource = REGISTRY[id];
+	const { directory, entry } = meta.package ?? { directory: id, entry: "index" };
+	const packageName = `@sandbox-benchmarks/${directory}`;
+	return {
+		directory,
+		packageName,
+		subpath: entry === "index" ? "." : `./${entry}`,
+		specifier: entry === "index" ? packageName : `${packageName}/${entry}`,
+		file: `packages/${directory}/src/${entry}.ts`,
+	};
+}
+
+export { provenanceConstant } from "./provider-meta.ts";
+
+/**
+ * The concise label a chart uses for a provider. Isolation variants sharing one package are one
+ * vendor on a chart; every other provider uses its display name unless it declares a shorter one.
+ */
+export function figureLabel(id: ProviderId): string {
+	const meta: ProviderMetaSource = REGISTRY[id];
+	if (meta.figureLabel !== undefined) return meta.figureLabel;
+	const { directory } = providerPackage(id);
+	const shared = PROVIDER_IDS.some(
+		(other) => other !== id && providerPackage(other).directory === directory,
+	);
+	return shared ? meta.vendor : meta.displayName;
+}
+
+/** A vendor CLI the drivers spawn, with the providers that drive it. */
+export interface VendorCli {
+	/** The binary, installed by the checksum-pinned `.github/actions/setup-<cli>` action. */
+	readonly cli: string;
+	readonly providers: readonly ProviderId[];
+}
+
+/** Every vendor CLI a provider declares (`sdkPackage: { cli }`), in registry order. */
+export function vendorClis(): readonly VendorCli[] {
+	const owners = new Map<string, ProviderId[]>();
+	for (const id of PROVIDER_IDS) {
+		const source = REGISTRY[id].sdkPackage;
+		if (typeof source === "object" && "cli" in source)
+			owners.set(source.cli, [...(owners.get(source.cli) ?? []), id]);
+	}
+	return [...owners].map(([cli, providers]) => ({ cli, providers }));
+}
+
+/** The coarse isolation class a guest probe can contradict. */
+export type DeclaredIsolationClass = "gvisor" | "container" | "vm";
+
+/**
+ * Collapse the declared isolation class to the vocabulary the guest probe speaks. Userspace kernels
+ * are gVisor today; microVMs and full VMs are both a hardware boundary. Unknown declares nothing.
+ */
+export function declaredIsolationClass(id: ProviderId): DeclaredIsolationClass | undefined {
+	return probeClassOf(REGISTRY[id].isolation.class);
+}
+
+/** Exhaustive over every declarable class, not only those today's registry narrows to. */
+function probeClassOf(declared: IsolationClass): DeclaredIsolationClass | undefined {
+	switch (declared) {
+		case "userspace":
+			return "gvisor";
+		case "vm":
+		case "microVM":
+			return "vm";
+		case "container":
+			return "container";
+		case "unknown":
+			return undefined;
+	}
 }

@@ -6,7 +6,7 @@ export default defineProviderMeta("tama", {
 	website: "https://tama.computer",
 	// No SDK is published for any language; the CLI is the only programmatic surface, so the adapter
 	// drives `tama` as a subprocess and parses its `--json` output.
-	sdkPackage: "tama CLI",
+	sdkPackage: { cli: "tama" },
 	artifact: { kind: "image" },
 	// Required, DESPITE the adapter being able to authenticate from an existing `tama login` profile.
 	// requiredEnvVars is the credential gate, and the gate is what turns an unwired provider into a
@@ -69,13 +69,4 @@ export default defineProviderMeta("tama", {
 	// observed root filesystem is a large shared overlay (878 GB), so the 40 GB target is cleared by
 	// capacity rather than by a pinned request.
 	specPinning: "settable",
-	transport: {
-		// The adapter spawns the CLI and forwards its stdout/stderr pipes as chunks, so a long exec
-		// stays observable instead of buffering. A 10-minute synchronous exec was validated end to end
-		// (see the adapter), but keep the repository's conservative 60s policy for sustained
-		// synchronous transport: longer work daemonizes and polls the harness-owned done file.
-		streaming: true,
-		syncCapMs: 60_000,
-		detachedPoll: true,
-	},
 });
