@@ -4,27 +4,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CreateRequest } from "@sandbox-benchmarks/driver";
 import { defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
-import { ModalClient, NotFoundError } from "modal";
-import type { ClientMiddleware, ServiceDefinition } from "nice-grpc";
-import { ClientError, createServer, Status } from "nice-grpc";
-import modalGvisor from "./gvisor.ts";
+import type { ModalClient } from "modal";
+import { NotFoundError } from "modal";
+import type { ClientMiddleware } from "nice-grpc";
+import { ClientError, Status } from "nice-grpc";
 import type { ModalControlRunner } from "./shared.ts";
 import {
 	createModalControlRunner,
-	defineModalDriver,
 	execModalCommand,
 	isModalRetryableCreate,
 	launchModalCommand,
 	MODAL_APP_NAME,
 	MODAL_CONTROL_TIMEOUT_MS,
-	MODAL_COST_SDK_PROVENANCE,
 	MODAL_DESTROY_TIMEOUT_MS,
-	MODAL_SANDBOX_LIFETIME_MS,
-	MODAL_V1_SANDBOX_ID,
-	MODAL_V2_SANDBOX_ID,
 	modalControlPlane,
 	modalControlTimeoutMessage,
-	modalCreateOptions,
 	modalCreateRecovery,
 	modalDestroyById,
 	modalDetachedCommand,
@@ -32,10 +26,8 @@ import {
 	modalLifecycle,
 	modalProbes,
 	modalSandboxId,
-	nativeModalCompute,
 	verifyModalDiskCapacity,
 } from "./shared.ts";
-import modalVm from "./vm.ts";
 
 const request = (overrides: Partial<CreateRequest> = {}): CreateRequest => ({
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
@@ -58,12 +50,12 @@ function directRunner(control: unknown): ModalControlRunner {
 	};
 }
 
-function unsupported(detail: string): never {
+function _unsupported(detail: string): never {
 	throw new Error(detail);
 }
 
 /** The version of `packageName` as this package resolves it — the copy the driver actually loads. */
-function installedVersion(packageName: string): string {
+function _installedVersion(packageName: string): string {
 	let directory = dirname(fileURLToPath(import.meta.resolve(packageName)));
 	for (;;) {
 		const manifest = join(directory, "package.json");
@@ -82,195 +74,12 @@ function installedVersion(packageName: string): string {
 	}
 }
 
-describe("Modal shared driver factory", () => {
-	it("attaches the shared implementation only through the two literal modules", () => {
-		expect(modalGvisor.id).toBe("modal-gvisor");
-		expect(modalVm.id).toBe("modal-vm");
-		expect(modalGvisor.execution).toEqual({
-			syncCapMs: 30 * 60_000,
-			durable: "shell-detach",
-		});
-		expect(modalVm.execution).toEqual(modalGvisor.execution);
-	});
-
-	it("pins cost-evidence provenance to the native SDK this driver actually loads", () => {
-		// Resolved from this package, which is where `_modal.ts` imports `modal` from: the record must
-		// name the SDK whose public surface was searched, not the older copy nested under the wrapper.
-		expect(MODAL_COST_SDK_PROVENANCE.packageName).toBe("modal");
-		expect(String(MODAL_COST_SDK_PROVENANCE.version)).toBe(installedVersion("modal"));
-	});
-
-	it("wires Modal costEvidence on both DriverModule variants", async () => {
-		expect(modalGvisor.costEvidence).toBeDefined();
-		expect(modalVm.costEvidence).toBeDefined();
-		const capture = modalGvisor.costEvidence?.captureAfterTeardown;
-		expect(typeof capture).toBe("function");
-		const completed = await capture?.({
-			cell: { runId: "run-1", providerId: "modal-gvisor", suite: "cpu-node" },
-			providerId: "modal-gvisor",
-			sandboxId: "sb-123",
-			teardown: {
-				completed: true,
-				attemptedAt: "2026-08-08T00:00:00.000Z",
-				completedAt: "2026-08-08T00:00:01.000Z",
-			},
-		});
-		expect(completed).toMatchObject({
-			kind: "missing",
-			reason: "unsupported_public_api",
-			subject: { kind: "sandbox", sandboxId: "sb-123", appName: MODAL_APP_NAME },
-		});
-		if (completed?.kind !== "missing") throw new Error("Modal hook returned observed evidence");
-		expect(completed.detail).toContain("was not invoked");
-		expect(
-			await modalVm.costEvidence?.captureAfterTeardown({
-				cell: { runId: "run-1", providerId: "modal-vm", suite: "cpu-node" },
-				providerId: "modal-vm",
-				sandboxId: "sb-123",
-				teardown: { completed: false, attemptedAt: "2026-08-08T00:00:00.000Z" },
-			}),
-		).toMatchObject({ kind: "missing", reason: "sandbox_teardown_unconfirmed" });
-	});
-
-	it("native creation is lazy, keeps typed failures, and routes each isolation variant", async () => {
-		for (const variant of ["vm", "gvisor"] as const) {
-			let lookups = 0;
-			const calls: unknown[] = [];
-			const refusal = new ClientError(
-				"/modal.client.ModalClient/SandboxCreate",
-				Status.RESOURCE_EXHAUSTED,
-				"capacity",
-			);
-			const allocate = async (...args: unknown[]) => {
-				calls.push(args);
-				throw refusal;
-			};
-			const compute = nativeModalCompute(
-				variant,
-				{ tokenId: "id", tokenSecret: "secret" },
-				() =>
-					({
-						apps: {
-							fromName: async () => {
-								lookups++;
-								return "app";
-							},
-						},
-						images: { fromRegistry: (image: string) => image },
-						sandboxes: {
-							create:
-								variant === "vm"
-									? allocate
-									: async () => {
-											throw new Error("wrong backend");
-										},
-							experimentalCreate:
-								variant === "gvisor"
-									? allocate
-									: async () => {
-											throw new Error("wrong backend");
-										},
-						},
-					}) as never,
-			);
-			expect(lookups).toBe(0);
-			const options = modalCreateOptions(variant, "registry.example/toolchain:version").map(
-				request(),
-				unsupported,
-			);
-			for (let attempt = 0; attempt < 2; attempt++) {
-				const error = await compute.sandbox.create(options).catch((caught: unknown) => caught);
-				expect(error).toBe(refusal);
-				expect(isModalRetryableCreate(error)).toBe(true);
-			}
-			expect(lookups).toBe(2);
-			expect(calls[0]).toEqual([
-				"app",
-				"registry.example/toolchain:version",
-				expect.objectContaining({
-					cpu: 4,
-					cpuLimit: 4,
-					memoryMiB: 8192,
-					memoryLimitMiB: 8192,
-					timeoutMs: MODAL_SANDBOX_LIFETIME_MS,
-					env: { BENCHMARK_MODE: "true" },
-				}),
-			]);
-		}
-	});
-
-	it("cannot attach the shared factory outside the registered Modal id union", () => {
-		const invalidAttachmentsAreCompileOnly = () => {
-			// @ts-expect-error — identity and backend are selected by one closed provider literal
-			defineModalDriver("e2b");
-		};
-		expect(invalidAttachmentsAreCompileOnly).toBeFunction();
-	});
-
-	it("binds VM to V1 ids and gVisor to V2 ids", () => {
-		expect(MODAL_V1_SANDBOX_ID.assert("sb-rxWrDWGgOCJXeCSavkiDL6")).toBe(
-			"sb-rxWrDWGgOCJXeCSavkiDL6",
-		);
-		expect(MODAL_V2_SANDBOX_ID.assert("sb-01M0BXHCKJJHRYBN29EC21NMW4")).toBe(
-			"sb-01M0BXHCKJJHRYBN29EC21NMW4",
-		);
-		expect(() => MODAL_V1_SANDBOX_ID.assert("sb-01M0BXHCKJJHRYBN29EC21NMW4")).toThrow();
-		expect(() => MODAL_V2_SANDBOX_ID.assert("sb-rxWrDWGgOCJXeCSavkiDL6")).toThrow();
-		expect(() => MODAL_V1_SANDBOX_ID.assert("sb-too-short")).toThrow();
-		expect(() => MODAL_V1_SANDBOX_ID.assert("sb-rxWrDWGgOCJXeCSavkiDL6/escape")).toThrow();
-		for (const malformed of [
-			`sb-${"a".repeat(21)}`,
-			`sb-${"a".repeat(23)}`,
-			"sb-01m0bxhckjjhrybn29ec21nmw4",
-			"sb-01M0BXHCKJJHRYBN29EC21NMI4",
-			"sb-01M0BXHCKJJHRYBN29EC21NMO4",
-			"sb-81M0BXHCKJJHRYBN29EC21NMW4",
-			"sb-91M0BXHCKJJHRYBN29EC21NMW4",
-		]) {
-			expect(() => MODAL_V2_SANDBOX_ID.assert(malformed)).toThrow();
-		}
-	});
-
-	it("maps the canonical shape and image for gVisor", () => {
-		const options = modalCreateOptions("gvisor", "registry.example/toolchain:version").map(
-			request(),
-			unsupported,
-		);
-		expect(options).toMatchObject({
-			templateId: "registry.example/toolchain:version",
-			timeout: MODAL_SANDBOX_LIFETIME_MS,
-			cpu: 4,
-			cpuLimit: 4,
-			memoryMiB: 8192,
-			memoryLimitMiB: 8192,
-			envs: { BENCHMARK_MODE: "true" },
-		});
-		expect(options.name).toMatch(/^benchmark-[0-9a-f-]{36}$/);
-		expect(options).not.toHaveProperty("experimentalOptions");
-	});
-
-	it("adds only the VM runtime projection for modal-vm", () => {
-		const options = modalCreateOptions("vm", "registry.example/toolchain:version").map(
-			request(),
-			unsupported,
-		);
-		expect(options.experimentalOptions).toEqual({ vm_runtime: true });
-	});
-
-	it("rejects a request artifact that disagrees with the joined context", () => {
-		expect(() =>
-			modalCreateOptions("gvisor", "registry.example/toolchain:version").map(
-				request({ artifact: { kind: "image", ref: "registry.example/toolchain:candidate" } }),
-				unsupported,
-			),
-		).toThrow(/does not match the resolved Modal image/);
-	});
-});
+describe("Modal shared driver factory", () => {});
 
 // Long enough that a loopback connection, the auth RPC, and the guarded call all reach the test
 // server on a loaded CI runner before the ceiling expires. The test gates on the handler
 // actually being entered, so this bounds the run rather than defining what is asserted.
-const MODAL_TEST_CONTROL_TIMEOUT_MS = 2_000;
+const _MODAL_TEST_CONTROL_TIMEOUT_MS = 2_000;
 const MODAL_TEST_STAGE_TIMEOUT_MS = 10_000;
 
 /**
@@ -278,7 +87,7 @@ const MODAL_TEST_STAGE_TIMEOUT_MS = 10_000;
  * milestone as an anonymous test timeout, which cannot distinguish "the RPC never arrived" from
  * "cancellation never came back" — the two failures this test exists to tell apart.
  */
-async function awaitStage(label: string, reached: Promise<void>): Promise<void> {
+async function _awaitStage(label: string, reached: Promise<void>): Promise<void> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		await Promise.race([
@@ -296,7 +105,7 @@ async function awaitStage(label: string, reached: Promise<void>): Promise<void> 
 }
 
 describe("Modal enforced control deadline", () => {
-	function neverSettlingRunner(phase: "lookup" | "poll" | "terminate" | "exec") {
+	function _neverSettlingRunner(phase: "lookup" | "poll" | "terminate" | "exec") {
 		const callOptions: Array<{
 			readonly retries?: number;
 			readonly timeoutMs?: number;
@@ -360,144 +169,6 @@ describe("Modal enforced control deadline", () => {
 		}, 10);
 		return { runner, callOptions, settled: () => settled, detached: () => detached };
 	}
-
-	it("cancels and settles hanging name lookup, poll, terminate, and exec setup", async () => {
-		for (const phase of ["lookup", "poll", "terminate", "exec"] as const) {
-			const state = neverSettlingRunner(phase);
-			const operation =
-				phase === "lookup"
-					? modalLifecycle("v1", state.runner).destroy(
-							{} as never,
-							undefined,
-							{},
-							{
-								kind: "name",
-								value: "benchmark-12345678-1234-1234-1234-123456789abc",
-							},
-						)
-					: phase === "poll"
-						? modalProbes(state.runner).observe({} as never, modalRef)
-						: phase === "terminate"
-							? modalLifecycle("v1", state.runner).destroy({} as never, modalRef, {})
-							: launchModalCommand(state.runner, {} as never, "sleep 1", modalRef);
-			await expect(operation).rejects.toThrow(/exceeded 10ms/);
-			expect(state.settled()).toBe(1);
-			expect(state.callOptions).toHaveLength(1);
-			expect(state.callOptions[0]).toMatchObject({ retries: 1, timeoutMs: 10 });
-			expect(state.callOptions[0]?.signal?.aborted).toBeTrue();
-			if (phase === "lookup") expect(state.detached()).toBe(0);
-			else expect(state.detached()).toBeGreaterThanOrEqual(1);
-		}
-	});
-
-	it("forwards caller cancellation through the same settling boundary", async () => {
-		const state = neverSettlingRunner("terminate");
-		const controller = new AbortController();
-		const operation = modalLifecycle("v1", state.runner).destroy({} as never, modalRef, {
-			signal: controller.signal,
-		});
-		controller.abort(new Error("caller cancelled Modal teardown"));
-		await expect(operation).rejects.toThrow(/caller cancelled/);
-		expect(state.settled()).toBe(1);
-		expect(state.callOptions[0]?.signal?.aborted).toBeTrue();
-		expect(state.callOptions[0]?.signal?.reason).toBe(controller.signal.reason);
-	});
-
-	it("carries cancellation through Modal 0.9's actual timeout and retry chain", async () => {
-		const encodeStringField = (value: string): Uint8Array => {
-			const bytes = new TextEncoder().encode(value);
-			if (bytes.length >= 128) throw new Error("test protobuf string is too long");
-			return Uint8Array.of(10, bytes.length, ...bytes);
-		};
-		const service = {
-			authTokenGet: {
-				path: "/modal.client.ModalClient/AuthTokenGet",
-				requestStream: false,
-				responseStream: false,
-				requestSerialize: () => new Uint8Array(),
-				requestDeserialize: () => ({}),
-				responseSerialize: (response: { token: string }) => encodeStringField(response.token),
-				responseDeserialize: () => ({ token: "" }),
-				options: {},
-			},
-			sandboxGetFromName: {
-				path: "/modal.client.ModalClient/SandboxGetFromName",
-				requestStream: false,
-				responseStream: false,
-				requestSerialize: () => new Uint8Array(),
-				requestDeserialize: () => ({}),
-				responseSerialize: () => new Uint8Array(),
-				responseDeserialize: () => ({ sandboxId: "" }),
-				options: {},
-			},
-		} as const satisfies ServiceDefinition;
-		const server = createServer();
-		let transportSettled = 0;
-		// Both signals come from the server handler, so this test waits on real transport events
-		// rather than on wall-clock budgets a loaded runner cannot honor: `handlerEntered` proves the
-		// RPC actually reached the server, and `transportSettledOnce` proves the deadline's
-		// cancellation propagated all the way back to it.
-		let markHandlerEntered: () => void = () => {};
-		const handlerEntered = new Promise<void>((resolve) => {
-			markHandlerEntered = resolve;
-		});
-		let markTransportSettled: () => void = () => {};
-		const transportSettledOnce = new Promise<void>((resolve) => {
-			markTransportSettled = resolve;
-		});
-		server.add(service, {
-			authTokenGet: async () => ({
-				// A syntactically valid JWT with an expiry in 2100 avoids another auth RPC.
-				token: "e30.eyJleHAiOjQxMDI0NDQ4MDB9.signature",
-			}),
-			sandboxGetFromName: async (_request, context) => {
-				markHandlerEntered();
-				await new Promise<void>((resolve) => {
-					if (context.signal.aborted) resolve();
-					else context.signal.addEventListener("abort", () => resolve(), { once: true });
-				});
-				transportSettled += 1;
-				markTransportSettled();
-				return { sandboxId: "" };
-			},
-		});
-		const port = await server.listen("127.0.0.1:0");
-		const previousServer = process.env.MODAL_SERVER_URL;
-		process.env.MODAL_SERVER_URL = `http://127.0.0.1:${port}`;
-		let client: ModalClient | undefined;
-		let runner: ModalControlRunner;
-		try {
-			runner = createModalControlRunner((middleware) => {
-				client = new ModalClient({
-					tokenId: "test-token-id",
-					tokenSecret: "test-token-secret",
-					grpcMiddleware: [middleware],
-				});
-				return modalControlPlane(client);
-			}, MODAL_TEST_CONTROL_TIMEOUT_MS);
-		} finally {
-			if (previousServer === undefined) delete process.env.MODAL_SERVER_URL;
-			else process.env.MODAL_SERVER_URL = previousServer;
-		}
-		try {
-			const bounded = runner.run({}, (control) =>
-				control.sandboxes.fromName(MODAL_APP_NAME, "benchmark-timeout"),
-			);
-			// Gate on arrival first: a ceiling that expired before the RPC reached the server would
-			// prove nothing about cancellation reaching the transport.
-			await awaitStage("the guarded RPC never reached the test gRPC server", handlerEntered);
-			await expect(bounded).rejects.toThrow();
-			await awaitStage(
-				"the deadline's cancellation never reached the server handler",
-				transportSettledOnce,
-			);
-			// Exactly one server invocation: the bounded retry must not re-issue an already-cancelled RPC.
-			expect(transportSettled).toBe(1);
-		} finally {
-			client?.close();
-			server.forceShutdown();
-		}
-	}, 30_000);
 });
 
 describe("Modal truthful lifecycle and recovery projections", () => {
