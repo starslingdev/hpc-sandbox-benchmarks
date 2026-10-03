@@ -2,37 +2,24 @@
 // owns request validation, error normalization, recovery, and session assembly.
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
 import type {
 	CreateRequest,
-	DriverContext,
 	DriverOperationOptions,
 	ExecOptions,
 	ProviderCostEvidenceCapability,
-	SandboxObservation,
 	SandboxRef,
 } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
 import type {
 	ComputeSdkCreatedRequestVerification,
-	ComputeSdkCreateRecovery,
-	ComputeSdkCreateRequestCoverage,
 	ComputeSdkDriverSpec,
-	ComputeSdkLifecycle,
-	ComputeSdkLike,
-	ComputeSdkSandboxIdSchema,
 	ComputeSdkSandboxOf,
 } from "@sandbox-benchmarks/driver/computesdk";
-import { computeSdkSpec, defineComputeSdkDriver } from "@sandbox-benchmarks/driver/computesdk";
-import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import { nativeSdkCompute } from "@sandbox-benchmarks/driver/native";
 import { type } from "arktype";
-import { ModalClient, NotFoundError, Sandbox } from "modal";
+import { ModalClient } from "modal";
 import type { ClientMiddleware } from "nice-grpc";
-import { ClientError, Status } from "nice-grpc";
-import { MODAL_NATIVE_PROVENANCE, MODAL_PROVENANCE } from "./provenance.ts";
-
-export { MODAL_NATIVE_PROVENANCE, MODAL_PROVENANCE };
+import { MODAL_NATIVE_PROVENANCE } from "./provenance.ts";
 
 export type ModalProviderId = "modal-gvisor" | "modal-vm";
 export type ModalVariant = "gvisor" | "vm";
@@ -92,45 +79,10 @@ export const MODAL_APP_NAME = "sandbox-benchmarks";
  */
 export const MODAL_COST_SDK_PROVENANCE =
 	MODAL_NATIVE_PROVENANCE satisfies ProviderCostEvidenceCapability["sdk"];
-export const MODAL_SANDBOX_LIFETIME_MS = 3 * 60 * 60_000;
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
-/**
- * Waited teardown must fit under the harness destroy ceiling (60s) without racing it.
- * GHA run 35799078413 modal-gvisor-network-r1 aborted terminate({wait:true}) at the 5s
- * control budget while measurement had already completed.
- */
-export const MODAL_DESTROY_TIMEOUT_MS = 55_000;
-/** Enumerating an account is a multi-page loop, not one bounded RPC; it gets its own budget. */
-export const MODAL_INVENTORY_TIMEOUT_MS = 60_000;
-export const MODAL_RECOVERY_CONFIRMATION_MS = 2_000;
-export const MODAL_RECOVERY_MAX_ATTEMPTS = 4;
-export const MODAL_READINESS = Object.freeze({ startup: "create-returns-ready" as const });
-export const MODAL_EXECUTION = Object.freeze({
-	syncCapMs: 30 * 60_000,
-	durable: "shell-detach" as const,
-});
-export const MODAL_V1_SANDBOX_ID = type(/^sb-[A-Za-z0-9]{22}$/);
-export const MODAL_V2_SANDBOX_ID = type(/^sb-[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
 const MODAL_CONTROL_SANDBOX_ID = type(/^sb-(?:[A-Za-z0-9]{22}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/);
 
-export function modalSandboxId(variant: ModalVariant): ComputeSdkSandboxIdSchema {
-	return {
-		// A cross-generation id is still a real allocation identity. Retain it as a safe raw
-		// boundary so recovery can destroy the allocation before canonical validation rejects it.
-		fromVendor: MODAL_CONTROL_SANDBOX_ID,
-		canonical: variant === "gvisor" ? MODAL_V2_SANDBOX_ID : MODAL_V1_SANDBOX_ID,
-	};
-}
-
-export const MODAL_REQUEST_COVERAGE = {
-	spec: { vcpus: "mapped", memoryGb: "mapped", diskGb: "runtime-verified" },
-	artifact: "context",
-	deadlineMs: "harness",
-	gpu: { model: "unsupported", count: "unsupported" },
-	env: "mapped",
-} as const satisfies ComputeSdkCreateRequestCoverage;
-
-const MODAL_SANDBOX_NOT_FOUND_PATHS = new Set([
+const _MODAL_SANDBOX_NOT_FOUND_PATHS = new Set([
 	"/modal.client.ModalClient/SandboxGetFromName",
 	"/modal.client.ModalClient/SandboxGetFromNameV2",
 	"/modal.client.ModalClient/SandboxTerminate",
@@ -139,86 +91,9 @@ const MODAL_SANDBOX_NOT_FOUND_PATHS = new Set([
 	"/modal.client.ModalClient/SandboxWaitV2",
 ]);
 
-function isModalNotFound(caught: unknown): boolean {
-	try {
-		return (
-			caught instanceof ClientError &&
-			caught.code === Status.NOT_FOUND &&
-			MODAL_SANDBOX_NOT_FOUND_PATHS.has(caught.path)
-		);
-	} catch {
-		return false;
-	}
-}
-
 /** Exact message the control runner throws when its outer budget elapses. */
 export function modalControlTimeoutMessage(timeoutMs: number): string {
 	return `Modal control operation exceeded ${timeoutMs}ms`;
-}
-
-function isModalControlTimeout(link: unknown): boolean {
-	return link instanceof Error && /^Modal control operation exceeded \d+ms$/.test(link.message);
-}
-
-/**
- * Native gRPC capacity refusal, or our own control-budget abort after a create path that left no
- * owned allocation (or whose rollback already destroyed it). Vendor prose stays terminal.
- */
-export function isModalRetryableCreate(error: unknown): boolean {
-	return matchesAnyCause(
-		error,
-		(link) =>
-			(link instanceof ClientError && link.code === Status.RESOURCE_EXHAUSTED) ||
-			isModalControlTimeout(link),
-	);
-}
-
-/**
- * Modal's high-level fromName catches every nested NOT_FOUND (including AuthTokenGet) and rewrites
- * it to an unqualified NotFoundError. Ownership lookup uses the public control client directly so
- * the originating RPC path survives and only a sandbox lookup can prove absence.
- */
-export function modalControlPlane(client: ModalClient): ModalControlPlane {
-	return {
-		apps: {
-			list: async () =>
-				(await client.cpClient.appList({ environmentName: client.environmentName() })).apps,
-			fromName: async (name) => {
-				try {
-					return await client.apps.fromName(name, { createIfMissing: false });
-				} catch (caught) {
-					// Only the SDK's typed absence means "no such App"; an inventory must not create one.
-					if (caught instanceof NotFoundError) return undefined;
-					throw caught;
-				}
-			},
-		},
-		sandboxes: {
-			fromId: (id) => client.sandboxes.fromId(id),
-			list: (params) => client.sandboxes.list(params),
-			experimentalList: (params) => client.sandboxes.experimentalList(params),
-			fromName: async (appName, name) => {
-				const response = await client.cpClient.sandboxGetFromName({
-					appName,
-					sandboxName: name,
-					environmentName: client.environmentName(),
-				});
-				return new Sandbox(client, MODAL_V1_SANDBOX_ID.assert(response.sandboxId), {
-					isV2: false,
-				});
-			},
-			experimentalFromName: async (appName, name) => {
-				const response = await client.cpClient.sandboxGetFromNameV2({
-					appName,
-					sandboxName: name,
-					environmentName: client.environmentName(),
-				});
-				return new Sandbox(client, MODAL_V2_SANDBOX_ID.assert(response.sandboxId), {
-					isV2: true,
-				});
-			},
-		},
-	};
 }
 
 /**
@@ -343,10 +218,6 @@ export async function modalProcessResult(
 	return { stdout, stderr, exitCode };
 }
 
-function modalVariant(provider: ModalProviderId): ModalVariant {
-	return provider === "modal-gvisor" ? "gvisor" : "vm";
-}
-
 const MODAL_CREATE_OPTIONS = type({
 	templateId: "string >= 1",
 	name: "string >= 1",
@@ -400,185 +271,6 @@ export function nativeModalCompute(
 	);
 }
 
-function recoveryName(createOptions: object): string {
-	const name = "name" in createOptions ? createOptions.name : undefined;
-	if (typeof name !== "string" || !/^benchmark-[0-9a-f-]{36}$/.test(name)) {
-		throw new Error("Modal create options contain no stable benchmark name");
-	}
-	return name;
-}
-
-/** Translate the canonical request without letting artifact or resource policy drift by variant. */
-export function modalCreateOptions(
-	variant: ModalVariant,
-	resolvedArtifactRef: string,
-): ComputeSdkDriverSpec<ModalCompute>["createOptions"] {
-	return {
-		coverage: MODAL_REQUEST_COVERAGE,
-		map: (request, unsupported) => {
-			if (request.artifact.kind !== "image" || request.artifact.ref !== resolvedArtifactRef) {
-				unsupported("the request artifact does not match the resolved Modal image");
-			}
-			return {
-				templateId: resolvedArtifactRef,
-				name: `benchmark-${randomUUID()}`,
-				timeout: MODAL_SANDBOX_LIFETIME_MS,
-				// Modal's docs describe physical cores, but live behavior contradicts that reading:
-				// cpu=1 exposes nproc=1 and delivered 264 MB hashed/worker/8s versus 512 at cpu=2
-				// (2026-07-10). `cpu` is the guest-schedulable vCPU count, so pass it unhalved.
-				cpu: request.spec.vcpus,
-				cpuLimit: request.spec.vcpus,
-				// `memoryMiB` alone is a reservation: a live guest exposed 464 GiB of host RAM,
-				// causing PTS STREAM sizing never to converge. The limit makes /proc match spec.
-				memoryMiB: request.spec.memoryGb * 1024,
-				memoryLimitMiB: request.spec.memoryGb * 1024,
-				...(request.env === undefined ? {} : { envs: request.env }),
-				// The stable service plus vm_runtime is the VM config validated in #221.
-				...(variant === "vm" ? { experimentalOptions: { vm_runtime: true as const } } : {}),
-			} satisfies typeof MODAL_CREATE_OPTIONS.infer;
-		},
-	};
-}
-
-function modalSandboxByName(
-	control: ModalControlPlane,
-	backend: "v1" | "v2",
-	name: string,
-	appName: string,
-): Promise<ModalControlSandbox> {
-	return backend === "v2"
-		? control.sandboxes.experimentalFromName(appName, name)
-		: control.sandboxes.fromName(appName, name);
-}
-
-/** Waited, bounded teardown preserves transport failures and confirms terminal state. */
-export function modalLifecycle<TCompute extends ComputeSdkLike = ModalCompute>(
-	backend: "v1" | "v2",
-	runner: ModalControlRunner,
-	appName = MODAL_APP_NAME,
-): ComputeSdkLifecycle<TCompute> {
-	return {
-		destroy: async (_sandbox, ref, options, recoveryLocator) => {
-			let attached: ModalControlSandbox | undefined;
-			try {
-				await runner.run(
-					options,
-					async (control) => {
-						if (ref !== undefined) {
-							attached = await control.sandboxes.fromId(ref.id);
-						} else {
-							if (recoveryLocator === undefined) {
-								throw new Error("Modal failed-create cleanup has no stable recovery name");
-							}
-							attached = await modalSandboxByName(control, backend, recoveryLocator.value, appName);
-						}
-						await attached.terminate({ wait: true });
-					},
-					() => attached?.detach(),
-				);
-			} catch (caught) {
-				// A canonical-id teardown or a miss after successful name attachment proves
-				// convergence. A first miss by recovery name does not: the name index can lag a
-				// create that already returned a handle, so ownership must remain retryable.
-				if (isModalNotFound(caught) && (ref !== undefined || attached !== undefined)) return;
-				throw caught;
-			}
-		},
-	};
-}
-
-/** Stable create names let the bridge reconcile an accepted allocation whose response was lost. */
-export function modalCreateRecovery<TCompute extends ComputeSdkLike = ModalCompute>(
-	backend: "v1" | "v2",
-	runner: ModalControlRunner,
-	appName = MODAL_APP_NAME,
-): ComputeSdkCreateRecovery<TCompute> {
-	return {
-		absenceConfirmationMs: MODAL_RECOVERY_CONFIRMATION_MS,
-		maxAttempts: MODAL_RECOVERY_MAX_ATTEMPTS,
-		isRetryableCreate: isModalRetryableCreate,
-		locator: (createOptions) => ({ kind: "name", value: recoveryName(createOptions) }),
-		cleanup: (_compute, locator, options) => {
-			const name = locator.value;
-			let active: ModalControlSandbox | undefined;
-			return runner.run(
-				options,
-				async (control) => {
-					const lookups =
-						backend === "v2"
-							? [
-									() => control.sandboxes.experimentalFromName(appName, name),
-									() => control.sandboxes.fromName(appName, name),
-								]
-							: [
-									() => control.sandboxes.fromName(appName, name),
-									() => control.sandboxes.experimentalFromName(appName, name),
-								];
-					let found = false;
-					let destroyed = false;
-					for (const lookup of lookups) {
-						try {
-							active = await lookup();
-							found = true;
-						} catch (caught) {
-							if (isModalNotFound(caught)) continue;
-							throw caught;
-						}
-						try {
-							// Once found, the transaction continues through waited teardown. An abort
-							// cancels the RPC and fails cleanup; it never reports false convergence.
-							await active.terminate({ wait: true });
-							destroyed = true;
-						} catch (caught) {
-							if (!isModalNotFound(caught)) throw caught;
-						} finally {
-							active.detach();
-							active = undefined;
-						}
-					}
-					if (destroyed) return { status: "destroyed" };
-					return found
-						? { status: "absent", contradictedPriorAbsence: true }
-						: { status: "absent" };
-				},
-				() => active?.detach(),
-			);
-		},
-	};
-}
-
-export function modalProbes<TCompute extends ComputeSdkLike = ModalCompute>(
-	runner: ModalControlRunner,
-): NonNullable<ComputeSdkDriverSpec<TCompute>["probes"]> {
-	return {
-		observe: async (_compute, ref: SandboxRef): Promise<SandboxObservation> => {
-			let sandbox: ModalControlSandbox | undefined;
-			try {
-				const exitCode = await runner.run(
-					{},
-					async (control) => {
-						sandbox = await control.sandboxes.fromId(ref.id);
-						try {
-							return await sandbox.poll();
-						} finally {
-							sandbox.detach();
-						}
-					},
-					() => sandbox?.detach(),
-				);
-				if (exitCode === null) return { state: "running" };
-				if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)) {
-					throw new Error("Modal poll returned a malformed exit code");
-				}
-				return { state: "terminal" };
-			} catch (caught) {
-				if (isModalNotFound(caught)) return { state: "absent" };
-				throw caught;
-			}
-		},
-	};
-}
-
 /** Enumerate both generations across every App; the benchmark App owns both variants. */
 export function modalInventory(
 	variant: ModalVariant,
@@ -616,28 +308,6 @@ export function modalInventory(
 				}
 				return { owned: [...owned], foreignCount };
 			}),
-	};
-}
-
-/** Canonical-id teardown for account recovery; only a sandbox-RPC not-found is convergence. */
-export function modalDestroyById(
-	runner: ModalControlRunner,
-): NonNullable<ComputeSdkDriverSpec<ModalCompute>["destroyById"]> {
-	return async (_compute, ref, options) => {
-		let attached: ModalControlSandbox | undefined;
-		try {
-			await runner.run(
-				options,
-				async (control) => {
-					attached = await control.sandboxes.fromId(ref.id);
-					await attached.terminate({ wait: true });
-				},
-				() => attached?.detach(),
-			);
-		} catch (caught) {
-			if (isModalNotFound(caught)) return;
-			throw caught;
-		}
 	};
 }
 
@@ -775,50 +445,6 @@ export async function verifyModalDiskCapacity(
 			};
 }
 
-function modalSpec<P extends ModalProviderId>(
-	provider: P,
-	{ env, resolvedArtifact }: DriverContext<P>,
-) {
-	const variant = modalVariant(provider);
-	const control = (middleware: ClientMiddleware) =>
-		modalControlPlane(
-			new ModalClient({
-				tokenId: env.MODAL_TOKEN_ID,
-				tokenSecret: env.MODAL_TOKEN_SECRET,
-				grpcMiddleware: [middleware],
-			}),
-		);
-	const runner = createModalControlRunner(control);
-	const destroyRunner = createModalControlRunner(control, MODAL_DESTROY_TIMEOUT_MS);
-	const inventoryRunner = createModalControlRunner(control, MODAL_INVENTORY_TIMEOUT_MS);
-	const backend = variant === "gvisor" ? "v2" : "v1";
-	return computeSdkSpec(
-		nativeModalCompute(variant, {
-			tokenId: env.MODAL_TOKEN_ID,
-			tokenSecret: env.MODAL_TOKEN_SECRET,
-		}),
-		{
-			sandboxId: modalSandboxId(variant),
-			createOptions: modalCreateOptions(variant, resolvedArtifact.ref),
-			commands: {
-				exec: (sandbox, command, options, ref) =>
-					execModalCommand(runner, sandbox, command, ref, options),
-				launch: (sandbox, command, options, ref) =>
-					launchModalCommand(runner, sandbox, command, ref, options),
-			},
-			lifecycle: modalLifecycle(backend, destroyRunner),
-			createRecovery: modalCreateRecovery(backend, destroyRunner),
-			prepareAndVerifyCreatedRequest: (sandbox, _native, request, options, ref) =>
-				verifyModalDiskCapacity(runner, sandbox, request, options, ref),
-			// Both variants use the kit's direct-exec filesystem fallback.
-			hasWorkingFilesystem: false,
-			probes: modalProbes(runner),
-			inventory: modalInventory(variant, inventoryRunner),
-			destroyById: modalDestroyById(destroyRunner),
-		},
-	);
-}
-
 /**
  * Shared object: both Modal isolation variants have exactly one public cost capability.
  * The hook does not invoke the private SandboxGetResourceUsage RPC.
@@ -854,14 +480,3 @@ export const modalCostEvidence: ProviderCostEvidenceCapability<ModalProviderId> 
 		};
 	},
 };
-
-/** One provider literal selects both identity and backend; invalid cross-pairs are unrepresentable. */
-export function defineModalDriver<P extends ModalProviderId>(provider: P) {
-	return defineComputeSdkDriver(provider, {
-		provenance: MODAL_PROVENANCE,
-		readiness: MODAL_READINESS,
-		execution: MODAL_EXECUTION,
-		costEvidence: modalCostEvidence,
-		spec: (context) => modalSpec(provider, context),
-	});
-}
