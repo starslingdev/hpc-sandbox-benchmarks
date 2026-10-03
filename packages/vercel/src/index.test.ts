@@ -1,36 +1,27 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import type { CreateRequest } from "@sandbox-benchmarks/driver";
-import { sandboxRef } from "@sandbox-benchmarks/driver";
-import { APIError, Sandbox } from "@vercel/sandbox";
-import vercelDriver, {
-	isVercelDefinitiveCreateRejection,
-	isVercelRetryableCreate,
-	VERCEL_EXECUTION,
-	VERCEL_LIVE_STATUSES,
-	VERCEL_NAME_PREFIX,
-	VERCEL_OWNER_TAG,
-	VERCEL_OWNER_VALUE,
-	VERCEL_PROVENANCE,
-	VERCEL_READINESS,
-	VERCEL_REQUEST_COVERAGE,
-	VERCEL_SANDBOX_ID,
-	VERCEL_SANDBOX_LIFETIME_MS,
-	vercelCredentials,
-	vercelSpec,
-} from "./index.ts";
+// Vercel tested at the vendor seam: the adapter's translation over a stub SDK, the port contract,
+// and sessions through the package's own module. Kit behaviour (convergence, deadlines, the
+// inventory partition, recovery mechanics) is tested once in the driver package.
+
+import { describe, expect, test } from "bun:test";
+import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
+import { launchDetached, readTextFile } from "@sandbox-benchmarks/driver";
+import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import type { Sandbox } from "@vercel/sandbox";
+import { APIError } from "@vercel/sandbox";
+import vercel, { VERCEL_SANDBOX_ID } from "./index.ts";
+import type { VercelSdk } from "./vendor.ts";
+import { VERCEL_NAME_PREFIX, vercelVendor } from "./vendor.ts";
 
 const CLAIMS = { owner_id: "team_test123", project_id: "prj_test456" };
 const OIDC_TOKEN = `eyJhbGciOiJSUzI1NiJ9.${Buffer.from(JSON.stringify(CLAIMS)).toString("base64url")}.sig`;
 const IMAGE =
 	"vcr.vercel.com/starsling/hpc-sandbox-benchmarks/sandbox-benchmarks-toolchain-vercel:v1";
 const OWNED_NAME = "sandbox-benchmarks-11111111-1111-4111-8111-111111111111";
-
-const context = {
+const context: DriverContext<"vercel"> = {
 	env: { VERCEL_OIDC_TOKEN: OIDC_TOKEN },
 	artifact: { kind: "mirror", repository: "sandbox-benchmarks-toolchain-vercel" },
 	resolvedArtifact: { kind: "mirror", ref: IMAGE },
-} as const;
-
+};
 const request: CreateRequest = {
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
 	artifact: context.resolvedArtifact,
@@ -72,260 +63,171 @@ function fakeSandbox(options: FakeSandboxOptions = {}): Sandbox {
 		}),
 	} as unknown as Sandbox;
 }
+const apiError = (status: number) =>
+	new APIError(new Response(null, { status }), { message: `http ${status}` });
+const owned = (uuid: string) => `${VERCEL_NAME_PREFIX}${uuid}`;
 
-function notFound(): APIError<unknown> {
-	return new APIError(new Response(null, { status: 404 }), { message: "not found" });
+interface Row {
+	status: string;
+	readonly files: Map<string, string>;
 }
 
-function apiError(status: number): APIError<unknown> {
-	return new APIError(new Response(null, { status }), { message: `http ${status}` });
-}
-
-const restores: Array<() => void> = [];
-afterEach(() => {
-	for (const restore of restores.reverse()) restore();
-	restores.length = 0;
-});
-function restore<T extends { mockRestore(): void }>(mock: T): T {
-	restores.push(() => mock.mockRestore());
-	return mock;
-}
-
-describe("Vercel module policy", () => {
-	test("declares integration, readiness, and native durable execution", () => {
-		expect(vercelDriver.id).toBe("vercel");
-		expect(vercelDriver.provenance).toEqual(VERCEL_PROVENANCE);
-		expect(vercelDriver.provenance.packageName).toBe("@vercel/sandbox");
-		expect(vercelDriver.readiness).toEqual(VERCEL_READINESS);
-		expect(vercelDriver.execution).toEqual(VERCEL_EXECUTION);
-		expect(vercelDriver.createBudget).toBeUndefined();
-	});
-
-	test("projects the OIDC token into explicit credentials without leaking it on failure", () => {
-		expect(vercelCredentials(OIDC_TOKEN)).toEqual(credentials);
-		for (const bad of ["not-a-jwt", "a.!!!.c", `a.${Buffer.from("[]").toString("base64url")}.c`]) {
-			const error = (() => {
-				try {
-					vercelCredentials(bad);
-					return undefined;
-				} catch (caught) {
-					return caught as Error;
-				}
-			})();
-			expect(error).toBeInstanceOf(Error);
-			expect(error?.message).not.toContain(bad);
+/**
+ * A whole Vercel project behind a stub of the SDK's `Sandbox` statics: name-keyed records, a
+ * `delete` that removes the record (404 afterwards), cursor-paged listings, and a current session
+ * whose commands share one file store. Every call records its parameters.
+ */
+function vercelProject(
+	options: {
+		readonly pageSize?: number;
+		readonly diskCapacityGb?: number;
+		/** The first create allocates and then loses its response. */
+		readonly ambiguousFirstCreate?: boolean;
+		/** `get` answers with a sandbox of another name. */
+		readonly getReturnsOther?: boolean;
+	} = {},
+) {
+	const rows = new Map<string, Row>();
+	const calls: Array<{ name: string; params: Record<string, unknown> }> = [];
+	const commands: Array<Record<string, unknown>> = [];
+	let ambiguous = options.ambiguousFirstCreate ?? false;
+	const allocate = (name: string, status = "running") => {
+		rows.set(name, { status, files: new Map() });
+		return name;
+	};
+	const run = (row: Row, script: string) => {
+		const exit = /^sh -c 'exit (\d+)'$/.exec(script);
+		if (exit) return { exitCode: Number(exit[1]), stdout: "" };
+		if (script.startsWith("df -Pk"))
+			return { exitCode: 0, stdout: `${(options.diskCapacityGb ?? 80) * 1024 * 1024}\n` };
+		const echo = /^echo (\S+) > (\S+)$/.exec(script);
+		if (echo) row.files.set(echo[2] ?? "", `${echo[1]}\n`);
+		const cat = /^cat '(.*)'$/.exec(script);
+		if (cat) {
+			const body = row.files.get(cat[1] ?? "");
+			return body === undefined ? { exitCode: 1, stdout: "" } : { exitCode: 0, stdout: body };
 		}
-	});
-
-	test("maps the request onto a name-keyed, tagged, non-persistent create", () => {
-		const spec = vercelSpec(context);
-		expect(spec.createOptions.coverage).toEqual(VERCEL_REQUEST_COVERAGE);
-		const mapped = spec.createOptions.map(request, (detail) => {
-			throw new Error(detail);
-		});
-		expect(mapped).toMatchObject({
-			image: IMAGE,
-			resources: { vcpus: 4 },
-			timeout: VERCEL_SANDBOX_LIFETIME_MS,
-		});
-		expect(VERCEL_SANDBOX_ID.allows(mapped.name as string)).toBe(true);
-		expect((mapped.name as string).startsWith(VERCEL_NAME_PREFIX)).toBe(true);
-		expect(spec.createRecovery?.locator(mapped)).toEqual({
-			kind: "name",
-			value: mapped.name as string,
-		});
-		expect(spec.hasWorkingFilesystem).toBe(false);
-		expect(spec.probes).toBeDefined();
-		expect(spec.inventory).toBeDefined();
-		expect(spec.destroyById).toBeDefined();
-		const unsupported = (detail: string): never => {
-			throw new Error(detail);
-		};
-		expect(() =>
-			spec.createOptions.map({ ...request, spec: { ...request.spec, memoryGb: 16 } }, unsupported),
-		).toThrow(/2 GiB per vCPU/);
-		expect(() =>
-			spec.createOptions.map(
-				{ ...request, artifact: { kind: "mirror", ref: "vcr.vercel.com/other/image:v1" } },
-				unsupported,
-			),
-		).toThrow(/does not match/);
-	});
-
-	test("classifies create refusals only from the API's typed status", () => {
-		expect(isVercelDefinitiveCreateRejection(apiError(401))).toBe(true);
-		expect(isVercelDefinitiveCreateRejection(apiError(429))).toBe(true);
-		expect(isVercelDefinitiveCreateRejection(apiError(500))).toBe(false);
-		expect(isVercelDefinitiveCreateRejection(new Error("HTTP 401 rate limit"))).toBe(false);
-		expect(isVercelRetryableCreate(apiError(429))).toBe(true);
-		expect(isVercelRetryableCreate(apiError(503))).toBe(false);
-		expect(isVercelRetryableCreate(new Error("429 too many requests"))).toBe(false);
-	});
-});
-
-describe("Vercel driver lifecycle", () => {
-	test("creates with explicit credentials and runs commands through the current session only", async () => {
-		const commands: Record<string, unknown>[] = [];
-		let createParams: Record<string, unknown> | undefined;
-		restore(
-			spyOn(Sandbox, "create").mockImplementation((async (params: Record<string, unknown>) => {
-				createParams = params;
-				return fakeSandbox({ onCommand: (params) => commands.push(params), exitCode: 7 });
-			}) as unknown as typeof Sandbox.create),
-		);
-		const driver = vercelDriver.driver(context);
-		const session = await driver.create(request);
-		expect(createParams).toMatchObject({
-			...credentials,
-			image: IMAGE,
-			resources: { vcpus: 4 },
-			persistent: false,
-			timeout: VERCEL_SANDBOX_LIFETIME_MS,
-			tags: { [VERCEL_OWNER_TAG]: VERCEL_OWNER_VALUE },
-		});
-		expect(VERCEL_SANDBOX_ID.allows(createParams?.name as string)).toBe(true);
-		expect(session.sandboxRef).toEqual(sandboxRef("vercel", OWNED_NAME));
-		// The disk probe ran through the session before the create was accepted.
-		expect(commands[0]?.args).toEqual(["-lc", "df -Pk / | awk 'NR==2 {print $2}'"]);
-		const result = await session.exec("printf test");
-		expect(result.exit).toEqual({ kind: "exited", code: 7 });
-		expect(result.stdout).toBe("out");
-		expect(result.stderr).toBe("err");
-		expect(commands.at(-1)).toMatchObject({ cmd: "/bin/sh", args: ["-lc", "printf test"] });
-		expect(commands.at(-1)).not.toHaveProperty("detached");
-		await session.launch?.("sleep 10");
-		expect(commands.at(-1)).toMatchObject({ args: ["-lc", "sleep 10"], detached: true });
-	});
-
-	test("tears down an allocation whose disk is short of the request", async () => {
-		let deleted = 0;
-		const native = fakeSandbox({ diskCapacityGb: 24, onDelete: () => deleted++ });
-		restore(spyOn(Sandbox, "create").mockResolvedValue(native as never));
-		restore(spyOn(Sandbox, "get").mockResolvedValue(native as never));
-		const error = await vercelDriver
-			.driver(context)
-			.create(request)
-			.catch((caught: unknown) => caught);
-		expect(error).toMatchObject({ code: "invalid-create-request", provider: "vercel" });
-		expect(deleted).toBe(1);
-	});
-
-	test("destroys by name without resuming, converging only on the typed 404", async () => {
-		let deleted = 0;
-		const getParams: Record<string, unknown>[] = [];
-		const native = fakeSandbox({ onDelete: () => deleted++ });
-		restore(spyOn(Sandbox, "create").mockResolvedValue(native as never));
-		const get = restore(
-			spyOn(Sandbox, "get").mockImplementation((async (params: Record<string, unknown>) => {
-				getParams.push(params);
-				return native;
-			}) as unknown as typeof Sandbox.get),
-		);
-		const driver = vercelDriver.driver(context);
-		const session = await driver.create(request);
-		await session.destroy();
-		expect(deleted).toBe(1);
-		expect(getParams.at(-1)).toMatchObject({ ...credentials, name: OWNED_NAME, resume: false });
-		get.mockRejectedValueOnce(notFound());
-		await driver.destroyById?.(sandboxRef("vercel", OWNED_NAME));
-		get.mockRejectedValueOnce(new Error("transport lost"));
-		await expect(driver.destroyById?.(sandboxRef("vercel", OWNED_NAME))).rejects.toMatchObject({
-			code: "destroy-failed",
-			provider: "vercel",
-		});
-		await expect(driver.destroyById?.(sandboxRef("vercel", "not-our-name"))).rejects.toMatchObject({
-			code: "invalid-sandbox-ref",
-			provider: "vercel",
-		});
-	});
-
-	test("observes running, terminal, and absent states from the record status", async () => {
-		const get = restore(spyOn(Sandbox, "get"));
-		const driver = vercelDriver.driver(context);
-		const ref = sandboxRef("vercel", OWNED_NAME);
-		get.mockResolvedValueOnce(fakeSandbox({ status: "running" }) as never);
-		expect(await driver.probes?.observe(ref)).toEqual({ state: "running" });
-		get.mockResolvedValueOnce(fakeSandbox({ status: "pending" }) as never);
-		expect(await driver.probes?.observe(ref)).toEqual({ state: "running" });
-		get.mockResolvedValueOnce(fakeSandbox({ status: "stopped" }) as never);
-		expect(await driver.probes?.observe(ref)).toEqual({ state: "terminal" });
-		get.mockRejectedValueOnce(notFound());
-		expect(await driver.probes?.observe(ref)).toEqual({ state: "absent" });
-		get.mockRejectedValueOnce(new Error("transport lost"));
-		await expect(driver.probes?.observe(ref)).rejects.toMatchObject({ code: "probe-failed" });
-	});
-
-	test("reconciles an ambiguously accepted create by its name", async () => {
-		let deleted = 0;
-		restore(spyOn(Sandbox, "create").mockRejectedValue(new Error("response lost")));
-		const get = restore(
-			spyOn(Sandbox, "get").mockResolvedValue(fakeSandbox({ onDelete: () => deleted++ }) as never),
-		);
-		const spec = vercelSpec(context);
-		const locator = spec.createRecovery?.locator(
-			spec.createOptions.map(request, (detail) => {
-				throw new Error(detail);
+		return { exitCode: 0, stdout: "out" };
+	};
+	const handle = (name: string) =>
+		({
+			name,
+			get status() {
+				return rows.get(name)?.status ?? "failed";
+			},
+			delete: async (params: Record<string, unknown>) => {
+				calls.push({ name: "delete", params: { name, ...params } });
+				if (!rows.delete(name)) throw apiError(404);
+			},
+			currentSession: () => ({
+				runCommand: async (params: { args: string[]; detached?: boolean }) => {
+					commands.push(params);
+					const row = rows.get(name);
+					if (!row) throw apiError(404);
+					const result = run(row, params.args[1] ?? "");
+					if (params.detached) return { cmdId: "cmd_1" };
+					return {
+						exitCode: result.exitCode,
+						stdout: async () => result.stdout,
+						stderr: async () => "err",
+					};
+				},
 			}),
-		);
-		if (locator === undefined) throw new Error("no recovery locator");
-		// The fake returns a sandbox whose name differs from the locator: recovery must refuse it.
-		await expect(spec.createRecovery?.cleanup(spec.compute, locator, {})).rejects.toThrow(
-			/other than the one requested/,
-		);
-		expect(deleted).toBe(0);
-		get.mockResolvedValueOnce(
-			fakeSandbox({ name: locator.value, onDelete: () => deleted++ }) as never,
-		);
-		expect(await spec.createRecovery?.cleanup(spec.compute, locator, {})).toEqual({
-			status: "destroyed",
-		});
-		expect(deleted).toBe(1);
-		get.mockRejectedValueOnce(notFound());
-		expect(await spec.createRecovery?.cleanup(spec.compute, locator, {})).toEqual({
-			status: "absent",
-		});
-	});
-});
+		}) as unknown as Sandbox;
+	const sdk = {
+		create: async (params: Record<string, unknown>) => {
+			calls.push({ name: "create", params });
+			const name = allocate(String(params.name));
+			if (ambiguous) {
+				ambiguous = false;
+				throw new TypeError("connection reset after the vendor accepted the create");
+			}
+			return handle(name);
+		},
+		get: async (params: Record<string, unknown>) => {
+			calls.push({ name: "get", params });
+			const name = String(params.name);
+			if (!rows.has(name)) throw apiError(404);
+			return handle(options.getReturnsOther ? owned("00000000-0000-4000-8000-000000000000") : name);
+		},
+		list: async (params: Record<string, unknown>) => {
+			calls.push({ name: "list", params });
+			const all = [...rows.entries()].map(([name, row]) => ({ name, status: row.status }));
+			const from = Number(params.cursor ?? 0);
+			const size = options.pageSize ?? 100;
+			return {
+				sandboxes: all.slice(from, from + size),
+				pagination: {
+					count: all.length,
+					next: from + size < all.length ? String(from + size) : null,
+				},
+			};
+		},
+	} as unknown as VercelSdk;
+	return {
+		sdk,
+		rows,
+		calls,
+		commands,
+		allocate,
+		count: (name: string) => calls.filter((call) => call.name === name).length,
+	};
+}
 
-describe("Vercel account inventory", () => {
-	test("drains the whole project once: owned by exact name shape, foreign only while live", async () => {
-		const rows = [
-			{ name: OWNED_NAME, status: "running" },
-			{ name: "sandbox-benchmarks-22222222-2222-4222-8222-222222222222", status: "failed" },
-			{ name: "sandbox-benchmarks-dev", status: "running" },
-			{ name: "someone-elses-box", status: "stopped" },
-			{ name: "dead-box", status: "aborted" },
-		];
-		let listParams: Record<string, unknown> | undefined;
-		restore(
-			spyOn(Sandbox, "list").mockImplementation((async (params: Record<string, unknown>) => {
-				listParams = params;
-				return { toArray: async () => rows };
-			}) as unknown as typeof Sandbox.list),
-		);
-		expect(await vercelDriver.driver(context).inventory?.list()).toEqual({
-			owned: [
-				sandboxRef("vercel", OWNED_NAME),
-				sandboxRef("vercel", "sandbox-benchmarks-22222222-2222-4222-8222-222222222222"),
-			],
-			foreignCount: 2,
+/** The package's own module, lowered over a stub SDK instead of the real one. */
+function driverOver(project: ReturnType<typeof vercelProject>) {
+	return vendorDriver(vercel, context, {
+		vendor: vercelVendor(project.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
+}
+
+vendorContract("vercel adapter", vercel, () =>
+	vercelVendor(vercelProject({ pageSize: 1 }).sdk, context),
+);
+
+describe("Vercel end to end through its module", () => {
+	test("a session proves disk, runs and detaches through the current session, inventories, and is deleted", async () => {
+		const project = vercelProject({ pageSize: 2 });
+		project.allocate("someone-elses-box", "stopped");
+		project.allocate("dead-box", "aborted");
+		const driver = driverOver(project);
+		const session = await driver.create(request);
+		expect(VERCEL_SANDBOX_ID.allows(session.sandboxRef.id)).toBe(true);
+		expect(project.commands[0]?.args).toEqual(["-lc", "df -Pk / | awk 'NR==2 {print $2}'"]);
+
+		const seven = await session.exec("sh -c 'exit 7'");
+		expect(seven).toMatchObject({ exit: { kind: "exited", code: 7 }, stderr: "err" });
+		expect(project.commands.at(-1)).toMatchObject({
+			cmd: "/bin/sh",
+			args: ["-lc", "sh -c 'exit 7'"],
 		});
-		expect(listParams).toMatchObject(credentials);
-		expect(listParams).not.toHaveProperty("namePrefix");
-		expect([...VERCEL_LIVE_STATUSES]).toEqual([
-			"pending",
-			"running",
-			"stopping",
-			"snapshotting",
-			"stopped",
-		]);
+		expect(project.commands.at(-1)).not.toHaveProperty("detached");
+		expect(session.files).toBeUndefined();
+		await launchDetached(session, "echo done > /tmp/done");
+		expect(project.commands.at(-1)).toMatchObject({ detached: true });
+		expect(await readTextFile(session, "/tmp/done")).toBe("done\n");
+
+		const failed = project.allocate(owned("33333333-3333-4333-8333-333333333333"), "failed");
+		expect(await driver.inventory?.list()).toEqual({
+			owned: [session.sandboxRef, { provider: "vercel", id: failed }],
+			foreignCount: 1,
+		});
+		await driver.destroyById?.({ provider: "vercel", id: failed });
+		await session.destroy();
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
+		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
+		for (const call of project.calls.filter((entry) => entry.name === "list"))
+			expect(call.params).not.toHaveProperty("namePrefix");
 	});
 
-	test("surfaces a failed listing instead of reporting an empty account", async () => {
-		restore(spyOn(Sandbox, "list").mockRejectedValue(apiError(500)));
-		await expect(vercelDriver.driver(context).inventory?.list()).rejects.toMatchObject({
-			code: "probe-failed",
+	test("an allocation whose disk is short of the request is refused and deleted", async () => {
+		const project = vercelProject({ diskCapacityGb: 24 });
+		await expect(driverOver(project).create(request)).rejects.toMatchObject({
+			code: "invalid-create-request",
 			provider: "vercel",
 		});
+		expect(project.count("delete")).toBe(1);
+		expect(project.rows.size).toBe(0);
 	});
 });
