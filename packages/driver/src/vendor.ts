@@ -1,17 +1,27 @@
 // Vendor authoring contracts and policy declarations (ADR-0024).
 
 import type {
+	AcceleratorStrategy,
+	CreateBudget,
 	CreateRequest,
+	DriverContext,
 	ExecOptions,
 	ExecutionPolicy,
+	ProviderCostEvidenceCapability,
+	ProviderId,
 	ResolvedArtifact,
 	SnapshotRetention,
 } from "@sandbox-benchmarks/driver";
+import { DriverError } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
+import type { SdkProvenance } from "@sandbox-benchmarks/schema";
 import type {
 	ComputeSdkCreateRequestCoverage,
 	ComputeSdkSandboxIdSchema,
 } from "./lib/computesdk.ts";
+import { defineComputeSdkDriver } from "./lib/computesdk.ts";
+import { vendorSpec } from "./lib/vendor-driver.ts";
+import { executionOf } from "./lib/vendor-helpers.ts";
 
 /**
  * A provider-neutral reading of one control-plane record. `failed` still owns resources and is
@@ -419,3 +429,75 @@ export function httpClassifiers(status: (error: unknown) => number | undefined) 
 export { abortableDelay } from "./lib/poll.ts";
 export { DISK_PROBE, diskProbe, drainPages } from "./lib/vendor-helpers.ts";
 export { bounded } from "./lib/vendor-port.ts";
+
+/** Everything a provider package declares: its traits, its passthroughs, and its vendor binding. */
+export interface VendorDriverSpec<P extends ProviderId, Raw, Native> extends VendorTraits {
+	readonly provenance: SdkProvenance;
+	/** A ComputeSDK-lowered module has no cancellable hard ceiling: only the harness owns create. */
+	readonly createBudget?: Extract<CreateBudget, { readonly owner: "harness" }>;
+	readonly accelerator?: AcceleratorStrategy;
+	readonly costEvidence?: ProviderCostEvidenceCapability<P>;
+	/** The composition point: the only place the package binds its real SDK, client, or transport. */
+	readonly vendor: (context: DriverContext<P>) => Vendor<Raw, Native>;
+}
+
+/** Another vendor or timing to lower a module against (a stubbed transport in tests). */
+export interface VendorOverrides<Raw, Native> {
+	readonly vendor?: Vendor<Raw, Native>;
+	readonly timing?: Partial<VendorTiming>;
+}
+
+/**
+ * Define a provider's DriverModule from its vendor. `specFor` lowers the same module against
+ * another vendor or timing (a stubbed transport in tests), so packages never restate their binding.
+ */
+export function defineVendorDriver<P extends ProviderId, Raw, Native>(
+	provider: P,
+	module: VendorDriverSpec<NoInfer<P>, Raw, Native>,
+) {
+	const { provenance, vendor, createBudget, accelerator, costEvidence, ...traits } = module;
+	// The bridge has no cancellable hard ceiling, so only the harness may own the create budget.
+	if (createBudget !== undefined && createBudget.owner !== "harness")
+		throw new DriverError(
+			"vendor-contract-violation",
+			`${provider} create budget must be owned by the harness`,
+			{ provider },
+		);
+	const specFor = (context: DriverContext<P>, overrides: VendorOverrides<Raw, Native> = {}) =>
+		vendorSpec(
+			provider,
+			context,
+			{ ...traits, timing: { ...traits.timing, ...overrides.timing } },
+			overrides.vendor ?? vendor(context),
+		);
+	const driver = defineComputeSdkDriver(provider, {
+		provenance,
+		// Readiness is proven inside create (the kit polls the control plane before returning).
+		readiness: { startup: "create-returns-ready" },
+		execution: executionOf(provider, traits, undefined),
+		...(createBudget && { createBudget }),
+		...(accelerator && { accelerator }),
+		...(costEvidence && { costEvidence }),
+		spec: (context) => specFor(context),
+	});
+	// DriverModules are frozen; the test seams (the lowering and the declared traits the port
+	// contract reads) travel beside the module, not inside it, and are as immutable as the module.
+	return Object.freeze({ ...driver, specFor, traits: frozenData(traits) as VendorTraits });
+}
+
+/**
+ * Deep-freeze the plain data in `value` (objects and arrays), leaving class instances and
+ * functions (a sandbox-id schema, a marker spelling's methods) as they are.
+ */
+function frozenData<T>(value: T): T {
+	if (typeof value !== "object" || value === null) return value;
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) return value;
+	for (const field of Object.values(value)) frozenData(field);
+	return Object.freeze(value);
+}
+
+/** A module `defineVendorDriver` returned. */
+export type VendorDriverModule<P extends ProviderId, Raw, Native> = ReturnType<
+	typeof defineVendorDriver<P, Raw, Native>
+>;
