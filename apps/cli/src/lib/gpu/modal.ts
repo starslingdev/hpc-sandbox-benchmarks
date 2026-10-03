@@ -6,7 +6,8 @@ import type { SandboxWork } from "@sandbox-benchmarks/harness";
 import { withSandboxWork } from "@sandbox-benchmarks/harness";
 import type { ModalAllocationConfiguration } from "@sandbox-benchmarks/modal/allocation";
 import { createModalAllocation } from "@sandbox-benchmarks/modal/allocation";
-import type { Sandbox, SandboxCreateParams } from "modal";
+import type { ModalGpuHandle } from "@sandbox-benchmarks/modal/gpu";
+import type { SandboxCreateParams } from "modal";
 import type { GpuArgs } from "./args.ts";
 import {
 	GPU_BENCHMARK,
@@ -17,7 +18,7 @@ import {
 	readSource,
 } from "./config.ts";
 
-export type GpuSandbox = SandboxWork<Sandbox>;
+export type GpuSandbox = SandboxWork<ModalGpuHandle>;
 
 /** Native allocation and shared harness lifetime, with optional GPU-specific teardown evidence. */
 export async function withGpuSandbox<T>(

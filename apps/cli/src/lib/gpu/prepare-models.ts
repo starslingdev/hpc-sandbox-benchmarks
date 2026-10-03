@@ -77,7 +77,7 @@ export async function prepareModelAssets(options: {
 			},
 		},
 		async (sandbox) => {
-			await sandbox.session.native.setTags({
+			await sandbox.session.native.native.setTags({
 				"gpu-benchmark-role": "model-cache",
 				"model-volume": options.volumeName,
 			});

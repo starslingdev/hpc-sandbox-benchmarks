@@ -10,7 +10,8 @@
     "./gvisor": "./src/gvisor.ts",
     "./vm": "./src/vm.ts",
     "./allocation": "./src/allocation.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./gpu": "./src/gpu.ts"
   },
   "scripts": {
     "test": "bun test",
