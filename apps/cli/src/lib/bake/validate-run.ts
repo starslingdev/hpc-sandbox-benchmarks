@@ -11,7 +11,7 @@ import type { SmokeOutcome } from "../smoke-run.ts";
 import { bootAndSmoke, logChecks, smokeFailureReason, smokeOk } from "../smoke-run.ts";
 import type { Log } from "./types.ts";
 import type { CandidateRefs } from "./validate.ts";
-import { candidateCreateOptions, candidateResolvedArtifact } from "./validate.ts";
+import { candidateResolvedArtifact } from "./validate.ts";
 
 /**
  * The candidate ref as a driver-lane artifact override. A provider that boots stock has no ref to
@@ -29,27 +29,7 @@ export function bootAndSmokeCandidate(
 	target: ProviderTarget,
 	refs: CandidateRefs,
 ): Promise<SmokeOutcome> {
-	switch (target.kind) {
-		case "driver":
-			return bootAndSmoke(target, { artifact: candidateArtifactResolution(target.id, refs) });
-		case "legacy":
-			return bootAndSmoke({
-				kind: "legacy",
-				id: target.id,
-				config: {
-					...target.config,
-					artifact: candidateResolvedArtifact(target.id, refs),
-					createOptions: {
-						...target.config.createOptions,
-						...candidateCreateOptions(target.id, refs),
-					},
-				},
-			});
-		default: {
-			const _never: never = target;
-			return _never;
-		}
-	}
+	return bootAndSmoke(target, { artifact: candidateArtifactResolution(target.id, refs) });
 }
 
 /** Validate every provider's candidate artifact (boot + smoke), sharing the skip-vs-fail contract. A

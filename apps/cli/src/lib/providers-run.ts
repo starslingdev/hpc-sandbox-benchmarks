@@ -1,35 +1,21 @@
 // The one place the "for each provider, skip if its creds are missing, otherwise time the work and
 // collect a structured result" loop lives. bench-smoke, bake, and promote all drive providers the
 // same way; before this they each re-implemented the skeleton and had already drifted (performance.now
-// vs timeOperation, "ok" vs "ran"). Keeping it here makes the skip-vs-fail contract single-sourced:
+// vs a hand-rolled timer, "ok" vs "ran"). Keeping it here makes the skip-vs-fail contract single-sourced:
 // a provider with no creds SKIPS (never fails the run); a provider that runs and throws — or whose
 // result `ok()` rejects — FAILS.
 import { missingDriverEnvNames } from "@sandbox-benchmarks/driver/env";
 import type { DriverProviderId } from "@sandbox-benchmarks/drivers";
-import { missingCreds } from "@sandbox-benchmarks/harness";
-import type { ProviderConfig } from "@sandbox-benchmarks/providers";
-import { providers } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
-import { isDriverProviderId, usesDriverSuite } from "./driver-run.ts";
+import { isDriverProviderId } from "./driver-run.ts";
 
 export type ProviderRunStatus = "ok" | "skipped" | "failed";
 
-/** A leftover ComputeSDK adapter still served by `packages/providers`. */
-export interface LegacyProviderTarget {
-	readonly kind: "legacy";
-	readonly id: ProviderId;
-	readonly config: ProviderConfig;
-}
-
-/** A registered DriverModule; create goes through `loadDriverModule`. */
-export interface DriverProviderTarget {
-	readonly kind: "driver";
+/** One visit of the shared smoke/lifecycle/bake loop: a registered DriverModule. */
+export interface ProviderTarget {
 	readonly id: DriverProviderId;
 }
-
-/** One visit of the shared smoke/lifecycle/bake loop. Discriminated by {@link usesDriverSuite}. */
-export type ProviderTarget = LegacyProviderTarget | DriverProviderTarget;
 
 /** The outcome of driving one provider: status plus (when it ran) the body's value and wall time. */
 export interface ProviderRun<T> {
@@ -78,49 +64,17 @@ function selectedProviderIds(only: readonly ProviderId[] | undefined): ProviderI
 	return all.filter((id) => only.includes(id));
 }
 
-/** Credentials this lane needs but the environment does not carry — the driver env slice or the adapter's. */
-function missingForTarget(
-	target: ProviderTarget,
-	env: Record<string, string | undefined> | undefined,
-): readonly string[] {
-	const ambient = env ?? process.env;
-	switch (target.kind) {
-		case "driver":
-			return missingDriverEnvNames(target.id, ambient);
-		case "legacy":
-			return missingCreds(target.config, ambient);
-		default: {
-			const _never: never = target;
-			return _never;
-		}
-	}
-}
-
 /**
- * Pick the composition root that owns `id`, or throw naming the drift that left it unservable.
- *
- * Every schema provider must land in exactly one lane, so neither branch may fall through: a
- * registered id with no module and a waived id with no adapter are both repo-level drift (the
- * `packages/providers` load-time join and the CLI partition test each reject it earlier). Returning
- * "nothing to do" instead would drop the provider from the loop with no run at all — no result and
- * no failure — which is how a validation pass exits 0 having validated less than it reported.
+ * The driver module that owns `id`, or a throw naming the drift that left it unservable. A registry
+ * id with no module is repo-level drift the generator already rejects; returning "nothing to do"
+ * instead would drop the provider from the loop with no run at all, which is how a validation pass
+ * exits 0 having validated less than it reported.
  */
 function targetFor(id: ProviderId): ProviderTarget {
-	if (usesDriverSuite(id)) {
-		if (!isDriverProviderId(id)) {
-			throw new Error(
-				`forEachProviderWithCreds: ${id} selected the driver path but has no DriverModule`,
-			);
-		}
-		return { kind: "driver", id };
+	if (!isDriverProviderId(id)) {
+		throw new Error(`forEachProviderWithCreds: ${id} has no DriverModule`);
 	}
-	const config = providers.find((provider) => provider.name === id);
-	if (config === undefined) {
-		throw new Error(
-			`forEachProviderWithCreds: ${id} has neither a DriverModule nor a packages/providers adapter`,
-		);
-	}
-	return { kind: "legacy", id, config };
+	return { id };
 }
 
 /**
@@ -128,8 +82,8 @@ function targetFor(id: ProviderId): ProviderTarget {
  * {@link ProviderRun} per provider. Never throws: a body that throws becomes a `failed` run carrying
  * the coerced error message; a provider with missing creds becomes a `skipped` run.
  *
- * Registered DriverModule ids (`usesDriverSuite`) are visited as `{ kind: "driver" }`; waived ids as
- * `{ kind: "legacy", config }`. Callers must create sandboxes through the matching composition root.
+ * Every provider is visited as its registered DriverModule; callers create sandboxes through the
+ * driver composition root.
  */
 export async function forEachProviderWithCreds<T>(
 	body: (target: ProviderTarget) => Promise<T>,
@@ -152,7 +106,7 @@ export async function forEachProviderWithCreds<T>(
 		try {
 			target = targetFor(id);
 		} catch (err) {
-			// Lane selection is this loop's own work, not the body's, so a drifted registry reports as a
+			// Driver selection is this loop's own work, not the body's, so a drifted registry reports as a
 			// FAILED run for that provider rather than escaping and taking the whole pass down with it.
 			const reason = err instanceof Error ? err.message : String(err);
 			log(`fail: ${id} (${reason})`);
@@ -162,7 +116,7 @@ export async function forEachProviderWithCreds<T>(
 			continue;
 		}
 
-		const missing = missingForTarget(target, options.env);
+		const missing = missingDriverEnvNames(target.id, options.env ?? process.env);
 		if (missing.length > 0) {
 			log(`skip: ${id} (missing ${missing.join(", ")})`);
 			const skipped: ProviderRun<T> = {

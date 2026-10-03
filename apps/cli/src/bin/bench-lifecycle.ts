@@ -10,7 +10,6 @@
 // Observability: a per-provider timing log goes to stderr; the machine-readable summary is JSON on
 // stdout. bun auto-loads .env, so local creds in a .env file are picked up.
 import {
-	benchmarkLifecycle,
 	exitAfterSandboxCleanup,
 	requiredProviders,
 	unmetRequirements,
@@ -52,16 +51,7 @@ if (import.meta.main) {
 	const runs = await forEachProviderWithCreds(
 		(target) => {
 			log(`>>> ${target.id}: measuring lifecycle…`);
-			switch (target.kind) {
-				case "driver":
-					return benchmarkDriverLifecycle(target.id, { iterations, controlPlaneSamples, snapshot });
-				case "legacy":
-					return benchmarkLifecycle(target.config, { iterations, controlPlaneSamples, snapshot });
-				default: {
-					const _never: never = target;
-					return _never;
-				}
-			}
+			return benchmarkDriverLifecycle(target.id, { iterations, controlPlaneSamples, snapshot });
 		},
 		{
 			log,

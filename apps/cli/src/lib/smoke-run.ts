@@ -2,7 +2,7 @@
 // body that both `bench-smoke` (boot the published image) and `bake` (boot the just-baked candidate)
 // feed to {@link forEachProviderWithCreds}. The probe results are captured INSIDE the lifecycle so a
 // teardown-only failure still reports which probes passed instead of looking like nothing ran.
-import { withSandbox, withSandboxWork } from "@sandbox-benchmarks/harness";
+import { withSandboxWork } from "@sandbox-benchmarks/harness";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import type { SmokeResult } from "@sandbox-benchmarks/templates/smoke";
 import { runSmoke } from "@sandbox-benchmarks/templates/smoke";
@@ -22,12 +22,7 @@ export interface SmokeOutcome {
  * captured before teardown so they survive a destroy failure, and any lifecycle error is returned in
  * `error` rather than thrown — the caller (via {@link smokeOk}) decides pass/fail.
  *
- * Registered ids create through {@link withDriverSandbox}; waived ids through leftover adapters.
- *
- * `options.artifact` is the driver lane's artifact override (bake validates a candidate ref this
- * way). The leftover lane has no equivalent channel — its ref rides the `ProviderConfig` the caller
- * already built — so passing one with a `legacy` target is rejected rather than ignored: silently
- * booting the published artifact would report a candidate as validated without ever touching it.
+ * `options.artifact` is the artifact override (bake validates a candidate ref this way).
  */
 export async function bootAndSmoke(
 	target: ProviderTarget,
@@ -35,57 +30,40 @@ export async function bootAndSmoke(
 ): Promise<SmokeOutcome> {
 	let checks: SmokeResult[] = [];
 	try {
-		if (target.kind === "legacy" && options.artifact !== undefined) {
-			throw new Error(
-				`bootAndSmoke(${target.id}): the leftover adapter lane takes its artifact through the provider config, not options.artifact`,
+		if (usesSessionOperations(target.id)) {
+			const opened = await openDriver(target.id, options);
+			await withSandboxWork(
+				{
+					module: opened.module,
+					driver: opened.driver,
+					request: { spec: TARGET_SPEC, artifact: opened.artifact },
+				},
+				async ({ session }) => {
+					checks = await runSmoke(async (command) => {
+						const result = await session.exec(command);
+						if (result.exit.kind !== "exited")
+							throw new Error(`Smoke command returned ${JSON.stringify(result.exit)}`);
+						return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exit.code };
+					});
+				},
 			);
+			return { checks };
 		}
-		switch (target.kind) {
-			case "driver":
-				if (usesSessionOperations(target.id)) {
-					const opened = await openDriver(target.id, options);
-					await withSandboxWork(
-						{
-							module: opened.module,
-							driver: opened.driver,
-							request: { spec: TARGET_SPEC, artifact: opened.artifact },
-						},
-						async ({ session }) => {
-							checks = await runSmoke(async (command) => {
-								const result = await session.exec(command);
-								if (result.exit.kind !== "exited")
-									throw new Error(`Smoke command returned ${JSON.stringify(result.exit)}`);
-								return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exit.code };
-							});
-						},
-					);
-					return { checks };
-				}
-				await withDriverSandbox(
-					target.id,
-					async (sandbox) => {
-						checks = await runSmoke(async (cmd) => {
-							const result = await sandbox.runCommand(cmd);
-							return {
-								stdout: result.stdout ?? "",
-								stderr: result.stderr ?? "",
-								exitCode: result.exitCode,
-							};
-						});
-					},
-					options,
-				);
-				return { checks };
-			case "legacy":
-				await withSandbox(target.config, async (sandbox) => {
-					checks = await runSmoke((cmd) => sandbox.runCommand(cmd));
+		await withDriverSandbox(
+			target.id,
+			async (sandbox) => {
+				checks = await runSmoke(async (cmd) => {
+					const result = await sandbox.runCommand(cmd);
+					return {
+						stdout: result.stdout ?? "",
+						stderr: result.stderr ?? "",
+						exitCode: result.exitCode,
+					};
 				});
-				return { checks };
-			default: {
-				const _never: never = target;
-				return _never;
-			}
-		}
+			},
+			options,
+		);
+		return { checks };
 	} catch (error) {
 		return { checks, error };
 	}
