@@ -10,7 +10,7 @@ import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
-import boat from "./driver.ts";
+import boat from "./index.ts";
 import type { BoatClient, BoatVendorOptions } from "./vendor.ts";
 import { BOAT_MACHINE_PROVIDER, BOAT_MACHINE_TYPE, BOAT_NAME, boatVendor } from "./vendor.ts";
 
