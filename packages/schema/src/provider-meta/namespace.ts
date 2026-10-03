@@ -5,13 +5,13 @@ export default defineProviderMeta("namespace", {
 	displayName: "Namespace",
 	vendor: "Namespace",
 	website: "https://namespace.so",
-	sdkPackage: "@namespacelabs/sdk",
+	sdkPackage: "@computesdk/namespace",
 	artifact: { kind: "image" },
 	// NSC_TOKEN_FILE, not NSC_TOKEN: CI federates via GitHub's OIDC identity into one pinned tenant
 	// (`nsc auth exchange-oidc-token --tenant_id`, the id held in the NAMESPACE_TENANT_ID secret), then
 	// mints a scoped token file wired to NSC_TOKEN_FILE — never a bare bearer string in the environment.
-	// This gate is a strict AND (the driver env has no OR-group concept), so a local run with a bare
-	// NSC_TOKEN alone still skips even though the Namespace SDK's own fallback chain would
+	// This gate is a strict AND (missingCreds has no OR-group concept), so a local run with a bare
+	// NSC_TOKEN alone still skips even though @computesdk/namespace's own fallback chain would
 	// accept it — for local dev, mint a file instead (`nsc token create --token_file <path>` after
 	// `nsc auth login`) and point NSC_TOKEN_FILE at it, mirroring what CI does.
 	inputs: [
@@ -24,7 +24,7 @@ export default defineProviderMeta("namespace", {
 		class: "microVM",
 		technology: "microVM (dedicated instance)",
 		notes:
-			"Namespace runs each instance on its own hardware/network (namespace.so/docs/architecture/compute). The driver's adapter, over the official @namespacelabs/sdk clients, deploys one container workload per instance via the Compute API's `containers` shape; it binds no template or snapshot capture (unexposed, same clean skip as novita) and no native files: the kit's shell fallback serves files over exec.",
+			"Namespace runs each instance on its own hardware/network (namespace.so/docs/architecture/compute). The @computesdk/namespace wrapper deploys one container workload per instance via the Compute API's `containers` shape, and defines no template/snapshot managers (unexposed, same clean skip as novita) — and, unlike every other provider here, no filesystem manager either.",
 	},
 	pricing: {
 		model: "published",
@@ -90,10 +90,32 @@ export default defineProviderMeta("namespace", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Validated live end-to-end once the exec transport was corrected: system 3/3 metrics, and realworld-better-auth 10/10 metrics with zero gaps on a 570s benchmark step (2.2x the ~4m19s synchronous ceiling). The adapter exposes no native files, so the session claims no filesystem and StepRunner.runDetached's done-file poll reads over exec (`cat`); no suite is gated on a filesystem. Should one ever be needed, @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped key + username + endpoint); not wired, since it means managing per-instance keys.",
+			"Validated live end-to-end once the exec transport was corrected below: system 3/3 metrics, and realworld-better-auth 10/10 metrics with zero gaps on a 570s benchmark step (2.2x the ~4m19s synchronous ceiling). The wrapper's `methods.sandbox` declares no `filesystem` table, so computesdk falls back to its UnsupportedFileSystem (a truthy stub whose every op throws). This note previously claimed that made realworld suites skip here; the better-auth run above disproves it — nothing outside StepRunner.runDetached's done-file poll uses `sandbox.filesystem`, and that degrades to `cat` over exec, so no suite is gated on it. Should a real filesystem ever be needed, the official @namespacelabs/sdk exposes ComputeService.GetSSHConfig (per-instance scoped key + username + endpoint); not wired, since it means managing keys and bypassing the @computesdk/* wrapper this repo standardizes on.",
 	},
 	// virtualCpu/memoryMegabytes are independent, uncoupled knobs on the factory config (unlike
 	// blaxel's memory-derived cpu/disk), so the 4 vCPU / 8 GiB target spec is exactly expressible.
 	specPinning: "settable",
+	transport: {
+		// `runCommand` POSTs to the CommandService's RunCommandSync RPC and awaits the full response.
+		// This was declared uncapped ("no evidence of a server-side cap") until a live smoke produced
+		// the evidence: run 30314097333 lost `mise run benchmark:system:all` at 4m18.8s to a bare
+		// "Namespace command execution failed: The operation timed out." after two of the suite's three
+		// PTS profiles had completed — pybench and sqlite-speedtest wrote their XML, git did not.
+		//
+		// 120s, not the ~259s observed: the measurement is a single data point, and the bare message
+		// (no HTTP status) does not distinguish a Namespace-side cap from a client fetch timeout in the
+		// SDK's `fetch`. Detaching makes that distinction moot — every exec becomes short — so the cap
+		// is set well under the observation rather than tuned to it. Short steps stay synchronous; only
+		// a step BUDGETED past 120s detaches, which is the suite benchmark and the setup installs.
+		streaming: false,
+		syncCapMs: 120_000,
+		// A finite cap requires a durable alternative, and this provider has one despite exposing no
+		// filesystem: StepRunner.runDetached polls the done-file over exec (pollDoneViaCat) when the
+		// filesystem is absent OR is computesdk's throwing UnsupportedFileSystem stub, which is what
+		// this adapter gets — so this declaration depends on that degradation path (isUnsupportedFilesystem).
+		// Each poll is a sub-second exec far under the cap, so a multi-minute benchmark survives as a
+		// sequence of short calls.
+		detachedPoll: true,
+	},
 	preAuth: "namespace-token",
 });

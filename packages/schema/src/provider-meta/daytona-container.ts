@@ -1,5 +1,5 @@
 import { defineProviderMeta } from "../provider-meta.ts";
-import { daytonaPricing } from "./_daytona.ts";
+import { daytonaPricing, daytonaTransport } from "./_daytona.ts";
 
 export default defineProviderMeta("daytona-container", {
 	displayName: "Daytona (container)",
@@ -7,7 +7,6 @@ export default defineProviderMeta("daytona-container", {
 	quotaDomain: "daytona",
 	website: "https://daytona.io",
 	sdkPackage: "@daytona/sdk",
-	package: { directory: "daytona", entry: "container" },
 	artifact: { kind: "baked", nameSuffix: "-container" },
 	inputs: [
 		"DAYTONA_API_KEY",
@@ -31,4 +30,5 @@ export default defineProviderMeta("daytona-container", {
 			"New isolation variant sharing Daytona credentials/pricing with daytona-vm; boots a container-class snapshot in region us-west-2. Not yet a committed run.",
 	},
 	specPinning: "settable",
+	transport: daytonaTransport,
 });

@@ -90,12 +90,11 @@ export interface FigureModelInput {
 	readonly run: Pick<Run, "providers">;
 	/** The metric catalog — task labels come from here. */
 	readonly metrics: readonly Pick<MetricDef, "id" | "label">[];
-	/** Provider chart labels. String-keyed on purpose: the run side carries provider ids as
+	/** Provider display names. String-keyed on purpose: the run side carries provider ids as
 	 *  strings, and the registry's narrower `ProviderId` union assigns into this cleanly. */
 	readonly providers: readonly {
 		readonly id: string;
-		/** The concise chart label; the full registry names remain in the Markdown tables. */
-		readonly figureLabel: string;
+		readonly displayName: string;
 		/** Registry declaration; host metadata may provide a more specific observed runtime. */
 		readonly isolationTechnology?: string;
 	}[];
@@ -104,6 +103,15 @@ export interface FigureModelInput {
 }
 
 const round = (v: number, dp: number) => Number(v.toFixed(dp));
+
+/** The chart uses concise vendor names while the full registry names remain in the Markdown tables. */
+function figureProviderName(providerId: string, displayName: string): string {
+	if (providerId.startsWith("daytona")) return "Daytona";
+	if (providerId.startsWith("modal")) return "Modal";
+	if (providerId.startsWith("microsandbox")) return "microsandbox";
+	if (providerId.startsWith("vercel")) return "Vercel";
+	return displayName;
+}
 
 /** Map the isolation probe's stable runtime ids to the short, reader-facing chip vocabulary. */
 function isolationFromRuntime(runtime: string | undefined): FigureIsolation | undefined {
@@ -164,9 +172,9 @@ function isolationFromDeclaration(declared: string | undefined): FigureIsolation
  *
  * The outer boundary wins because that is what the chip claims: the isolation the workload is
  * actually confined by, and the thing a reader comparing environments is weighing. It also puts this
- * derivation back in agreement with `packages/results`, whose roster treats the registry's declared
- * isolation class as authoritative: the probe's container signal is a cgroup-quota heuristic a
- * microVM trips too, so it must never override a VM.
+ * derivation back in agreement with `packages/results`, whose roster treats the registry declaration
+ * as authoritative and documents (see `isolationClass`) that the probe's container signal is a
+ * cgroup-quota heuristic a microVM trips too — so it must never override a VM.
  *
  * `machine_vmm` is skipped when it is `not-observable` (Modal's gVisor cell, where no VMM is exposed
  * and `isolation_runtime=gvisor` is the correct answer) by the same emptiness filter below.
@@ -201,7 +209,7 @@ function isolationFor(
 export function buildRealworldFigureModel(input: FigureModelInput): RealworldFigureModel {
 	const { run, metrics, providers, suites } = input;
 	const labelOf = new Map(metrics.map((m) => [m.id, m.label]));
-	const figureLabel = new Map(providers.map((p) => [p.id, p.figureLabel]));
+	const displayName = new Map(providers.map((p) => [p.id, p.displayName]));
 
 	// The charts cover the run's VALIDATED providers — the dataset's own word for "a
 	// committed run carries real metrics for it". A provider the harness attempted that
@@ -312,7 +320,7 @@ export function buildRealworldFigureModel(input: FigureModelInput): RealworldFig
 			);
 			return {
 				id: p.providerId,
-				name: figureLabel.get(p.providerId) ?? p.providerId,
+				name: figureProviderName(p.providerId, displayName.get(p.providerId) ?? p.providerId),
 				specMatched: p.specMatched !== false,
 				...(isolation ? { isolation } : {}),
 			};

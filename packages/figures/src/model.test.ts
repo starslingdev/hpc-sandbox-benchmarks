@@ -10,8 +10,8 @@ const METRICS = [
 	{ id: "realworld_demo_task_cold_install", label: "Demo: cold install" },
 ];
 const PROVIDERS = [
-	{ id: "alpha", figureLabel: "Alpha" },
-	{ id: "beta", figureLabel: "Beta" },
+	{ id: "alpha", displayName: "Alpha" },
+	{ id: "beta", displayName: "Beta" },
 ];
 const SUITES = {
 	"realworld-demo": {
@@ -67,7 +67,7 @@ function build(providers: ProviderRun[]) {
 }
 
 describe("buildRealworldFigureModel", () => {
-	it("names providers by their chart label and chips exact aggregated isolation runtimes", () => {
+	it("uses concise provider titles and exact aggregated isolation runtimes", () => {
 		const withIsolation = (providerId: string, runtime: string): ProviderRun =>
 			provider(providerId, [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])], {
 				hostMetadata: [
@@ -92,22 +92,22 @@ describe("buildRealworldFigureModel", () => {
 			providers: [
 				{
 					id: "namespace",
-					figureLabel: "Namespace",
+					displayName: "Namespace",
 					isolationTechnology: "microVM (dedicated instance)",
 				},
 				{
 					id: "daytona-vm",
-					figureLabel: "Daytona",
+					displayName: "Daytona (VM)",
 					isolationTechnology: "microVM (Linux VM)",
 				},
 				{
 					id: "modal-gvisor",
-					figureLabel: "Modal",
+					displayName: "Modal (gVisor)",
 					isolationTechnology: "gVisor container",
 				},
 				{
 					id: "microsandbox-cloud",
-					figureLabel: "microsandbox",
+					displayName: "Microsandbox Cloud",
 					isolationTechnology: "libkrun microVM (cloud)",
 				},
 			],
@@ -165,10 +165,10 @@ describe("buildRealworldFigureModel", () => {
 			run: run([nested("vercel"), nested("namespace")]),
 			metrics: METRICS,
 			providers: [
-				{ id: "vercel", figureLabel: "Vercel", isolationTechnology: "Firecracker microVM" },
+				{ id: "vercel", displayName: "Vercel Sandbox", isolationTechnology: "Firecracker microVM" },
 				{
 					id: "namespace",
-					figureLabel: "Namespace",
+					displayName: "Namespace",
 					isolationTechnology: "microVM (dedicated instance)",
 				},
 			],
@@ -179,7 +179,8 @@ describe("buildRealworldFigureModel", () => {
 			{ kind: "microVM", technology: "Firecracker" },
 			{ kind: "microVM", technology: "Firecracker" },
 		]);
-		// The chart prints the registry's chart label; the Markdown tables keep the display name.
+		// The chart shortens the vendor name the way it already does for Daytona/Modal/microsandbox;
+		// the Markdown tables keep the registry's "Vercel Sandbox".
 		expect(model.providers.map((p) => p.name)).toEqual(["Vercel", "Namespace"]);
 	});
 
@@ -219,10 +220,10 @@ describe("buildRealworldFigureModel", () => {
 			providers: [
 				{
 					id: "modal-gvisor",
-					figureLabel: "Modal",
+					displayName: "Modal (gVisor)",
 					isolationTechnology: "gVisor container",
 				},
-				{ id: "blaxel", figureLabel: "Blaxel", isolationTechnology: "Firecracker microVM" },
+				{ id: "blaxel", displayName: "Blaxel", isolationTechnology: "Firecracker microVM" },
 			],
 			suites: SUITES,
 		});
@@ -254,8 +255,8 @@ describe("buildRealworldFigureModel", () => {
 			]),
 			metrics: METRICS,
 			providers: [
-				{ id: "boat", figureLabel: "boat", isolationTechnology: "KVM virtual machine" },
-				{ id: "boat-declared", figureLabel: "boat", isolationTechnology: "KVM virtual machine" },
+				{ id: "boat", displayName: "boat", isolationTechnology: "KVM virtual machine" },
+				{ id: "boat-declared", displayName: "boat", isolationTechnology: "KVM virtual machine" },
 			],
 			suites: SUITES,
 		});

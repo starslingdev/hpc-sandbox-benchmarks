@@ -1,4 +1,5 @@
 import type { ProviderPricing } from "../provider-pricing.ts";
+import type { ProviderTransport } from "../providers.ts";
 
 /** Daytona's published billing, shared by its isolation variants. */
 export const daytonaPricing: ProviderPricing = {
@@ -46,4 +47,17 @@ export const daytonaPricing: ProviderPricing = {
 	sources: [
 		{ label: "Daytona pricing", url: "https://www.daytona.io/pricing", checkedAt: "2026-08-08" },
 	],
+};
+
+export const daytonaTransport: ProviderTransport = {
+	// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a
+	// multi-minute synchronous `executeCommand` while the process keeps running server-side, and
+	// `@computesdk/daytona` ignores onStdout/onStderr (hardcoding `stderr:""`) — no streaming to
+	// keep the connection productive. See docs/evidence/daytona-exec-transport.md. The exact
+	// server threshold is unmeasured (sub-second probes succeed; multi-minute execs 408), so the
+	// bound is a conservative 60s policy: budget anything longer to the detached+poll path
+	// (`background` via nohup + the pollable filesystem).
+	streaming: false,
+	syncCapMs: 60_000,
+	detachedPoll: true,
 };

@@ -1,5 +1,5 @@
 import { defineProviderMeta } from "../provider-meta.ts";
-import { daytonaPricing } from "./_daytona.ts";
+import { daytonaPricing, daytonaTransport } from "./_daytona.ts";
 
 export default defineProviderMeta("daytona-vm", {
 	displayName: "Daytona (VM)",
@@ -7,7 +7,6 @@ export default defineProviderMeta("daytona-vm", {
 	quotaDomain: "daytona",
 	website: "https://daytona.io",
 	sdkPackage: "@daytona/sdk",
-	package: { directory: "daytona", entry: "vm" },
 	artifact: { kind: "baked" },
 	inputs: [
 		"DAYTONA_API_KEY",
@@ -26,4 +25,5 @@ export default defineProviderMeta("daytona-vm", {
 		notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",
 	},
 	specPinning: "settable",
+	transport: daytonaTransport,
 });

@@ -1,6 +1,6 @@
 // Canonical identity of the shared toolchain image, in ONE place at the bottom of the dependency DAG
-// so the build pins (@sandbox-benchmarks/templates), the CLI's release config and the driver
-// composition root all derive from the same constants and cannot drift. The version
+// so the build pins (@sandbox-benchmarks/templates) and the runtime config
+// (@sandbox-benchmarks/providers) both derive from the same constants and cannot drift. The version
 // tag is immutable: a change to the toolchain image means bumping TOOLCHAIN_VERSION.
 
 export const TOOLCHAIN_IMAGE_NAME = "sandbox-benchmarks-toolchain";
@@ -51,7 +51,7 @@ export const TOOLCHAIN_CANDIDATE_SUFFIX = "-candidate";
  * {@link bakedArtifactName}'s provider-side naming.
  *
  * Kept in this dependency-free leaf (ADR-0007's disposition for pure artifact defaults) so the
- * CLI's release config and the driver composition root derive the same ref instead of each
+ * runtime config gatekeeper and the driver composition root derive the same ref instead of each
  * rebuilding the repository string.
  */
 export function toolchainImageRef(phase: "candidate" | "version"): string {
@@ -63,7 +63,7 @@ const VCR_NAMESPACE_COMPONENT = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 
 // The Vercel namespace this repository's own CI publishes into. These are DEFAULTS, not constants: a
 // fork, a renamed team, or a second project overrides them through VERCEL_TEAM_SLUG /
-// VERCEL_PROJECT_NAME (see apps/cli/src/lib/release-config.ts) without touching code.
+// VERCEL_PROJECT_NAME (see packages/providers/src/lib/config.ts) without touching code.
 //
 // Both are the human-readable *names*, never the `team_*` / `prj_*` API IDs the Vercel CLI consumes
 // as VERCEL_ORG_ID / VERCEL_PROJECT_ID — those two identify the project to `vercel pull` and stay in

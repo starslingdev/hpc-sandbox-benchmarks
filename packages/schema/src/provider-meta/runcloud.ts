@@ -51,4 +51,12 @@ export default defineProviderMeta("runcloud", {
 			"Direct adapter over @run-cloud/sdk with create, lifecycle, streaming exec, and public tunnel support; opt-in until a committed validation run exists.",
 	},
 	specPinning: "settable",
+	transport: {
+		// The native WebSocket exec delivers stdout/stderr chunks incrementally. Keep the repository's
+		// conservative 60s policy for unvalidated long-lived streams; longer work daemonizes and polls
+		// the harness-owned done file through short execs.
+		streaming: true,
+		syncCapMs: 60_000,
+		detachedPoll: true,
+	},
 });

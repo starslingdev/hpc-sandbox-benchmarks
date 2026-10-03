@@ -76,4 +76,13 @@ export default defineProviderMeta("novita", {
 	// E2B protocol: resources come from the template (cpu/memory pinned at template create), not
 	// the per-sandbox create() call.
 	specPinning: "fixed",
+	transport: {
+		// Same wrapper (and therefore the same caps) as e2b: `sandbox.commands.run(cmd)` with no
+		// options applies the E2B SDK's default 60s command timeout, and onStdout/onStderr are never
+		// passed through. The compat API exposes the same filesystem + `background`, so detached+poll
+		// is the long-step path.
+		streaming: false,
+		syncCapMs: 60_000,
+		detachedPoll: true,
+	},
 });

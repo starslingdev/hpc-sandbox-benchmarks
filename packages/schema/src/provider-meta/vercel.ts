@@ -4,7 +4,6 @@ import { VERCEL_VCR_REPOSITORY } from "../toolchain.ts";
 export default defineProviderMeta("vercel", {
 	displayName: "Vercel Sandbox",
 	vendor: "Vercel",
-	figureLabel: "Vercel",
 	website: "https://vercel.com/docs/sandbox",
 	sdkPackage: "@vercel/sandbox",
 	artifact: { kind: "mirror", repository: VERCEL_VCR_REPOSITORY },
@@ -71,5 +70,12 @@ export default defineProviderMeta("vercel", {
 	// Only vCPU is requested; Vercel derives memory at a fixed 2048 MB/vCPU ratio. Four vCPU
 	// therefore reaches this benchmark's 8 GiB target, but the dimensions are not independent.
 	specPinning: "fixed",
+	transport: {
+		// No hard vendor cap is claimed: long synchronous transport is unvalidated, so the repository's
+		// conservative 60s durability policy routes longer work to current-session detach + exec polling.
+		streaming: false,
+		syncCapMs: 60_000,
+		detachedPoll: true,
+	},
 	preAuth: "vercel-auth",
 });

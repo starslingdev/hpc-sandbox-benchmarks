@@ -54,4 +54,9 @@ export default defineProviderMeta("boat", {
 			"Native @boatdev/sdk driver covering create (pinned to the baremetal machine provider), readiness (including outbound network), command exec, and delete teardown; opt-in until a committed validation run exists on this tree. Before promotion into the default matrix, the leaderboard must be able to declare two comparability caveats (it only computes CPU/RAM mismatch today): boat boots vendor stock Ubuntu 24.04 with a runtime-installed toolchain rather than the shared Debian 13 image, and boat snapshots running sandboxes every minute while 2/30 memory replicates ran at half speed in lockstep at 30 concurrent (possible host contention).",
 	},
 	specPinning: "fixed",
+	transport: {
+		streaming: false,
+		syncCapMs: 60_000,
+		detachedPoll: true,
+	},
 });

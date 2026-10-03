@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ProviderId } from "./provider-ids.ts";
 import { PROVIDER_IDS } from "./provider-ids.ts";
 import e2bModule from "./provider-meta/e2b.ts";
 import type { BakedProviderId, StockProviderId } from "./provider-meta/index.ts";
@@ -13,6 +14,54 @@ import { PROVIDERS } from "./providers.ts";
 const SRC = dirname(fileURLToPath(import.meta.url));
 const META_DIR = resolve(SRC, "provider-meta");
 const transpiler = new Bun.Transpiler({ loader: "ts" });
+
+const REQUIRED_INPUTS = {
+	e2b: ["E2B_API_KEY"],
+	"daytona-vm": ["DAYTONA_API_KEY"],
+	"daytona-container": ["DAYTONA_API_KEY"],
+	blaxel: ["BL_API_KEY", "BL_WORKSPACE"],
+	"microsandbox-cloud": ["MSB_API_KEY"],
+	"modal-gvisor": ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
+	"modal-vm": ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
+	novita: ["NOVITA_API_KEY"],
+	runloop: ["RUNLOOP_API_KEY"],
+	namespace: ["NSC_TOKEN_FILE"],
+	vercel: ["VERCEL_OIDC_TOKEN"],
+	runcloud: ["RUN_CLOUD_API_KEY"],
+	tama: ["TAMA_TOKEN"],
+	boat: ["BOAT_API_KEY"],
+	freestyle: ["FREESTYLE_API_KEY"],
+	brezel: ["BREZEL_API_KEY", "BREZEL_API_URL", "BREZEL_PROJECT_ID", "BREZEL_ENVIRONMENT_REVISION"],
+} as const satisfies Record<ProviderId, readonly string[]>;
+
+const ARTIFACT_KINDS = {
+	e2b: "baked",
+	"daytona-vm": "baked",
+	"daytona-container": "baked",
+	blaxel: "baked",
+	"microsandbox-cloud": "image",
+	"modal-gvisor": "image",
+	"modal-vm": "image",
+	novita: "baked",
+	runloop: "baked",
+	namespace: "image",
+	vercel: "mirror",
+	runcloud: "image",
+	tama: "image",
+	boat: "none",
+	freestyle: "baked",
+	brezel: "none",
+} as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
+
+const BAKED = {
+	e2b: true,
+	"daytona-vm": true,
+	"daytona-container": true,
+	blaxel: true,
+	freestyle: true,
+	novita: true,
+	runloop: true,
+} as const satisfies Record<BakedProviderId, true>;
 
 function localRuntimeDependency(importer: string, specifier: string): string | undefined {
 	if (specifier.startsWith(".")) return resolve(dirname(importer), specifier);
@@ -53,14 +102,11 @@ describe("provider metadata authoring", () => {
 		}
 	});
 
-	test("the compatibility projection gates on exactly the normalized required inputs", () => {
+	test("the compatibility projection preserves every existing required-input gate", () => {
 		expect(PROVIDERS.map((provider) => provider.id)).toEqual([...PROVIDER_IDS]);
 		for (const provider of PROVIDERS) {
-			expect(provider.requiredEnvVars.length).toBeGreaterThan(0);
-			expect(provider.requiredEnvVars).toEqual(
-				provider.inputs.filter((input) => input.required).map((input) => input.name),
-			);
-			expect(provider.artifact).toEqual(REGISTRY[provider.id].artifact);
+			expect(provider.requiredEnvVars).toEqual([...REQUIRED_INPUTS[provider.id]]);
+			expect(provider.artifact.kind).toBe(ARTIFACT_KINDS[provider.id]);
 		}
 	});
 
@@ -86,7 +132,16 @@ describe("provider metadata authoring", () => {
 		]);
 	});
 
-	test("makes no-op bakers unrepresentable in the derived artifact partitions", () => {
+	test("derives exact artifact partitions and makes no-op bakers unrepresentable", () => {
+		expect(Object.keys(BAKED)).toEqual([
+			"e2b",
+			"daytona-vm",
+			"daytona-container",
+			"blaxel",
+			"freestyle",
+			"novita",
+			"runloop",
+		]);
 		const acceptBaked = (id: BakedProviderId) => id;
 		const acceptStock = (id: StockProviderId) => id;
 		expect(acceptBaked("e2b")).toBe("e2b");
@@ -113,7 +168,7 @@ describe("provider metadata authoring", () => {
 		for (const specifier of [
 			"arktype",
 			"arktype/internal",
-			"e2b",
+			"@computesdk/e2b",
 			"microsandbox",
 			"some-sdk-wrapper",
 		]) {

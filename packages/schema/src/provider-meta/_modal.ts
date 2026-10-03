@@ -1,4 +1,5 @@
 import type { ProviderPricing } from "../provider-pricing.ts";
+import type { ProviderTransport } from "../providers.ts";
 
 export const modalPricing: ProviderPricing = {
 	model: "published",
@@ -41,4 +42,17 @@ export const modalPricing: ProviderPricing = {
 	notes:
 		"Published CPU and memory rates are retained as catalog metadata, but no exact benchmark cost is inferred without sandbox-scoped billed usage.",
 	sources: [{ label: "Modal pricing", url: "https://modal.com/pricing", checkedAt: "2026-08-08" }],
+};
+
+export const modalTransport: ProviderTransport = {
+	// The native Modal driver runs `sandbox.exec([...])` and waits for the result, with no
+	// separate per-exec timeout. There is no hard server gateway cap, but the exec stdio stream
+	// is not reliable over benchmark-length execs: a ~66-minute better-auth run completed
+	// in-sandbox (manifest exit_code 0) while the harness-side stream died with gRPC INTERNAL
+	// "Failed to read exec stdio stream" (ZEHA3277, 2026-07-10), losing the step result. Cap
+	// synchronous execs at 30 minutes so suite-length steps take the detached+poll path, which
+	// survives a dropped stream; short setup steps keep the cheaper direct exec.
+	streaming: false,
+	syncCapMs: 30 * 60_000,
+	detachedPoll: true,
 };

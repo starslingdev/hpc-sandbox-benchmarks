@@ -10,13 +10,12 @@ import {
 	PROVIDER_PRE_AUTH_CONTRACTS,
 	PROVIDER_PRE_AUTH_POLICIES,
 } from "../src/provider-meta.ts";
-import { baseImageUse, provenanceConstant, providerPackage, vendorClis } from "../src/providers.ts";
 import {
-	artifactBuilderSource,
-	assertArtifactBuilders,
+	driverFleetProjection,
+	driverModuleLocation,
 	escapeMarkdownCell,
 	generatedProviderRegions,
-	packageProvenance,
+	parseDriverMigrationWaivers,
 	preAuthBindings,
 	providerInputBindings,
 	quotaDomainBindings,
@@ -24,8 +23,6 @@ import {
 	renderAccountConcurrencyGroup,
 	renderCiSecretTable,
 	renderCiVariableTable,
-	renderCliSetupSteps,
-	renderCliSmokePaths,
 	renderDotenvValue,
 	renderDriversIndex,
 	renderDriversPackage,
@@ -40,7 +37,7 @@ import {
 	renderSmokeProviderOptions,
 	renderWorkflowInputs,
 	replaceGeneratedRegion,
-} from "./provider-wiring.ts";
+} from "./generate-provider-wiring.ts";
 
 function record(value: unknown, label: string): Record<string, unknown> {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -104,22 +101,16 @@ describe("provider wiring projections", () => {
 		const bindings = quotaDomainBindings();
 		// Every provider is charged to exactly one domain; only shared-credential variants share one.
 		expect(bindings.flatMap(({ owners }) => owners)).toEqual([...PROVIDER_IDS]);
-		// A shared domain is one vendor account, so only one vendor's providers may share it.
-		for (const { owners } of bindings) {
-			expect(new Set(owners.map((id) => REGISTRY[id].vendor)).size).toBe(1);
-		}
+		expect(bindings.filter(({ owners }) => owners.length > 1)).toEqual([
+			{ domain: "daytona", owners: ["daytona-vm", "daytona-container"] },
+			{ domain: "modal", owners: ["modal-gvisor", "modal-vm"] },
+		]);
 		// A provider that shares no credential is its own domain — never a stray custom name.
 		expect(
 			bindings.filter(({ domain, owners }) => owners.length === 1 && owners[0] !== domain),
 		).toEqual([]);
-		// Own-domain providers fall through to `matrix.provider`; each shared domain gets one clause.
-		const shared = bindings.filter(({ owners }) => owners.length > 1);
-		const clauses = shared.map(
-			({ domain, owners }) =>
-				`(${owners.map((id) => `matrix.provider == '${id}'`).join(" || ")}) && '${domain}'`,
-		);
 		expect(renderAccountConcurrencyGroup("")).toBe(
-			`group: benchmark-account-\${{ ${[...clauses, "matrix.provider"].join(" || ")} }}`,
+			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}`,
 		);
 	});
 
@@ -196,24 +187,24 @@ describe("provider wiring projections", () => {
 		}
 	});
 
-	test("keeps the provider generation drift check in the required CI job", () => {
+	test("keeps the provider-wiring drift check in the required CI job", () => {
 		const matches = workflowJobSteps(".github/workflows/ci.yml", "check").filter(
-			(step) => step.run === "bun run check:providers",
+			(step) => step.run === "bun run check:provider-wiring",
 		);
 		expect(matches).toHaveLength(1);
-		expect(matches[0]?.name).toBe("Provider generation drift");
+		expect(matches[0]?.name).toBe("Provider wiring drift");
 	});
 
 	test("preserves marker indentation and rejects missing or duplicate markers", () => {
 		const region = { file: "fixture.yml", label: "fixture", body: "  generated: true" };
 		const source =
-			"root:\n  # >>> generated: fixture — bun run generate-providers\n  old: true\n  # <<< end generated: fixture\n";
+			"root:\n  # >>> generated: fixture — bun run generate-provider-wiring\n  old: true\n  # <<< end generated: fixture\n";
 		expect(replaceGeneratedRegion(source, region)).toBe(
-			"root:\n  # >>> generated: fixture — bun run generate-providers\n  generated: true\n  # <<< end generated: fixture\n",
+			"root:\n  # >>> generated: fixture — bun run generate-provider-wiring\n  generated: true\n  # <<< end generated: fixture\n",
 		);
 		expect(() => replaceGeneratedRegion("root: true\n", region)).toThrow(/missing or malformed/);
 		expect(() => replaceGeneratedRegion(`${source}${source}`, region)).toThrow(/exactly once/);
-		const prefixed = `${source}# >>> generated: fixture-extra — bun run generate-providers\n# <<< end generated: fixture-extra\n`;
+		const prefixed = `${source}# >>> generated: fixture-extra — bun run generate-provider-wiring\n# <<< end generated: fixture-extra\n`;
 		expect(replaceGeneratedRegion(prefixed, region)).toContain("generated: true");
 	});
 
@@ -243,52 +234,6 @@ describe("provider wiring projections", () => {
 		}
 	});
 
-	test("sets up every pinned vendor CLI in benchmark, bake, and promote, scoped to its owners", () => {
-		const lanes = [
-			{ file: ".github/workflows/bench-suite.yml", job: "bench", lane: "batch" as const },
-			{ file: ".github/workflows/toolchain-image.yml", job: "bake", lane: "matrix" as const },
-			{
-				file: ".github/workflows/toolchain-image.yml",
-				job: "publish",
-				lane: "release-scope" as const,
-			},
-		];
-		const clis = PROVIDER_IDS.flatMap((id) => {
-			const source = REGISTRY[id].sdkPackage;
-			return typeof source === "object" && "cli" in source ? [{ id, cli: source.cli }] : [];
-		});
-		expect(clis.length).toBeGreaterThan(0);
-		expect(vendorClis().map(({ cli }) => cli)).toEqual([...new Set(clis.map(({ cli }) => cli))]);
-		for (const { id, cli } of clis)
-			for (const { file, job, lane } of lanes) {
-				const matches = workflowJobSteps(file, job).filter(
-					(step) => step.uses === `./.github/actions/setup-${cli}`,
-				);
-				expect(matches, `setup-${cli} in ${file} jobs.${job}`).toHaveLength(1);
-				expect(renderCliSetupSteps(lane)).toContain(`if: ${matches[0]?.if}`);
-				expect(String(matches[0]?.if)).toContain(`'${id}'`);
-			}
-	});
-
-	test("runs every pinned vendor CLI's setup action in the toolchain-actions smoke", () => {
-		const file = ".github/workflows/toolchain-actions-smoke.yml";
-		const document = record(Bun.YAML.parse(readFileSync(resolve(REPO_ROOT, file), "utf8")), file);
-		const paths = record(record(document.on, "on").pull_request, "pull_request").paths;
-		const steps = workflowJobSteps(file, "smoke");
-		for (const { cli } of vendorClis()) {
-			expect(paths).toContain(`.github/actions/setup-${cli}/**`);
-			expect(steps.filter((step) => step.uses === `./.github/actions/setup-${cli}`)).toHaveLength(
-				1,
-			);
-			expect(steps.some((step) => step.run === `command -v ${cli}`)).toBe(true);
-		}
-		expect(renderCliSmokePaths()).toBe(
-			vendorClis()
-				.map(({ cli }) => `      - ".github/actions/setup-${cli}/**"`)
-				.join("\n"),
-		);
-	});
-
 	test("keeps retired pre-auth actions managed and unconditionally disabled", () => {
 		const rendered = renderPreAuthOwnerCondition([], "matrix", "");
 		expect(rendered).toBe(`if: \${{ false }}`);
@@ -308,67 +253,69 @@ describe("provider wiring projections", () => {
 		);
 	});
 
-	test("generates correlated lazy loaders for every driver and every baked provider's builder", () => {
-		const source = renderDriversIndex();
+	test("generates one correlated lazy loader from every unwaived registry id", () => {
+		const fleet = driverFleetProjection();
+		expect(fleet.moduleIds).toEqual([
+			"e2b",
+			"daytona-vm",
+			"daytona-container",
+			"blaxel",
+			"microsandbox-cloud",
+			"modal-gvisor",
+			"modal-vm",
+			"novita",
+			"runloop",
+			"namespace",
+			"vercel",
+			"runcloud",
+			"tama",
+			"boat",
+			"freestyle",
+			"brezel",
+		]);
+		expect([...PROVIDER_IDS].filter((id) => fleet.waivers[id] !== undefined)).toEqual([]);
+
+		const source = renderDriversIndex(fleet.moduleIds);
 		const scanned = new Bun.Transpiler({ loader: "ts" }).scan(source);
-		// The only eager import is the vendor-neutral kit that derives native-snapshot builders.
-		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([
-			{ kind: "import-statement", path: "@sandbox-benchmarks/driver/artifact" },
-		]);
-		const baked = PROVIDER_IDS.flatMap((id) => {
-			const source = artifactBuilderSource(id);
-			return source === null ? [] : [{ id, source }];
-		});
-		expect(scanned.imports.filter(({ kind }) => kind === "dynamic-import")).toEqual([
-			...PROVIDER_IDS.map((id) => ({
-				kind: "dynamic-import" as const,
-				path: providerPackage(id).specifier,
+		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([]);
+		expect(scanned.imports).toEqual(
+			fleet.moduleIds.map((id) => ({
+				kind: "dynamic-import",
+				path: driverModuleLocation(id).specifier,
 			})),
-			...baked.map(({ source }) => ({ kind: "dynamic-import" as const, path: source.specifier })),
-		]);
+		);
+		for (const id of fleet.moduleIds) {
+			expect(source).toContain(`typeof import("${driverModuleLocation(id).specifier}").default`);
+			expect(source).toContain(
+				`import("${driverModuleLocation(id).specifier}").then((module) => module.default)`,
+			);
+		}
 		for (const id of PROVIDER_IDS) {
-			expect(source).toContain(`typeof import("${providerPackage(id).specifier}").default`);
+			if (fleet.waivers[id] !== undefined)
+				expect(source).not.toContain(driverModuleLocation(id).specifier);
 		}
-		// The join is exactly the baked partition, split by how each one bakes.
-		expect(baked.map(({ id }) => id)).toEqual(
-			PROVIDER_IDS.filter((id) => REGISTRY[id].artifact.kind === "baked"),
-		);
-		for (const { id, source } of baked)
-			expect(source.kind).toBe(baseImageUse(id) === "bakes" ? "oci" : "native-snapshot");
 	});
 
-	test("places an OCI baker's builder beside its driver entry, variants under their entry", () => {
-		expect(artifactBuilderSource("e2b")).toEqual({
-			kind: "oci",
-			subpath: "./artifact",
-			specifier: "@sandbox-benchmarks/e2b/artifact",
-			file: "packages/e2b/src/artifact.ts",
+	test("rejects digit-shaped waiver expiries that are not real calendar dates", () => {
+		const waiver = (expires: string) => ({
+			runcloud: { owner: "drivers", reason: "migration pending", expires },
 		});
-		expect(artifactBuilderSource("daytona-container")).toEqual({
-			kind: "oci",
-			subpath: "./container/artifact",
-			specifier: "@sandbox-benchmarks/daytona/container/artifact",
-			file: "packages/daytona/src/container/artifact.ts",
-		});
-		expect(artifactBuilderSource("freestyle")).toMatchObject({ kind: "native-snapshot" });
-		expect(artifactBuilderSource("modal-gvisor")).toBeNull();
-		expect(() => assertArtifactBuilders()).not.toThrow();
+		const beforeLeapDay = Date.UTC(2028, 1, 1);
+
+		expect(() => parseDriverMigrationWaivers(waiver("2026-02-31"), beforeLeapDay)).toThrow(
+			/real calendar date/,
+		);
+		expect(parseDriverMigrationWaivers(waiver("2028-02-29"), beforeLeapDay)).toEqual(
+			waiver("2028-02-29"),
+		);
 	});
 
-	test("projects one provenance constant per provider package from its installation pin", () => {
-		const directories = [...new Set(PROVIDER_IDS.map((id) => providerPackage(id).directory))];
-		const provenance = packageProvenance();
-		expect(provenance.map(({ directory }) => directory)).toEqual(directories);
-		for (const { directory, constant, version } of provenance) {
-			expect(constant).toBe(provenanceConstant(directory));
-			expect(version).toMatch(/^\d+\.\d+\.\d+/);
-		}
-		const rendered = renderDriversProvenance();
-		expect([...rendered.keys()]).toEqual(
-			directories.map((directory) => `packages/${directory}/src/provenance.ts`),
-		);
-		// A CLI vendor reports its CLI, pinned by the checksum-verified setup action.
-		expect(rendered.get("packages/tama/src/provenance.ts")).toContain('packageName: "tama CLI"');
+	test("projects exact driver provenance from its installation pins", () => {
+		const source = [...renderDriversProvenance().values()].join("\n");
+		expect(source).toContain("export const E2B_PROVENANCE");
+		expect(source).toContain("export const MODAL_PROVENANCE");
+		expect(source).toContain("export const TAMA_PROVENANCE");
+		expect(source).toContain("export const BREZEL_PROVENANCE");
 	});
 
 	test("keeps the fleet manifest free of vendor dependencies and provider subpaths", () => {
@@ -377,7 +324,10 @@ describe("provider wiring projections", () => {
 		expect(dependencies).toEqual(
 			Object.fromEntries([
 				["@sandbox-benchmarks/driver", "workspace:*"],
-				...PROVIDER_IDS.map((id) => [providerPackage(id).packageName, "workspace:*"]),
+				...driverFleetProjection().moduleIds.map((id) => [
+					driverModuleLocation(id).packageName,
+					"workspace:*",
+				]),
 			]),
 		);
 		expect(drivers.exports).toEqual({ ".": "./src/index.ts", "./package.json": "./package.json" });
