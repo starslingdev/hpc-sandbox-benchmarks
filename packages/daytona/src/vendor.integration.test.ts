@@ -10,12 +10,10 @@ import { DaytonaNotFoundError } from "@daytona/sdk";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
-import { defineDaytonaDriver } from "./driver.ts";
+import container from "./container.ts";
 import type { DaytonaClient } from "./vendor.ts";
 import { DAYTONA_LISTING_TIMEOUT_MS, daytonaVendor } from "./vendor.ts";
-
-const vm = defineDaytonaDriver("daytona-vm");
-const container = defineDaytonaDriver("daytona-container");
+import vm from "./vm.ts";
 
 const KEY = "dtn_test-key";
 const context: DriverContext<"daytona-vm"> = {
