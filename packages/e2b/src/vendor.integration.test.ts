@@ -23,7 +23,7 @@ import {
 	RateLimitError,
 	SandboxNotFoundError,
 } from "e2b";
-import e2b from "./driver.ts";
+import e2b from "./index.ts";
 import type { E2bSdk } from "./vendor.ts";
 import { e2bVendor } from "./vendor.ts";
 
