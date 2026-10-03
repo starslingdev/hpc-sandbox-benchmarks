@@ -1,38 +1,40 @@
-import { describe, expect, spyOn, test } from "bun:test";
+// Blaxel tested at the vendor seam: the adapter's translation over a stub of @blaxel/core's
+// `SandboxInstance`, the port contract, and sessions through the package's own module. Kit
+// behaviour (convergence, deadlines, the inventory partition, recovery mechanics) is tested once in
+// the driver package.
+
+import { describe, expect, test } from "bun:test";
 import { SandboxInstance } from "@blaxel/core";
-import type { CreateRequest } from "@sandbox-benchmarks/driver";
+import type { SandboxInstance } from "@blaxel/core";
+import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { sandboxRef } from "@sandbox-benchmarks/driver";
-import blaxelDriver, {
-	BLAXEL_ATTEMPT_LABEL,
-	BLAXEL_EXECUTION,
-	BLAXEL_KEEPALIVE_PROCESS,
-	BLAXEL_OWNER_LABEL,
-	BLAXEL_PROVENANCE,
-	BLAXEL_READINESS,
-	BLAXEL_REGION,
-	BLAXEL_REQUEST_COVERAGE,
-	BLAXEL_SANDBOX_ID,
-	BLAXEL_VOLUME_HEADROOM_MB,
-	BLAXEL_VOLUME_MOUNT_DIR,
-	blaxelImageRef,
-	blaxelSpec,
-	execBlaxelCommand,
-	isBlaxelNotFound,
-} from "./index.ts";
+import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import blaxel from "./index.ts";
 
 const imageName = "sandbox-benchmarks-toolchain-v8";
 const imageRef = blaxelImageRef(imageName);
-const context = {
-	env: { BL_API_KEY: "bl_test-key", BL_WORKSPACE: "test-workspace" },
-	artifact: { kind: "baked", ref: imageName },
-	resolvedArtifact: { kind: "baked", ref: imageName },
-} as const;
+import type { BlaxelSdk } from "./vendor.ts";
+import {
+	BLAXEL_ATTEMPT_LABEL,
+	BLAXEL_KEEPALIVE_PROCESS,
+	BLAXEL_OWNER_LABEL,
+	BLAXEL_PTS_DATA_DIR,
+	BLAXEL_REGION,
+	blaxelVendor,
+} from "./vendor.ts";
 
+const IMAGE = "sandbox-benchmarks-toolchain-v8";
+const context: DriverContext<"blaxel"> = {
+	env: { BL_API_KEY: "bl_test-key", BL_WORKSPACE: "test-workspace" },
+	artifact: { kind: "baked" },
+	resolvedArtifact: { kind: "baked", ref: IMAGE },
+};
 const request: CreateRequest = {
 	spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
-	artifact: { kind: "baked", ref: imageName },
+	artifact: context.resolvedArtifact,
 	deadlineMs: 300_000,
 };
+const NAMED = "benchmark-33333333-3333-4333-8333-333333333333";
 
 interface ProcessCall {
 	readonly command: string;
@@ -100,231 +102,212 @@ function fakeInstance(
 	};
 	return { instance: instance as unknown as SandboxInstance, processCalls, deletes };
 }
-
-function fakePage(instances: readonly SandboxInstance[]) {
-	return {
-		data: instances.slice(0, 2),
-		async *[Symbol.asyncIterator]() {
-			yield* instances;
-		},
-	} as unknown as Awaited<ReturnType<typeof SandboxInstance.list>>;
+interface Row {
+	status: string;
+	readonly labels: Record<string, string>;
+	readonly memory: number;
+	readonly files: Map<string, string>;
+	deletingGets: number;
 }
 
-describe("Blaxel module policy", () => {
-	test("declares integration, readiness, native durable execution, and honest coverage", () => {
-		expect(blaxelDriver.id).toBe("blaxel");
-		expect(blaxelDriver.provenance).toEqual(BLAXEL_PROVENANCE);
-		expect(BLAXEL_PROVENANCE.packageName).toBe("@blaxel/core");
-		expect(blaxelDriver.readiness).toEqual(BLAXEL_READINESS);
-		expect(blaxelDriver.execution).toEqual(BLAXEL_EXECUTION);
-		expect(blaxelDriver.createBudget).toBeUndefined();
-		const spec = blaxelSpec(context);
-		expect(spec.createOptions.coverage).toEqual(BLAXEL_REQUEST_COVERAGE);
-		expect(spec.hasWorkingFilesystem).toBe(true);
-		expect(spec.inventory).toBeDefined();
-		expect(spec.destroyById).toBeDefined();
-		expect(spec.probes).toBeDefined();
-		expect(BLAXEL_SANDBOX_ID.assert("benchmark-abc-123")).toBe("benchmark-abc-123");
-		expect(() => BLAXEL_SANDBOX_ID.assert("Benchmark_1")).toThrow();
-	});
-
-	test("maps the request onto Blaxel's memory-coupled shape with a labelled name and volume", () => {
-		const spec = blaxelSpec(context);
-		const mapped = spec.createOptions.map(request, (detail) => {
-			throw new Error(detail);
-		});
-		expect(mapped).toMatchObject({
-			image: imageRef,
-			memory: 8192,
-			region: BLAXEL_REGION,
-			ttl: "10800s",
-			volumes: [
-				expect.objectContaining({
-					mountPath: BLAXEL_VOLUME_MOUNT_DIR,
-					sizeMb: 40 * 1024 + BLAXEL_VOLUME_HEADROOM_MB,
-					type: "ephemeral",
-				}),
-			],
-		});
-		const name = mapped.name;
-		if (typeof name !== "string") throw new Error("mapped request has no sandbox name");
-		expect(name).toMatch(/^benchmark-[0-9a-f-]{36}$/);
-		expect(mapped.labels).toEqual({ [BLAXEL_OWNER_LABEL]: "blaxel", [BLAXEL_ATTEMPT_LABEL]: name });
-		expect(spec.createRecovery?.locator(mapped)).toEqual({ kind: "name", value: name });
-		for (const invalid of [
-			{ ...request, spec: { ...request.spec, memoryGb: 16 } },
-			{ ...request, spec: { ...request.spec, vcpus: 2 } },
-			{ ...request, spec: { vcpus: 4, memoryGb: 8 } },
-			{ ...request, artifact: { kind: "baked", ref: "wrong-image" } },
-		] as const) {
-			expect(() =>
-				spec.createOptions.map(invalid, (detail) => {
-					throw new Error(detail);
-				}),
-			).toThrow();
-		}
-	});
-});
-
-describe("Blaxel lifecycle", () => {
-	test("creates with the ephemeral volume, starts the keepalive, verifies the mount, and tears down by name", async () => {
-		const fake = fakeInstance("benchmark-11111111-1111-4111-8111-111111111111");
-		const create = spyOn(SandboxInstance, "create").mockResolvedValue(fake.instance);
-		const remove = spyOn(SandboxInstance, "delete").mockResolvedValue({} as never);
-		try {
-			const driver = blaxelDriver.driver(context);
-			const session = await driver.create(request);
-			expect(session.sandboxRef).toEqual(sandboxRef("blaxel", fake.instance.metadata.name));
-			expect(create).toHaveBeenCalledTimes(1);
-			expect(create.mock.calls[0]?.[0]).toMatchObject({
-				memory: 8192,
-				region: BLAXEL_REGION,
-				volumes: [
-					{
-						mountPath: BLAXEL_VOLUME_MOUNT_DIR,
-						type: "ephemeral",
-						sizeMb: 40 * 1024 + BLAXEL_VOLUME_HEADROOM_MB,
-					},
-				],
-			});
-			expect(fake.processCalls[0]).toMatchObject({
-				name: BLAXEL_KEEPALIVE_PROCESS,
-				command: "sleep infinity",
-				keepAlive: true,
-				timeout: 0,
-				waitForCompletion: false,
-			});
-			expect(fake.processCalls[1]?.command).toContain("df -Pk");
-			const result = await session.exec("echo hi");
-			expect(result.exit).toEqual({ kind: "exited", code: 0 });
-			expect(result.stdout).toBe("ok");
-			await session.destroy();
-			expect(remove).toHaveBeenCalledWith(fake.instance.metadata.name);
-		} finally {
-			create.mockRestore();
-			remove.mockRestore();
-		}
-	});
-
-	test("tears down an allocation whose volume is too small or whose keepalive never ran", async () => {
-		for (const options of [{ volumeCapacityGb: 5 }, { keepaliveStatus: "failed" }] as const) {
-			const fake = fakeInstance("benchmark-22222222-2222-4222-8222-222222222222", options);
-			const create = spyOn(SandboxInstance, "create").mockResolvedValue(fake.instance);
-			const remove = spyOn(SandboxInstance, "delete").mockResolvedValue({} as never);
-			try {
-				const error = await blaxelDriver
-					.driver(context)
-					.create(request)
-					.catch((caught: unknown) => caught);
-				expect(error).toMatchObject({ provider: "blaxel" });
-				expect(remove).toHaveBeenCalledWith(fake.instance.metadata.name);
-			} finally {
-				create.mockRestore();
-				remove.mockRestore();
-			}
-		}
-	});
-
-	test("withholds an exit code the sandbox never reported", async () => {
-		const killed = {
-			process: {
-				exec: async () => ({ status: "killed", exitCode: 0, stdout: "partial", stderr: "" }),
+/**
+ * A whole Blaxel workspace behind a stub of `SandboxInstance`'s statics: a delete leaves the record
+ * DELETING until a get observes it gone (the control plane's 404), cursor-paged listings, and per
+ * sandbox a process API and file store. Control-plane errors are the parsed bodies the generated
+ * client throws (`{ code }`).
+ */
+function blaxelWorkspace(
+	options: {
+		readonly pageSize?: number;
+		readonly volumeCapacityGb?: number;
+		readonly reportedMemoryMb?: number;
+		readonly keepaliveStatus?: string;
+		/** The first create allocates and then loses its response. */
+		readonly ambiguousFirstCreate?: boolean;
+	} = {},
+) {
+	const rows = new Map<string, Row>();
+	const created: Array<Record<string, unknown>> = [];
+	const processCalls: ProcessCall[] = [];
+	const deletes: string[] = [];
+	let ambiguous = options.ambiguousFirstCreate ?? false;
+	const allocate = (
+		name: string,
+		labels: Record<string, string> = {},
+		status = "DEPLOYED",
+		memory = 8192,
+	) => {
+		rows.set(name, { status, labels, memory, files: new Map(), deletingGets: 0 });
+		return name;
+	};
+	const live = (name: string) => {
+		const row = rows.get(name);
+		if (row?.status !== "DEPLOYED") throw new Error(`sandbox ${name} is not deployed`);
+		return row;
+	};
+	const instance = (name: string) =>
+		({
+			metadata: { name, labels: rows.get(name)?.labels },
+			get status() {
+				return rows.get(name)?.status;
 			},
-		} as unknown as SandboxInstance;
-		expect(await execBlaxelCommand(killed, "sleep 1")).toEqual({
-			stdout: "partial",
-			stderr: "",
+			spec: {
+				runtime: {
+					memory: options.reportedMemoryMb ?? rows.get(name)?.memory,
+					image: `${IMAGE}:latest`,
+				},
+				region: BLAXEL_REGION,
+			},
+			process: {
+				exec: async (call: ProcessCall) => {
+					processCalls.push(call);
+					const row = live(name);
+					const base = { pid: "1234", name: call.name ?? "cmd", logs: "", stderr: "" };
+					if (call.waitForCompletion === false) {
+						const echo = /^echo (\S+) > (\S+)$/.exec(call.command);
+						if (echo) row.files.set(echo[2] ?? "", `${echo[1]}\n`);
+						const status =
+							call.name === BLAXEL_KEEPALIVE_PROCESS
+								? (options.keepaliveStatus ?? "running")
+								: "running";
+						return { ...base, status, exitCode: 0, stdout: "" };
+					}
+					if (call.command === `df -Pk '${BLAXEL_PTS_DATA_DIR}' | awk 'NR==2 {print $2}'`)
+						return {
+							...base,
+							status: "completed",
+							exitCode: 0,
+							stdout: `${Math.round((options.volumeCapacityGb ?? 40.1) * 1024 * 1024)}\n`,
+						};
+					const exit = /^sh -c 'exit (\d+)'$/.exec(call.command);
+					if (exit) return { ...base, status: "failed", exitCode: Number(exit[1]), stdout: "" };
+					if (call.command === "killed")
+						return { ...base, status: "killed", exitCode: 0, stdout: "partial" };
+					return { ...base, status: "completed", exitCode: 0, stdout: "ok" };
+				},
+			},
+			fs: {
+				read: async (path: string) => {
+					const body = live(name).files.get(path);
+					if (body === undefined)
+						throw Object.assign(new Error("not found"), { response: { status: 404 } });
+					return body;
+				},
+				write: async (path: string, content: string) => {
+					live(name).files.set(path, content);
+					return { message: "ok" };
+				},
+			},
+		}) as unknown as SandboxInstance;
+	const sdk = {
+		create: async (params: Record<string, unknown>) => {
+			created.push(params);
+			const name = allocate(String(params.name), params.labels as Record<string, string>);
+			if (ambiguous) {
+				ambiguous = false;
+				throw new TypeError("socket hang up after the vendor accepted the create");
+			}
+			return instance(name);
+		},
+		get: async (name: string) => {
+			const row = rows.get(name);
+			if (!row) throw { code: 404, error: "not found" };
+			if (row.status === "DELETING" && row.deletingGets++ >= 1) {
+				rows.delete(name);
+				throw { code: 404, error: "not found" };
+			}
+			return instance(name);
+		},
+		delete: async (name: string) => {
+			deletes.push(name);
+			const row = rows.get(name);
+			if (!row) throw { code: 404, error: "not found" };
+			row.status = "DELETING";
+			return {};
+		},
+		list: async (query: { cursor?: string }) => {
+			const names = [...rows.keys()];
+			const from = Number(query.cursor ?? 0);
+			const size = options.pageSize ?? 100;
+			return {
+				data: names.slice(from, from + size).map(instance),
+				...(from + size < names.length && { nextCursor: String(from + size) }),
+			};
+		},
+	} as unknown as BlaxelSdk;
+	return { sdk, rows, created, processCalls, deletes, allocate };
+}
+
+/** The package's own module, lowered over a stub SDK instead of the real one. */
+function driverOver(workspace: ReturnType<typeof blaxelWorkspace>) {
+	return vendorDriver(blaxel, context, {
+		vendor: blaxelVendor(workspace.sdk, context),
+		timing: { pollMs: 0, readyTimeoutMs: 500, deleteTimeoutMs: 500 },
+	});
+}
+
+vendorContract("blaxel adapter", blaxel, () =>
+	blaxelVendor(blaxelWorkspace({ pageSize: 1 }).sdk, context),
+);
+
+describe("Blaxel end to end through its module", () => {
+	test("a session starts its keepalive, proves the volume, runs, launches, files, inventories, and is deleted", async () => {
+		const workspace = blaxelWorkspace({ pageSize: 2 });
+		workspace.allocate("someones-dev-box");
+		const driver = driverOver(workspace);
+		const session = await driver.create(request);
+		expect(workspace.processCalls[0]).toEqual({
+			name: BLAXEL_KEEPALIVE_PROCESS,
+			command: "sleep infinity",
+			keepAlive: true,
+			timeout: 0,
+			waitForCompletion: false,
 		});
-	});
+		expect(workspace.processCalls[1]?.command).toContain(`df -Pk '${BLAXEL_PTS_DATA_DIR}'`);
 
-	test("recovers an ambiguous create by name and classifies structured refusals", async () => {
-		const spec = blaxelSpec(context);
-		if (!spec.createRecovery) throw new Error("missing create recovery");
-		const get = spyOn(SandboxInstance, "get").mockRejectedValueOnce({ code: 404, error: "nope" });
-		const remove = spyOn(SandboxInstance, "delete").mockResolvedValue({} as never);
-		try {
-			const locator = { kind: "name", value: "benchmark-x" } as const;
-			expect(await spec.createRecovery.cleanup(spec.compute, locator, {})).toEqual({
-				status: "absent",
-			});
-			get.mockResolvedValueOnce(fakeInstance("benchmark-x").instance);
-			expect(await spec.createRecovery.cleanup(spec.compute, locator, {})).toEqual({
-				status: "destroyed",
-			});
-			expect(remove).toHaveBeenCalledWith("benchmark-x");
-			get.mockResolvedValueOnce(fakeInstance("benchmark-other").instance);
-			await expect(spec.createRecovery.cleanup(spec.compute, locator, {})).rejects.toThrow(
-				/unrelated sandbox/,
-			);
-		} finally {
-			get.mockRestore();
-			remove.mockRestore();
-		}
-		expect(spec.createRecovery.isDefinitive?.({ code: 401 })).toBe(true);
-		expect(spec.createRecovery.isDefinitive?.(new Error("socket hang up"))).toBe(false);
-		expect(spec.createRecovery.isRetryableCreate?.({ code: 429 })).toBe(true);
-		expect(spec.createRecovery.isRetryableCreate?.({ code: 500 })).toBe(false);
-		expect(isBlaxelNotFound({ code: 404 })).toBe(true);
-		expect(isBlaxelNotFound(new Error("404 not found"))).toBe(false);
-	});
-});
+		expect((await session.exec("sh -c 'exit 7'")).exit).toEqual({ kind: "exited", code: 7 });
+		await session.launch?.("echo done > /tmp/done");
+		expect(workspace.processCalls.at(-1)).toMatchObject({ keepAlive: true, timeout: 0 });
+		expect(await session.files?.readFile("/tmp/done")).toBe("done\n");
+		expect(await session.files?.exists("/tmp/missing")).toBe(false);
+		await session.files?.writeText("/tmp/item", "saved");
+		expect(await session.files?.exists("/tmp/item")).toBe(true);
 
-describe("Blaxel account inventory and recovery", () => {
-	test("drains the listing, owns by label or name, and skips sandboxes on their way out", async () => {
-		const labelled = fakeInstance("custom-name", { labels: { [BLAXEL_OWNER_LABEL]: "blaxel" } });
-		const named = fakeInstance("benchmark-33333333-3333-4333-8333-333333333333");
-		const foreign = fakeInstance("someones-dev-box");
-		const dying = fakeInstance("benchmark-44444444-4444-4444-8444-444444444444", {
-			status: "DELETING",
+		const labelled = workspace.allocate("custom-name", { [BLAXEL_OWNER_LABEL]: "blaxel" });
+		const named = workspace.allocate(NAMED, {}, "FAILED");
+		// Another tenant's sandbox that copied the attempt label is foreign, never deleted.
+		workspace.allocate("their-copy", { [BLAXEL_ATTEMPT_LABEL]: NAMED });
+		// Another tenant's sandbox mid-delete holds nothing the benchmark competes with.
+		workspace.allocate("their-leaving-box", {}, "DELETING");
+		expect(await driver.inventory?.list()).toEqual({
+			owned: [
+				session.sandboxRef,
+				{ provider: "blaxel", id: labelled },
+				{ provider: "blaxel", id: named },
+			],
+			foreignCount: 2,
 		});
-		const list = spyOn(SandboxInstance, "list").mockResolvedValue(
-			fakePage([labelled.instance, named.instance, foreign.instance, dying.instance]),
-		);
-		try {
-			const driver = blaxelDriver.driver(context);
-			expect(await driver.inventory?.list()).toEqual({
-				owned: [
-					sandboxRef("blaxel", "custom-name"),
-					sandboxRef("blaxel", named.instance.metadata.name),
-				],
-				foreignCount: 1,
+		await driver.destroyById?.({ provider: "blaxel", id: labelled });
+		await driver.destroyById?.({ provider: "blaxel", id: named });
+		await session.destroy();
+		expect(workspace.deletes.at(-1)).toBe(session.sandboxRef.id);
+		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
+		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 2 });
+	});
+
+	test("a short volume or a memory off the request is refused; a dead keepalive fails; each is deleted", async () => {
+		for (const [options, code] of [
+			[{ volumeCapacityGb: 5 }, "invalid-create-request"],
+			[{ reportedMemoryMb: 4096 }, "invalid-create-request"],
+			[{ keepaliveStatus: "failed" }, "create-failed"],
+		] as const) {
+			const workspace = blaxelWorkspace(options);
+			await expect(driverOver(workspace).create(request)).rejects.toMatchObject({
+				code,
+				provider: "blaxel",
 			});
-			expect(list).toHaveBeenCalledWith({ limit: 100, showTerminated: false });
-		} finally {
-			list.mockRestore();
-		}
-	});
-
-	test("destroys by id and converges only on the control plane's own 404", async () => {
-		const remove = spyOn(SandboxInstance, "delete").mockResolvedValue({} as never);
-		try {
-			const driver = blaxelDriver.driver(context);
-			await driver.destroyById?.(sandboxRef("blaxel", "benchmark-leftover"));
-			expect(remove).toHaveBeenCalledWith("benchmark-leftover");
-			remove.mockRejectedValueOnce({ code: 404, error: "gone" });
-			await driver.destroyById?.(sandboxRef("blaxel", "benchmark-leftover"));
-			remove.mockRejectedValueOnce({ code: 500, error: "control plane unavailable" });
-			await expect(
-				driver.destroyById?.(sandboxRef("blaxel", "benchmark-leftover")),
-			).rejects.toMatchObject({ code: "destroy-failed", provider: "blaxel" });
-		} finally {
-			remove.mockRestore();
-		}
-	});
-
-	test("observes running, terminal, and absent sandboxes through the control plane", async () => {
-		const get = spyOn(SandboxInstance, "get")
-			.mockResolvedValueOnce(fakeInstance("benchmark-a").instance)
-			.mockResolvedValueOnce(fakeInstance("benchmark-a", { status: "TERMINATED" }).instance)
-			.mockRejectedValueOnce({ code: 404, error: "gone" });
-		try {
-			const probes = blaxelDriver.driver(context).probes;
-			const ref = sandboxRef("blaxel", "benchmark-a");
-			expect(await probes?.observe(ref)).toEqual({ state: "running" });
-			expect(await probes?.observe(ref)).toEqual({ state: "terminal" });
-			expect(await probes?.observe(ref)).toEqual({ state: "absent" });
-		} finally {
-			get.mockRestore();
+			expect(workspace.deletes).toHaveLength(1);
+			expect(workspace.rows.size).toBe(0);
 		}
 	});
 });
