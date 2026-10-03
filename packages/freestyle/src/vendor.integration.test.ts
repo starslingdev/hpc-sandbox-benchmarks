@@ -4,7 +4,7 @@ import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
 import { MARKER_PREFIX } from "@sandbox-benchmarks/driver/vendor";
 import { restStub, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
-import freestyle, { snapshotBuild } from "./driver.ts";
+import freestyle, { snapshotBuild } from "./index.ts";
 import { FREESTYLE_OWNER_KEY, FREESTYLE_SLUG, freestyleVendor } from "./vendor.ts";
 
 const context = {
