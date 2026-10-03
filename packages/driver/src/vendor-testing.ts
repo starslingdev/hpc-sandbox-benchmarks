@@ -153,3 +153,12 @@ export function vendorContract<Raw, Native>(
 		expect(await vendor.control.remove(created.id, op)).toBe("removed");
 	});
 }
+
+export type {
+	RestRequest,
+	RestRoute,
+	RestStubOptions,
+	SdkAccount,
+	SdkStubOptions,
+} from "./lib/vendor-transport.fixture.ts";
+export { restStub, sdkStub } from "./lib/vendor-transport.fixture.ts";

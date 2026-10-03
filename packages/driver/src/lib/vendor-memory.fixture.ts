@@ -65,7 +65,7 @@ export interface MemoryVendorOptions {
  * the shell-detach launcher, the files fallback), answering the disk probe of the root and of each
  * declared mount with its capacity.
  */
-function guestOf(options: Pick<MemoryVendorOptions, "diskGb" | "mounts" | "seedFiles">) {
+export function guestOf(options: Pick<MemoryVendorOptions, "diskGb" | "mounts" | "seedFiles">) {
 	const capacities = new Map([
 		[DISK_PROBE, options.diskGb ?? 80],
 		...Object.entries(options.mounts ?? {}).map(([path, gb]) => [diskProbe(path), gb] as const),
