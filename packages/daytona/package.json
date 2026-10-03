@@ -9,7 +9,9 @@
     ".": "./src/index.ts",
     "./vm": "./src/vm.ts",
     "./container": "./src/container.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./vm/artifact": "./src/vm/artifact.ts",
+    "./container/artifact": "./src/container/artifact.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -18,7 +20,8 @@
   "dependencies": {
     "@daytona/sdk": "catalog:computesdk",
     "@sandbox-benchmarks/driver": "workspace:*",
-    "arktype": "catalog:"
+    "arktype": "catalog:",
+    "@daytona/api-client": "catalog:computesdk"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
