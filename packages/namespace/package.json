@@ -14,10 +14,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "catalog:computesdk",
-    "@connectrpc/connect": "catalog:computesdk",
-    "@connectrpc/connect-node": "catalog:computesdk",
-    "@namespacelabs/sdk": "catalog:computesdk",
+    "@bufbuild/protobuf": "catalog:vendors",
+    "@connectrpc/connect": "catalog:vendors",
+    "@connectrpc/connect-node": "catalog:vendors",
+    "@namespacelabs/sdk": "catalog:vendors",
     "@sandbox-benchmarks/driver": "workspace:*",
     "arktype": "catalog:"
   },
