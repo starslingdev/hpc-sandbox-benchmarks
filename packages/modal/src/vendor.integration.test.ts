@@ -10,12 +10,10 @@ import type { CreateAttempt } from "@sandbox-benchmarks/driver/vendor";
 import { DISK_PROBE } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { ClientError, Status } from "nice-grpc";
-import { defineModalDriver } from "./driver.ts";
+import modalGvisor from "./gvisor.ts";
 import type { ModalBackend, ModalControlPlane, ModalControlSandbox } from "./vendor.ts";
 import { MODAL_APP_NAME, modalVendor } from "./vendor.ts";
-
-const modalVm = defineModalDriver("modal-vm");
-const modalGvisor = defineModalDriver("modal-gvisor");
+import modalVm from "./vm.ts";
 
 const IMAGE = "registry.example/toolchain:version";
 const context: DriverContext<"modal-vm"> = {
