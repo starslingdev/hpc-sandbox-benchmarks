@@ -17,7 +17,8 @@
     "./errors": "./src/errors.ts",
     "./vendor": "./src/vendor.ts",
     "./artifact": "./src/artifact.ts",
-    "./vendor/testing": "./src/vendor-testing.ts"
+    "./vendor/testing": "./src/vendor-testing.ts",
+    "./vendor/e2b-protocol": "./src/vendor-e2b-protocol.ts"
   },
   "scripts": {
     "test": "bun test",
