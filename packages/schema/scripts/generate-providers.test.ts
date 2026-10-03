@@ -47,3 +47,110 @@ function edit(root: string, file: string, from: string, to: string): void {
 	expect(source).toContain(from);
 	writeFileSync(path, source.replace(from, to));
 }
+
+describe("generate-providers", () => {
+	test("the drift check passes on a clean tree", () => {
+		const root = copyTree();
+		const check = run(root, "--check");
+		expect(check.output).toContain("match the metadata registry");
+		expect(check.exitCode).toBe(0);
+	});
+
+	test("a metadata edit without regeneration fails the check; regenerating restores it", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/schema/src/provider-meta/e2b.ts",
+			'displayName: "E2B"',
+			'displayName: "E2B Cloud"',
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(".env.example");
+		expect(stale.output).toContain("run `bun run generate-providers`");
+
+		const generate = run(root);
+		expect(generate.exitCode).toBe(0);
+		expect(readFileSync(resolve(root, ".env.example"), "utf8")).toContain("# --- E2B Cloud (");
+		expect(run(root, "--check").exitCode).toBe(0);
+	});
+
+	test("a provider id without its assembled registry entry fails the check", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/schema/src/provider-meta/index.ts",
+			"\tbrezel: MODULES.brezel.meta,\n",
+			"",
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain("packages/schema/src/provider-meta/index.ts");
+	});
+
+	test("an sdkPackage its provider package does not depend on fails generation", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/schema/src/provider-meta/runloop.ts",
+			'sdkPackage: "@runloop/api-client"',
+			'sdkPackage: "@computesdk/runloop"',
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(
+			"runloop: sdkPackage @computesdk/runloop is not a runtime dependency of packages/runloop/package.json",
+		);
+	});
+
+	test("a CLI sdkPackage without a pinned setup action fails generation", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/schema/src/provider-meta/tama.ts",
+			'sdkPackage: { cli: "tama" }',
+			'sdkPackage: { cli: "tamarind" }',
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(".github/actions/setup-tamarind/action.yml");
+	});
+
+	test("an OCI baker without its ./artifact export fails generation", () => {
+		const root = copyTree();
+		edit(root, "packages/runloop/package.json", '"./artifact": "./src/artifact.ts",\n', "");
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(
+			"packages/runloop/package.json: runloop bakes from the OCI base, so it must export ./artifact from packages/runloop/src/artifact.ts",
+		);
+	});
+
+	test("an ./artifact export on a provider that does not bake from the OCI base fails generation", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/freestyle/package.json",
+			'"./transport": "./src/transport.ts",',
+			'"./transport": "./src/transport.ts",\n    "./artifact": "./src/transport.ts",',
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain(
+			"packages/freestyle/package.json: exports ./artifact, but no provider it serves bakes from the OCI base there",
+		);
+	});
+
+	test("a native-snapshot baker without its snapshotBuild options fails generation", () => {
+		const root = copyTree();
+		edit(
+			root,
+			"packages/freestyle/src/index.ts",
+			"export const snapshotBuild",
+			"const snapshotBuild",
+		);
+		const stale = run(root, "--check");
+		expect(stale.exitCode).toBe(1);
+		expect(stale.output).toContain("its driver entry must export snapshotBuild");
+	});
+});

@@ -33,7 +33,18 @@ const quotaDomainSchema = nonemptyStringSchema.narrow((value, ctx) =>
 		? true
 		: ctx.mustBe("a quota domain identifier (letters, digits, '.', '_', '-')"),
 );
-const finitePositiveNumberSchema = type("number > 0").narrow(Number.isFinite);
+const kebabIdentifierSchema = nonemptyStringSchema.narrow((value, ctx) =>
+	/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ? true : ctx.mustBe("a lowercase kebab-case name"),
+);
+// Provenance reports every provider package's library at an exact version (an npm or CLI pin), so
+// an HTTP-only adapter states its API contract the same way, and run records compare like for like.
+const exactVersionSchema = nonemptyStringSchema.narrow((value, ctx) =>
+	/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(
+		value,
+	)
+		? true
+		: ctx.mustBe('an exact semantic version (for example "1.0.0")'),
+);
 const httpUrlSchema = type("string.url").narrow((value) => {
 	const protocol = new URL(value).protocol;
 	return protocol === "http:" || protocol === "https:";
@@ -99,7 +110,16 @@ export const providerMetaSourceSchema = type({
 	vendor: nonemptyStringSchema,
 	"quotaDomain?": quotaDomainSchema,
 	website: httpUrlSchema,
-	sdkPackage: nonemptyStringSchema,
+	sdkPackage: nonemptyStringSchema
+		.or(type({ cli: kebabIdentifierSchema }).onUndeclaredKey("reject"))
+		.or(type({ http: exactVersionSchema }).onUndeclaredKey("reject")),
+	"package?": type({
+		directory: kebabIdentifierSchema,
+		entry: kebabIdentifierSchema.narrow((value, ctx) =>
+			value === "index" ? ctx.mustBe("a variant entry other than index") : true,
+		),
+	}).onUndeclaredKey("reject"),
+	"figureLabel?": singleLineStringSchema,
 	artifact: providerArtifactSchema,
 	inputs: providerInputSchema.array().atLeastLength(1),
 	isolation: type({
@@ -113,11 +133,6 @@ export const providerMetaSourceSchema = type({
 		"notes?": nonemptyStringSchema,
 	}).onUndeclaredKey("reject"),
 	specPinning: "'settable' | 'fixed' | 'unknown'",
-	transport: type({
-		streaming: "boolean",
-		syncCapMs: finitePositiveNumberSchema.or("null"),
-		detachedPoll: "boolean",
-	}).onUndeclaredKey("reject"),
 	"runtimeIdentity?": "'root' | 'unprivileged'",
 	"runner?": type({
 		label: singleLineStringSchema,
@@ -172,11 +187,6 @@ type StepProvidedInput = Omit<NormalizedProviderInput, "source"> & {
 	>;
 };
 
-const SHARED_VARIANT_GROUPS = [
-	["daytona-vm", "daytona-container"],
-	["modal-gvisor", "modal-vm"],
-] as const;
-
 export function assertProviderIdSyntax(ids: readonly string[] = PROVIDER_IDS): void {
 	for (const id of ids) {
 		if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(id)) {
@@ -206,11 +216,40 @@ export function validateProviderModules(
 		parsed[expectedId] = result as ProviderMetaModule<ProviderId>;
 	}
 
-	for (const group of SHARED_VARIANT_GROUPS) {
-		const [first, ...rest] = group;
+	// Isolation variants are the ids that share one provider package. A declared `package` exists
+	// only to name that sharing, so one no other id shares is a mislocated driver, and variants of
+	// one package are one vendor offering that must be priced and labelled as such.
+	const variantsByDirectory = new Map<string, ProviderId[]>();
+	for (const id of PROVIDER_IDS) {
+		const directory = parsed[id].meta.package?.directory ?? id;
+		variantsByDirectory.set(directory, [...(variantsByDirectory.get(directory) ?? []), id]);
+	}
+	for (const [directory, variants] of variantsByDirectory) {
+		const [first, ...rest] = variants;
+		if (first === undefined) continue;
+		if (rest.length === 0 && parsed[first].meta.package !== undefined) {
+			throw new Error(
+				`${first}: package is declared only for isolation variants sharing packages/${directory}`,
+			);
+		}
 		for (const id of rest) {
 			if (parsed[first].meta.pricing !== parsed[id].meta.pricing) {
-				throw new Error(`${group.join("/")}: isolation variants must share one pricing object`);
+				throw new Error(`${variants.join("/")}: isolation variants must share one pricing object`);
+			}
+			if (parsed[first].meta.vendor !== parsed[id].meta.vendor) {
+				throw new Error(`${variants.join("/")}: isolation variants must share one vendor`);
+			}
+		}
+		const entries = new Set(variants.map((id) => parsed[id].meta.package?.entry ?? "index"));
+		if (entries.size !== variants.length) {
+			throw new Error(`${variants.join("/")}: isolation variants need distinct package entries`);
+		}
+		// figureLabel is declared only where it changes the chart: the derived default is the vendor
+		// for variants (one vendor on a chart) and the display name otherwise.
+		for (const id of variants) {
+			const { figureLabel, vendor, displayName } = parsed[id].meta;
+			if (figureLabel === (rest.length > 0 ? vendor : displayName)) {
+				throw new Error(`${id}: figureLabel ${figureLabel} repeats the derived default; omit it`);
 			}
 		}
 	}

@@ -253,14 +253,15 @@ describe("Tier-3 provider metadata schema", () => {
 		);
 	});
 
-	test("rejects malformed transport and pricing before generation", () => {
+	test("rejects retired transport metadata and malformed pricing before generation", () => {
+		// Exec transport belongs to the driver module's execution policy, never to metadata.
 		expect(() =>
 			validateProviderModules(
 				meta("e2b", {
-					transport: { streaming: false, syncCapMs: Number.POSITIVE_INFINITY, detachedPoll: true },
+					transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },
 				}),
 			),
-		).toThrow(/syncCapMs/);
+		).toThrow(/transport/);
 		expect(() =>
 			validateProviderModules(
 				meta("e2b", {
@@ -278,5 +279,54 @@ describe("Tier-3 provider metadata schema", () => {
 				}),
 			),
 		).toThrow(/daytona-vm\/daytona-container: isolation variants must share one pricing object/);
+	});
+
+	test("accepts an npm package, a pinned CLI, or an exact HTTP API contract version as sdkPackage", () => {
+		expect(() =>
+			validateProviderModules(meta("brezel", { sdkPackage: { http: "1.2.0" } })),
+		).not.toThrow();
+		// Provenance is an exact pin for every provider package, an HTTP-only one included.
+		for (const loose of ["v1", "2026-09-01", "1.2"])
+			expect(() =>
+				validateProviderModules(meta("brezel", { sdkPackage: { http: loose } })),
+			).toThrow(/sdkPackage/);
+		expect(() =>
+			validateProviderModules(meta("tama", { sdkPackage: { cli: "Tama CLI" } })),
+		).toThrow(/sdkPackage/);
+		expect(() =>
+			validateProviderModules(meta("tama", { sdkPackage: { cli: "tama", http: "v1" } })),
+		).toThrow(/sdkPackage/);
+	});
+
+	test("declares a package location only for isolation variants sharing a directory", () => {
+		expect(() =>
+			validateProviderModules(meta("e2b", { package: { directory: "e2b-next", entry: "vm" } })),
+		).toThrow(/e2b: package is declared only for isolation variants/);
+		expect(() =>
+			validateProviderModules(
+				meta("modal-vm", { package: { directory: "modal", entry: "gvisor" } }),
+			),
+		).toThrow(/distinct package entries/);
+		expect(() =>
+			validateProviderModules(
+				meta("modal-vm", { package: { directory: "modal", entry: "index" } }),
+			),
+		).toThrow(/entry/);
+	});
+
+	test("requires variants of one package to share a vendor", () => {
+		expect(() => validateProviderModules(meta("modal-vm", { vendor: "Modal Labs" }))).toThrow(
+			/isolation variants must share one vendor/,
+		);
+	});
+
+	test("rejects a figureLabel that repeats the derived default", () => {
+		expect(() => validateProviderModules(meta("e2b", { figureLabel: "E2B" }))).toThrow(
+			/e2b: figureLabel E2B repeats the derived default/,
+		);
+		expect(() => validateProviderModules(meta("modal-vm", { figureLabel: "Modal" }))).toThrow(
+			/modal-vm: figureLabel Modal repeats the derived default/,
+		);
+		expect(() => validateProviderModules(meta("e2b", { figureLabel: "e2b" }))).not.toThrow();
 	});
 });
