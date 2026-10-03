@@ -4,6 +4,9 @@ status: accepted
 
 # Driver conformance: the behavioral drift gate
 
+> Amended by [ADR-0024](./0024-provider-packages-behind-a-vendor-port.md): the kit tier runs
+> against `memoryVendor` and `vendorContract` from `@sandbox-benchmarks/driver/vendor/testing`.
+
 ## Context
 
 This repo gates every **data** projection it depends on. ADR-0003 holds the generated catalog

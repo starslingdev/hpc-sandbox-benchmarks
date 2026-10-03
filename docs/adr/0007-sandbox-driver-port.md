@@ -5,9 +5,18 @@ status: accepted
 # The sandbox driver kit: one port, one file per provider, ComputeSDK as one driver
 
 > Package layout amendment: provider implementations now live in `packages/<provider>` and own
-> their SDK dependencies. `packages/drivers` is only the generated lazy loader; shared bridge
-> mechanics are explicit `@sandbox-benchmarks/driver` subpaths. Daytona and Modal variants share
-> one vendor package. The port, declarative configuration, and behavioral contracts below remain.
+> their SDK dependencies. `packages/drivers` is only the generated lazy loader. Daytona and Modal
+> variants share one vendor package. The port, declarative configuration, and behavioral contracts
+> below remain.
+>
+> Bridge amendment: the ComputeSDK bridge below is now internal to `packages/driver`. It has no
+> public subpath (the `./computesdk` and `./native` subpaths and their authoring helpers were
+> removed); the vendor kit (`./vendor`) lowers every SDK and HTTP driver onto it, and the CLI kit
+> (`./cli`) remains the public route for vendor CLIs.
+>
+> Amended by [ADR-0024](./0024-provider-packages-behind-a-vendor-port.md): drivers are written
+> against the vendor port (`@sandbox-benchmarks/driver/vendor`); a provider package is its
+> vendor's only importer and exposes `./artifact` when it bakes; `ARTIFACT_BUILDERS` is generated.
 
 ## Context
 
@@ -785,6 +794,8 @@ export default defineComputeSdkDriver("e2b", {
   },
 });
 ```
+
+(Amended: E2B has since moved onto the vendor port, ADR-0024; the excerpt records this ADR's proof.)
 
 The complete E2B proof module is a few hundred lines, not the composition excerpt
 above. Roughly half is provider-specific safety work the generic wrapper cannot truthfully infer: structural
