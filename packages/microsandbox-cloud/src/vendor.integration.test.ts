@@ -12,7 +12,7 @@ import {
 } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import { IoError, SandboxFsOpsError, SandboxNotFoundError } from "microsandbox";
-import microsandboxCloud from "./driver.ts";
+import microsandboxCloud from "./index.ts";
 import type { MicrosandboxSdk } from "./vendor.ts";
 import { microsandboxVendor } from "./vendor.ts";
 
