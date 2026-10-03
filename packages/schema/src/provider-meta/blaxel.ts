@@ -53,12 +53,4 @@ export default defineProviderMeta("blaxel", {
 	// you can't set CPU and RAM independently -- so "fixed" remains the honest capability: this
 	// particular target is reachable, an arbitrary one would not be.
 	specPinning: "fixed",
-	transport: {
-		// The driver execs through the sandbox gateway's process API; long synchronous execs are not
-		// validated, so apply the conservative 60s policy bound and launch long steps as native
-		// background processes polled through the sandbox filesystem.
-		streaming: false,
-		syncCapMs: 60_000,
-		detachedPoll: true,
-	},
 });

@@ -1,5 +1,5 @@
 import { defineProviderMeta } from "../provider-meta.ts";
-import { modalPricing, modalTransport } from "./_modal.ts";
+import { modalPricing } from "./_modal.ts";
 
 export default defineProviderMeta("modal-vm", {
 	displayName: "Modal (VM)",
@@ -7,6 +7,7 @@ export default defineProviderMeta("modal-vm", {
 	quotaDomain: "modal",
 	website: "https://modal.com",
 	sdkPackage: "modal",
+	package: { directory: "modal", entry: "vm" },
 	artifact: { kind: "image" },
 	inputs: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 	isolation: {
@@ -22,5 +23,4 @@ export default defineProviderMeta("modal-vm", {
 			"Isolation variant sharing Modal credentials/pricing with modal-gvisor; adds experimentalOptions {vm_runtime:true} at create. Now carries committed runs and is in the default matrix set.",
 	},
 	specPinning: "settable",
-	transport: modalTransport,
 });

@@ -3,6 +3,7 @@ import { defineProviderMeta } from "../provider-meta.ts";
 export default defineProviderMeta("microsandbox-cloud", {
 	displayName: "Microsandbox Cloud",
 	vendor: "Microsandbox",
+	figureLabel: "microsandbox",
 	website: "https://microsandbox.dev",
 	sdkPackage: "microsandbox",
 	artifact: { kind: "image" },
@@ -100,11 +101,4 @@ export default defineProviderMeta("microsandbox-cloud", {
 			"Create, readiness, exec, filesystem, list, and graceful teardown are supported. Cloud snapshots and published ports are not yet available.",
 	},
 	specPinning: "settable",
-	transport: {
-		// The adapter does not expose streaming callbacks. Use detached+filesystem polling for any
-		// benchmark-length step so a long-lived remote WebSocket is not the durability boundary.
-		streaming: false,
-		syncCapMs: 60_000,
-		detachedPoll: true,
-	},
 });

@@ -4,12 +4,7 @@
 
 import type { ProviderId } from "./provider-ids.ts";
 import type { ProviderPricing } from "./provider-pricing.ts";
-import type {
-	ProviderMaturity,
-	ProviderRuntimeIdentity,
-	ProviderTransport,
-	SpecPinning,
-} from "./providers.ts";
+import type { ProviderMaturity, ProviderRuntimeIdentity, SpecPinning } from "./providers.ts";
 
 export type IsolationClass = "vm" | "microVM" | "container" | "userspace" | "unknown";
 
@@ -85,6 +80,32 @@ export interface ProviderRunnerPolicy {
 	readonly lifetimeMinutes?: number;
 }
 
+/**
+ * The vendor library a provider package pins, which generated provenance reports at runtime.
+ *
+ * A string is an npm package that must be a runtime dependency of the provider's own package (the
+ * generator checks it). `cli` names a vendor CLI whose exact version is pinned by its setup action
+ * (`.github/actions/setup-<cli>/action.yml`); `http` is, for a vendor reached over plain HTTP with
+ * no library to pin, the version of the API contract its adapter speaks, as an exact semantic
+ * version like every other provenance pin (bump it when the adapter's translation changes).
+ */
+export type ProviderSdkPackage = string | { readonly cli: string } | { readonly http: string };
+
+/**
+ * Where an isolation variant's driver lives: `packages/<directory>/src/<entry>.ts`, exported as
+ * `@sandbox-benchmarks/<directory>/<entry>`. Omitted means the provider owns
+ * `packages/<id>/src/index.ts`; ids that share a directory are variants of one provider package.
+ */
+export interface ProviderPackageLocation {
+	readonly directory: string;
+	readonly entry: string;
+}
+
+/** The generated provenance constant for one provider package: `<DIRECTORY>_PROVENANCE`. */
+export function provenanceConstant(directory: string): string {
+	return `${directory.toUpperCase().replaceAll("-", "_")}_PROVENANCE`;
+}
+
 /** The inert object authored in `provider-meta/<id>.ts`. */
 export interface ProviderMetaSource {
 	readonly displayName: string;
@@ -97,7 +118,14 @@ export interface ProviderMetaSource {
 	 */
 	readonly quotaDomain?: string;
 	readonly website: string;
-	readonly sdkPackage: string;
+	readonly sdkPackage: ProviderSdkPackage;
+	/** Declared only for isolation variants that share one provider package. */
+	readonly package?: ProviderPackageLocation;
+	/**
+	 * Chart label, declared only where it differs from the derived default: the vendor for isolation
+	 * variants sharing a package (one vendor on a chart), otherwise the display name.
+	 */
+	readonly figureLabel?: string;
 	readonly artifact: ProviderArtifact;
 	readonly inputs: readonly ProviderInput[];
 	readonly isolation: {
@@ -108,7 +136,6 @@ export interface ProviderMetaSource {
 	readonly pricing: ProviderPricing;
 	readonly maturity: ProviderMaturity;
 	readonly specPinning: SpecPinning;
-	readonly transport: ProviderTransport;
 	readonly runtimeIdentity?: ProviderRuntimeIdentity;
 	readonly runner?: ProviderRunnerPolicy;
 	readonly preAuth?: ProviderPreAuth;
@@ -128,6 +155,31 @@ export function defineProviderMeta<const P extends ProviderId, const M extends P
 	meta: M,
 ): ProviderMetaModule<P, M> {
 	return { id, meta };
+}
+
+declare const UNFILLED: unique symbol;
+
+/**
+ * A value `bun run new-provider` leaves for a provider's author to state. It is assignable to no
+ * metadata field or port signature, so typecheck names every one still open by its hint.
+ */
+export interface UnfilledValue<Hint extends string> {
+	readonly [UNFILLED]: Hint;
+}
+
+/**
+ * A type `bun run new-provider` leaves for a provider's author to state. No hint satisfies its
+ * constraint, so typecheck names every one still open by its hint wherever it is written, used or
+ * not.
+ */
+export type Unfilled<Hint extends never> = Hint;
+
+/**
+ * Mark a value the author must still state. Evaluating it throws with its hint, so the registry's
+ * validation (and any adapter call that reaches one) fails rather than running on a placeholder.
+ */
+export function unfilled<const Hint extends string>(hint: Hint): UnfilledValue<Hint> {
+	throw new Error(`unfilled: ${hint} (left by \`bun run new-provider\`)`);
 }
 
 export function normalizeProviderInput(input: ProviderInput): NormalizedProviderInput {

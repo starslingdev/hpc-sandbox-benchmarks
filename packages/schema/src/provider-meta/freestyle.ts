@@ -75,5 +75,4 @@ export default defineProviderMeta("freestyle", {
 			"Native SDK driver included in the default CPU benchmark selection after native snapshot release and complete Mastra smoke coverage. FREESTYLE_SNAPSHOT_ID pins the immutable release snapshot; Ubuntu OS/compiler/kernel differences remain disclosed. Replicated suite coverage is established by each benchmark experiment.",
 	},
 	specPinning: "settable",
-	transport: { streaming: false, syncCapMs: 60_000, detachedPoll: true },
 });

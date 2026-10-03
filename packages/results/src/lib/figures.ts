@@ -32,7 +32,13 @@ import {
 	pipelineChartHtml,
 } from "@sandbox-benchmarks/figures";
 import type { Run } from "@sandbox-benchmarks/schema";
-import { METRIC_CATALOG, PROVIDERS, SUITES } from "@sandbox-benchmarks/schema";
+import {
+	figureLabel,
+	LEGACY_PROVIDER_ALIASES,
+	METRIC_CATALOG,
+	PROVIDERS,
+	SUITES,
+} from "@sandbox-benchmarks/schema";
 import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
 import { buildLeaderboard, FIGURE_DIMENSION } from "./leaderboard.ts";
 import type { LeaderboardDataset } from "./leaderboard-datasets.ts";
@@ -121,11 +127,18 @@ export function benchmarkDataOf(run: LeaderboardDataset): RealworldFigureModel {
 	return buildRealworldFigureModel({
 		run,
 		metrics: METRIC_CATALOG,
-		providers: PROVIDERS.map((provider) => ({
-			id: provider.id,
-			displayName: provider.displayName,
-			isolationTechnology: provider.isolation.technology,
-		})),
+		providers: [
+			...PROVIDERS.map((provider) => ({
+				id: provider.id,
+				figureLabel: figureLabel(provider.id),
+				isolationTechnology: provider.isolation.technology,
+			})),
+			// Pre-split runs keep their retired id; chart them under the variant that subsumed it.
+			...Object.entries(LEGACY_PROVIDER_ALIASES).map(([id, current]) => ({
+				id,
+				figureLabel: figureLabel(current),
+			})),
+		],
 		suites: SUITES,
 	});
 }

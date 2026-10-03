@@ -4,7 +4,7 @@ export default defineProviderMeta("runloop", {
 	displayName: "Runloop",
 	vendor: "Runloop",
 	website: "https://runloop.ai",
-	sdkPackage: "@computesdk/runloop",
+	sdkPackage: "@runloop/api-client",
 	artifact: { kind: "baked" },
 	inputs: [
 		"RUNLOOP_API_KEY",
@@ -62,12 +62,4 @@ export default defineProviderMeta("runloop", {
 	runtimeIdentity: "unprivileged",
 	// CUSTOM_SIZE exposes independent CPU, memory, and disk fields and can express 4 / 8 / 40 exactly.
 	specPinning: "settable",
-	transport: {
-		// The adapter waits for completed command output and does not forward streaming callbacks.
-		// Keep long steps off one control-plane request by using its background exec plus filesystem
-		// polling path; short setup commands remain synchronous.
-		streaming: false,
-		syncCapMs: 60_000,
-		detachedPoll: true,
-	},
 });

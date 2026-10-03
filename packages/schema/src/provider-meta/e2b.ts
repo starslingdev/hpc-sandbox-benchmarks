@@ -48,11 +48,4 @@ export default defineProviderMeta("e2b", {
 	},
 	maturity: { status: "ga", notes: "Custom images via e2b template build." },
 	specPinning: "fixed",
-	transport: {
-		// The native driver returns completed command envelopes. Commands budgeted at or beyond
-		// the 60-second synchronous cap use filesystem polling and native background launch.
-		streaming: false,
-		syncCapMs: 60_000,
-		detachedPoll: true,
-	},
 });
