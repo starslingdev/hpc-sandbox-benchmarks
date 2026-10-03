@@ -862,3 +862,104 @@ export interface RestStubOptions<Row> {
 	/** The API's not-found answer (default: 404 `{ error: "not found" }`). */
 	readonly missing?: (id: string) => Response;
 }
+
+/**
+ * A whole-account stand-in for a vendor's REST API, as a route table: `"METHOD /path/:param"` to a
+ * handler. Each sandbox is a row with its own guest shell, as in {@link memoryVendor}, so the kit's
+ * exec, files fallback and disk proof run for real. Every request is recorded; one no route
+ * matches throws, naming it.
+ */
+export function restStub<Row extends { readonly id: string }>(
+	routes: Readonly<Record<string, RestRoute<Row>>>,
+	options: RestStubOptions<Row> = {},
+) {
+	const { rows, add, guestFor } = stubAccount<Row>(options);
+	const calls: Array<{ method: string; path: string; headers: Headers; body: unknown }> = [];
+	const table = Object.entries(routes).map(([route, handler]) => {
+		const [method, path = ""] = route.split(" ");
+		return { method, segments: path.split("/"), handler };
+	});
+	const match = (method: string, path: string) => {
+		const segments = path.split("/");
+		for (const route of table) {
+			if (route.method !== method || route.segments.length !== segments.length) continue;
+			const params: Record<string, string> = {};
+			const matched = route.segments.every((segment, index) => {
+				const actual = segments[index] ?? "";
+				if (!segment.startsWith(":")) return segment === actual;
+				params[segment.slice(1)] = decodeURIComponent(actual);
+				return actual !== "";
+			});
+			if (matched) return { handler: route.handler, params };
+		}
+		return undefined;
+	};
+	const decode = (body: unknown) => {
+		if (typeof body === "string") {
+			try {
+				return JSON.parse(body);
+			} catch {
+				return body;
+			}
+		}
+		if (body instanceof Uint8Array || body instanceof ArrayBuffer)
+			return new TextDecoder().decode(body);
+		return undefined;
+	};
+	const answer = (value: unknown) =>
+		value instanceof Response
+			? value
+			: value === undefined
+				? new Response(null, { status: 204 })
+				: Response.json(value);
+	const route = async (input: string | URL | Request, init: RequestInit = {}) => {
+		const url = new URL(String(input));
+		const method = init.method ?? "GET";
+		const headers = new Headers(init.headers);
+		const body = decode(init.body);
+		calls.push({ method, path: `${url.pathname}${url.search}`, headers, body });
+		const latency = options.latencyMs?.(method, url.pathname) ?? 0;
+		if (latency > 0) await abortableDelay(latency, init.signal ?? undefined);
+		const found = match(method, url.pathname);
+		if (!found) throw new Error(`restStub: no route for ${method} ${url.pathname}`);
+		const id = found.params.id;
+		const row =
+			id === undefined ? undefined : (options.lookup ?? ((key) => rows.get(key)))(id, rows);
+		if (id !== undefined && row === undefined)
+			return options.missing?.(id) ?? Response.json({ error: "not found" }, { status: 404 });
+		const sandbox = () => {
+			if (row === undefined) throw new Error(`restStub: ${method} ${url.pathname} names no :id`);
+			return { row, guest: guestFor(row.id) };
+		};
+		return answer(
+			await found.handler({
+				method,
+				url,
+				params: found.params,
+				headers,
+				body,
+				signal: init.signal ?? undefined,
+				rows,
+				add,
+				get row() {
+					return sandbox().row;
+				},
+				run: (command) => {
+					const { code, stdout, stderr } = sandbox().guest.run(command);
+					return { exitCode: code, stdout, stderr };
+				},
+				get files() {
+					return sandbox().guest.files;
+				},
+			}),
+		);
+	};
+	return {
+		/** The stand-in, typed as the `fetch` an adapter receives. */
+		fetch: Object.assign(route, { preconnect() {} }) as typeof globalThis.fetch,
+		rows,
+		/** Every request, in order: method, path with query, headers and decoded body. */
+		calls,
+		add,
+	};
+}
