@@ -85,6 +85,11 @@ export interface ProviderRunnerPolicy {
 	readonly lifetimeMinutes?: number;
 }
 
+export interface ProviderPackageLocation {
+	readonly directory: string;
+	readonly entry: string;
+}
+
 /** The inert object authored in `provider-meta/<id>.ts`. */
 export interface ProviderMetaSource {
 	readonly displayName: string;
@@ -98,6 +103,8 @@ export interface ProviderMetaSource {
 	readonly quotaDomain?: string;
 	readonly website: string;
 	readonly sdkPackage: string;
+	readonly package?: ProviderPackageLocation;
+	readonly figureLabel?: string;
 	readonly artifact: ProviderArtifact;
 	readonly inputs: readonly ProviderInput[];
 	readonly isolation: {

@@ -15,18 +15,28 @@ import type {
 	NormalizedProviderInput,
 	ProviderArtifact,
 	ProviderMetaSource,
+	ProviderPackageLocation,
 	ProviderPreAuth,
 	ProviderRunnerPolicy,
 } from "./provider-meta.ts";
 import { normalizeProviderInput } from "./provider-meta.ts";
 import type { PricingComponent, PricingQuantityTerm, ProviderPricing } from "./provider-pricing.ts";
 
-export type { ArtifactPhase, BaseImageUse } from "./provider-artifacts.ts";
+export type {
+	ArtifactPhase,
+	BaseImageUse,
+	CandidateArtifact,
+	CandidateArtifactRefs,
+	NativeSnapshotProviderId,
+} from "./provider-artifacts.ts";
 export {
 	bakedArtifactName,
 	baseImageUse,
+	candidateArtifact,
 	isBakedProviderId,
 	isMirroredProviderId,
+	isNativeSnapshotProviderId,
+	releaseUnscopable,
 } from "./provider-artifacts.ts";
 export type { ProviderId } from "./provider-ids.ts";
 export { PROVIDER_IDS } from "./provider-ids.ts";
@@ -145,6 +155,8 @@ export interface ProviderMeta {
 	website: string;
 	/** The npm package the harness adapter wraps, e.g. "@computesdk/e2b". */
 	sdkPackage: string;
+	package?: ProviderPackageLocation;
+	figureLabel?: string;
 	/** Artifact lifecycle declared independently of vendor API syntax. */
 	artifact: ProviderArtifact;
 	/** Normalized provider inputs; consumers never handle descriptor shorthand. */
@@ -333,4 +345,46 @@ export function hourlyCostAtTargetSpec(
 		const component = components.get(id) as PricingComponent;
 		return total + component.usdPerUnitHour * pricingQuantityAtTargetSpec(component, targetSpec);
 	}, 0);
+}
+
+/** Where a provider's driver module lives, derived from its id unless it is an isolation variant. */
+export interface ProviderPackage {
+	/** `packages/<directory>`; isolation variants of one vendor share it. */
+	readonly directory: string;
+	/** `@sandbox-benchmarks/<directory>`. */
+	readonly packageName: string;
+	/** The package export the driver module is published under (`.` or `./<entry>`). */
+	readonly subpath: string;
+	/** The import specifier the generated loader uses. */
+	readonly specifier: string;
+	/** The driver module's source file, relative to the repository root. */
+	readonly file: string;
+}
+
+/** Resolve a provider to its package entry without loading its implementation. */
+export function providerPackage(id: ProviderId): ProviderPackage {
+	const meta: ProviderMetaSource = REGISTRY[id];
+	const { directory, entry } = meta.package ?? { directory: id, entry: "index" };
+	const packageName = `@sandbox-benchmarks/${directory}`;
+	return {
+		directory,
+		packageName,
+		subpath: entry === "index" ? "." : `./${entry}`,
+		specifier: entry === "index" ? packageName : `${packageName}/${entry}`,
+		file: `packages/${directory}/src/${entry}.ts`,
+	};
+}
+
+/**
+ * The concise label a chart uses for a provider. Isolation variants sharing one package are one
+ * vendor on a chart; every other provider uses its display name unless it declares a shorter one.
+ */
+export function figureLabel(id: ProviderId): string {
+	const meta: ProviderMetaSource = REGISTRY[id];
+	if (meta.figureLabel !== undefined) return meta.figureLabel;
+	const { directory } = providerPackage(id);
+	const shared = PROVIDER_IDS.some(
+		(other) => other !== id && providerPackage(other).directory === directory,
+	);
+	return shared ? meta.vendor : meta.displayName;
 }

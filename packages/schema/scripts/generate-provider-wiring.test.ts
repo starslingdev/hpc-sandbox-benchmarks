@@ -277,13 +277,16 @@ describe("provider wiring projections", () => {
 
 		const source = renderDriversIndex(fleet.moduleIds);
 		const scanned = new Bun.Transpiler({ loader: "ts" }).scan(source);
-		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([]);
-		expect(scanned.imports).toEqual(
-			fleet.moduleIds.map((id) => ({
-				kind: "dynamic-import",
-				path: driverModuleLocation(id).specifier,
-			})),
-		);
+		expect(scanned.imports.filter(({ kind }) => kind === "import-statement")).toEqual([
+			{ kind: "import-statement", path: "@sandbox-benchmarks/driver/artifact" },
+		]);
+		expect(
+			new Set(
+				scanned.imports
+					.filter(({ kind, path }) => kind === "dynamic-import" && !path.endsWith("/artifact"))
+					.map(({ path }) => path),
+			),
+		).toEqual(new Set(fleet.moduleIds.map((id) => driverModuleLocation(id).specifier)));
 		for (const id of fleet.moduleIds) {
 			expect(source).toContain(`typeof import("${driverModuleLocation(id).specifier}").default`);
 			expect(source).toContain(

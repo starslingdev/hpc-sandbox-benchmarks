@@ -7,6 +7,7 @@ export default defineProviderMeta("modal-vm", {
 	quotaDomain: "modal",
 	website: "https://modal.com",
 	sdkPackage: "modal",
+	package: { directory: "modal", entry: "vm" },
 	artifact: { kind: "image" },
 	inputs: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 	isolation: {

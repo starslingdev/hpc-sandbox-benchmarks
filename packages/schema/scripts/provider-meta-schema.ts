@@ -100,6 +100,10 @@ export const providerMetaSourceSchema = type({
 	"quotaDomain?": quotaDomainSchema,
 	website: httpUrlSchema,
 	sdkPackage: nonemptyStringSchema,
+	"package?": type({ directory: /^[a-z][a-z0-9-]*$/, entry: /^[a-z][a-z0-9-]*$/ }).onUndeclaredKey(
+		"reject",
+	),
+	"figureLabel?": singleLineStringSchema,
 	artifact: providerArtifactSchema,
 	inputs: providerInputSchema.array().atLeastLength(1),
 	isolation: type({
