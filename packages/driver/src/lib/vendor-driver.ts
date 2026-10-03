@@ -198,7 +198,12 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			observe: async (_compute, ref): Promise<SandboxObservation> => {
 				const record = await call("observe", undefined, (o) => control.get(ref.id, o));
 				return {
-					state: isGone(record) ? "absent" : record?.phase === "failed" ? "terminal" : "running",
+					state:
+						record?.terminal || record?.phase === "failed"
+							? "terminal"
+							: isGone(record)
+								? "absent"
+								: "running",
 				};
 			},
 			describe: async (_compute, ref) =>

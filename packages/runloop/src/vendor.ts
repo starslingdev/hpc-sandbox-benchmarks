@@ -72,7 +72,13 @@ function markerOf({ metadata }: DevboxView): string | undefined {
 
 const record = (devbox: DevboxView): VendorRecord<DevboxView> => {
 	const marker = markerOf(devbox);
-	return { id: devbox.id, phase: phaseOf(devbox.status), ...(marker && { marker }), raw: devbox };
+	return {
+		id: devbox.id,
+		phase: phaseOf(devbox.status),
+		...(devbox.status === "failure" && { terminal: true as const }),
+		...(marker && { marker }),
+		raw: devbox,
+	};
 };
 const requestOptions = (signal?: AbortSignal) => ({
 	timeout: RUNLOOP_CONTROL_TIMEOUT_MS,
