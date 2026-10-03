@@ -251,6 +251,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
         "modal": "catalog:computesdk",
         "nice-grpc": "catalog:computesdk",

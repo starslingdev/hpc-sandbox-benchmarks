@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { observeModalCleanupApp } from "@sandbox-benchmarks/modal/cleanup-observation";
 import { type } from "arktype";
 import { recoverExperimentCleanup } from "../lib/cleanup-recovery.ts";
 import { verifyCleanupWorkflowSource } from "../lib/cleanup-workflow.ts";
@@ -11,7 +12,6 @@ import { readExperimentAttempts, readExperimentPlan } from "../lib/experiment-ar
 import { githubExperimentStore } from "../lib/experiment-store.ts";
 import { downloadExperimentPlan } from "../lib/experiment-transfer.ts";
 import { githubAccountJournal, githubGitRequest } from "../lib/github-account-journal.ts";
-import { observeModalCleanupApp } from "../lib/modal-cleanup-observation.ts";
 
 const { values, positionals } = parseArgs({
 	args: process.argv.slice(2),

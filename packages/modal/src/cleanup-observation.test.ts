@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ModalClient } from "modal";
-import { observeModalCleanupApp } from "./modal-cleanup-observation.ts";
+import { observeModalCleanupApp } from "./cleanup-observation.ts";
 
 function fixture(running?: "v1" | "v2", anchored = true) {
 	const calls: string[] = [];
