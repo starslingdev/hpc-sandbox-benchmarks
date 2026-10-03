@@ -1,6 +1,12 @@
 // Release composition for provider artifacts. The registry decides which providers participate;
 // this module owns the provider-specific builder implementation for exactly those partitions.
 
+export {
+	buildProviderArtifact,
+	describeReplacement,
+	releaseBuildOwnership,
+} from "./build-provider-artifact.ts";
+
 import { config } from "@sandbox-benchmarks/providers/config";
 import type {
 	ArtifactPhase,
