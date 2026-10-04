@@ -89,6 +89,13 @@ Deploy this journal reader to main and stop older account writers before using t
 revisions reject the new record kind. Use current main for recovery and dataset backfill, not an
 Actions rerun at the old source revision. See [ADR-0018](../../docs/adr/0018-attest-already-released-cleanup.md).
 
+For the reviewed Runcloud ambiguous-create source in [ADR-0025](../../docs/adr/0025-runcloud-named-cleanup-recovery.md),
+the same cleanup command can bind the exact create name retained in the original diagnostic to a
+later sandbox identity. Two complete provider inventories must both retain one identical destroyed
+sandbox under that name. Empty inventories cannot authorize this recovery. The protected journal
+records the later name observation separately; the original failed attempt supplies no measurements.
+Deploy this reader to main before recovery, then backfill the original run with `--allow-partial`.
+
 ### Local multi-dataset leaderboard and impact report
 
 The `leaderboard` input can be a Run or a JSON array of Run file paths. Paths in an array are

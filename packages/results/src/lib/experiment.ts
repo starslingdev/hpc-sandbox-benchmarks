@@ -29,6 +29,7 @@ import {
 	MODAL_CREATED_REQUEST_REVISION,
 	parseRun,
 	providerReportedNothing,
+	RUNCLOUD_AMBIGUOUS_CREATE_REVISION,
 	UNSTARTED_BATCH_SOURCE_REVISION,
 	UNSTARTED_BATCH_WORKFLOW_REVISION,
 	unstartedBatchSchema,
@@ -824,6 +825,9 @@ export function verifyCleanupRecovery(plan: ExperimentPlan, attempt: AttemptWith
 			originalSandboxId(plan, attempt) !== recovery.observation.sandboxId
 		)
 			throw new Error("cleanup recovery sandbox differs from original execution");
+	} else if (recovery.observation.kind === "runcloud-named-sandbox") {
+		if (runcloudAmbiguousCreateName(plan, attempt) !== recovery.observation.sandboxName)
+			throw new Error("cleanup recovery is not the reviewed Runcloud named create failure");
 	} else if (
 		cell.provider !== "modal-gvisor" ||
 		cell.quotaDomain !== "modal" ||
@@ -839,6 +843,38 @@ export function verifyCleanupRecovery(plan: ExperimentPlan, attempt: AttemptWith
 /** Nothing ran: no measurement began and the harness left neither receipt. */
 export function failedBeforeExecution(attempt: AttemptWithRun): boolean {
 	return !attempt.evidence.measurementStarted && !attempt.execution && !attempt.cleanup;
+}
+
+/** A reviewed lost create response retained its exact caller-owned name, never a sandbox ID. */
+export function runcloudAmbiguousCreateName(
+	plan: ExperimentPlan,
+	attempt: AttemptWithRun,
+): string | undefined {
+	const { evidence } = attempt;
+	const cell = plan.cells.find((entry) => entry.id === evidence.cellId);
+	if (
+		plan.sha !== RUNCLOUD_AMBIGUOUS_CREATE_REVISION ||
+		evidence.sha !== plan.sha ||
+		cell?.provider !== "runcloud" ||
+		cell.quotaDomain !== "runcloud" ||
+		evidence.outcome !== "failed" ||
+		evidence.cleanup !== "unresolved" ||
+		!failedBeforeExecution(attempt) ||
+		attempt.allocation ||
+		!evidence.diagnostic
+	)
+		return undefined;
+	const prefix = `Suite "${cell.suite}" failed on runcloud — recorded as a failed gap in experiment/attempts/${evidence.id}/run.json: computesdk create failed: run.cloud create failed ambiguously (run.cloud create did not settle within 30000ms) and reconciliation could not establish its outcome (no allocation visible during reconciliation), so it is unknown whether a sandbox was allocated; if one was it carries the name `;
+	const suffix =
+		" and manual cleanup may be required; cleanup failed: runcloud ComputeSDK failed-create recovery cleanup callback failed";
+	if (!evidence.diagnostic.startsWith(prefix) || !evidence.diagnostic.endsWith(suffix))
+		return undefined;
+	const name = evidence.diagnostic.slice(prefix.length, -suffix.length);
+	return /^sandbox-benchmarks-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+		name,
+	)
+		? name
+		: undefined;
 }
 
 /**

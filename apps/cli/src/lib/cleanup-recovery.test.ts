@@ -3,8 +3,16 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxDriver } from "@sandbox-benchmarks/driver";
-import { evidenceDigest } from "@sandbox-benchmarks/results";
-import { MODAL_CREATED_REQUEST_REVISION, parseRun } from "@sandbox-benchmarks/schema";
+import {
+	evidenceDigest,
+	runcloudAmbiguousCreateName,
+	verifyCleanupRecovery,
+} from "@sandbox-benchmarks/results";
+import {
+	MODAL_CREATED_REQUEST_REVISION,
+	parseRun,
+	RUNCLOUD_AMBIGUOUS_CREATE_REVISION,
+} from "@sandbox-benchmarks/schema";
 import type { AccountRecord } from "./account-journal.ts";
 import { recoverAccount } from "./account-journal.ts";
 import { recoverExperimentCleanup } from "./cleanup-recovery.ts";
@@ -18,16 +26,17 @@ import { workflowExperiment } from "./workflow-experiment.ts";
 
 const root = mkdtempSync(join(tmpdir(), "cleanup-recovery-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
-function fixture(name: string, allocated = true) {
+const sandboxName = "sandbox-benchmarks-efda2427-1008-4157-91d0-2a06215216e9";
+function fixture(name: string, allocated = true, runcloud = false) {
 	const directory = join(root, name);
 	const raw = join(directory, "raw");
 	mkdirSync(raw, { recursive: true });
 	const plan = workflowExperiment(
 		{
 			GITHUB_RUN_ID: "123",
-			GITHUB_SHA: MODAL_CREATED_REQUEST_REVISION,
-			BENCH_PROVIDERS: "modal-gvisor",
-			BENCH_SUITES: "realworld-better-auth",
+			GITHUB_SHA: runcloud ? RUNCLOUD_AMBIGUOUS_CREATE_REVISION : MODAL_CREATED_REQUEST_REVISION,
+			BENCH_PROVIDERS: runcloud ? "runcloud" : "modal-gvisor",
+			BENCH_SUITES: runcloud ? "realworld-openclaw" : "realworld-better-auth",
 			BENCH_REPLICAS: "1",
 		},
 		"2026-09-14",
@@ -37,7 +46,7 @@ function fixture(name: string, allocated = true) {
 	const intent: AccountRecord = {
 		version: "1",
 		kind: "intent",
-		account: "modal",
+		account: runcloud ? "runcloud" : "modal",
 		attempt: cell.id,
 		cellId: cell.id,
 		planDigest: plan.digest,
@@ -95,8 +104,9 @@ function fixture(name: string, allocated = true) {
 			completion: "unknown",
 			runDigest: evidenceDigest(run),
 			rawDigest: rawTreeDigest(raw),
-			diagnostic:
-				"modal-gvisor ComputeSDK created-request preparation and verification callback failed; cleanup failed: modal-gvisor ComputeSDK lifecycle destroy callback failed",
+			diagnostic: runcloud
+				? `Suite "${cell.suite}" failed on runcloud — recorded as a failed gap in experiment/attempts/${cell.id}/run.json: computesdk create failed: run.cloud create failed ambiguously (run.cloud create did not settle within 30000ms) and reconciliation could not establish its outcome (no allocation visible during reconciliation), so it is unknown whether a sandbox was allocated; if one was it carries the name ${sandboxName} and manual cleanup may be required; cleanup failed: runcloud ComputeSDK failed-create recovery cleanup callback failed`
+				: "modal-gvisor ComputeSDK created-request preparation and verification callback failed; cleanup failed: modal-gvisor ComputeSDK lifecycle destroy callback failed",
 		}),
 	);
 	let running = true;
@@ -127,6 +137,13 @@ function fixture(name: string, allocated = true) {
 			journal,
 			openDriver: async () => driver,
 			modalAnchor: ref.id,
+			observeRuncloudName: async (_name: string) => ({
+				kind: "runcloud-named-sandbox" as const,
+				sandboxName,
+				sandboxId: "sbx-original",
+				state: "destroyed" as const,
+				inventoryPasses: 2 as const,
+			}),
 			observeModalApp: async () => ({
 				kind: "modal-app" as const,
 				appName: "sandbox-benchmarks" as const,
@@ -245,6 +262,102 @@ test("identifier-free clearance records the reviewed App observation without inv
 	});
 	expect(readExperimentAttempt(f.directory).evidence.cleanup).toBe("unresolved");
 	expect(f.destroys()).toBe(0);
+});
+
+test("a reviewed Runcloud name recovery preserves failure and survives fresh collection and admission", async () => {
+	const f = fixture("runcloud-named", false, true);
+	const original = readFileSync(join(f.directory, "attempt.json"), "utf8");
+	const recovery = await recoverExperimentCleanup(f.options);
+	expect(recovery.observation).toMatchObject({ kind: "runcloud-named-sandbox", sandboxName });
+	expect(f.records.at(-1)).toMatchObject({
+		kind: "released",
+		outcome: "reconciled",
+		evidence: recovery,
+	});
+	expect(await recoverExperimentCleanup(f.options)).toEqual(recovery);
+	expect(f.records).toHaveLength(2);
+	expect(f.destroys()).toBe(0);
+	expect(readFileSync(join(f.directory, "attempt.json"), "utf8")).toBe(original);
+	const fresh = join(root, "collected-runcloud-name");
+	await downloadExperimentAttempts(
+		{
+			list: async () => [
+				{
+					id: 1,
+					name: `experiment-attempt-123-${recovery.attemptId}`,
+					expired: false,
+					workflow_run: { id: 123 },
+				},
+			],
+			upload: async () => {},
+			download: async (_artifact, destination) => {
+				cpSync(f.directory, destination, { recursive: true });
+				rmSync(join(destination, "cleanup-recovery.json"));
+			},
+		},
+		f.options.journal,
+		f.plan,
+		fresh,
+	);
+	const collected = readExperimentAttempts(fresh)[0];
+	expect(collected?.cleanupRecovery).toEqual(recovery);
+	expect(collected?.evidence.outcome).toBe("failed");
+	await recoverAccount("runcloud", new Map(), f.options.journal, f.options.signal);
+});
+
+test("Runcloud name recovery refuses another signature, measurement, writers and journal races", async () => {
+	for (const fault of ["signature", "measurement", "name", "observation", "writers", "journal"]) {
+		const f = fixture(`runcloud-invalid-${fault}`, false, true);
+		const path = join(f.directory, "attempt.json");
+		const evidence = JSON.parse(readFileSync(path, "utf8"));
+		if (fault === "signature") evidence.diagnostic += " other failure";
+		if (fault === "measurement") evidence.measurementStarted = true;
+		writeFileSync(path, JSON.stringify(evidence));
+		if (fault === "name")
+			f.options.observeRuncloudName = async () => ({
+				kind: "runcloud-named-sandbox",
+				sandboxName: "sandbox-benchmarks-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				sandboxId: "sbx-other",
+				state: "destroyed",
+				inventoryPasses: 2,
+			});
+		if (fault === "observation")
+			f.options.observeRuncloudName = async () => {
+				throw new Error("inventory unavailable");
+			};
+		let checks = 0;
+		f.options.assertQuiescent = async () => {
+			checks++;
+			if (fault === "writers" && checks === 2) throw new Error("active writer");
+			if (fault === "journal" && checks === 2)
+				f.records.push({ ...f.records[0], kind: "intent" } as AccountRecord);
+		};
+		await expect(recoverExperimentCleanup(f.options)).rejects.toThrow();
+		expect(f.records.some((record) => record.kind === "released")).toBe(false);
+	}
+});
+
+test("publication re-verifies the reviewed Runcloud source and exact diagnostic name", async () => {
+	const f = fixture("runcloud-verification", false, true);
+	const recovery = await recoverExperimentCleanup(f.options);
+	const attempt = readExperimentAttempt(f.directory);
+	expect(() => verifyCleanupRecovery(f.plan, attempt)).not.toThrow();
+	expect(runcloudAmbiguousCreateName({ ...f.plan, sha: "b".repeat(40) }, attempt)).toBeUndefined();
+	expect(() =>
+		verifyCleanupRecovery(f.plan, {
+			...attempt,
+			cleanupRecovery: {
+				...recovery,
+				observation: {
+					kind: "runcloud-named-sandbox",
+					sandboxName: "sandbox-benchmarks-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+					sandboxId: "sbx-other",
+					state: "destroyed",
+					inventoryPasses: 2,
+				},
+			},
+		}),
+	).toThrow("reviewed Runcloud");
 });
 
 test("a supplemental attestation requires an ordinary matching release and a fresh observation", async () => {

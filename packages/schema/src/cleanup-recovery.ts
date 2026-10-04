@@ -24,6 +24,14 @@ export const cleanupRecoverySchema = type({
 			state: "'terminal' | 'absent'",
 		}).onUndeclaredKey("reject"),
 		type({
+			kind: "'runcloud-named-sandbox'",
+			sandboxName:
+				/^sandbox-benchmarks-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+			sandboxId: /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+			state: "'destroyed'",
+			inventoryPasses: "2",
+		}).onUndeclaredKey("reject"),
+		type({
 			kind: "'modal-app'",
 			appName: "'sandbox-benchmarks'",
 			appId: /^ap-[a-zA-Z0-9]+$/,
@@ -41,6 +49,9 @@ export type CleanupRecovery = typeof cleanupRecoverySchema.infer;
 
 // Reviewed nativeModalCompute revision: preparation failed AFTER create returned in this App.
 export const MODAL_CREATED_REQUEST_REVISION = "845a0f19b3aa3bda32f0ec988c1d1c188c9e260f";
+
+// Reviewed run.cloud revision: a unique name and idempotency key were chosen before POST.
+export const RUNCLOUD_AMBIGUOUS_CREATE_REVISION = "f571eec3dc1378680f223a365d586f61a4fc6658";
 
 /** Provenance every account-journal record carries: the owning account and the frozen attempt. */
 export const accountRecordBase = {

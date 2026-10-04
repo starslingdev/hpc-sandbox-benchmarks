@@ -186,7 +186,7 @@ export async function downloadExperimentAttempts(
 						recovery.observation.kind !== "sandbox" ||
 						recovery.observation.sandboxId !== release.ref.id ||
 						recovery.observation.provider !== release.ref.provider
-					: owned.length !== 2 || allocation || recovery.observation.kind !== "modal-app")
+					: owned.length !== 2 || allocation || recovery.observation.kind === "sandbox")
 			)
 				throw new Error("cleanup recovery lacks matching durable ownership and release");
 			const directory = directories.get(attempt.evidence.id);

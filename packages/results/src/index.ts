@@ -29,6 +29,7 @@ export {
 	originalSandboxId,
 	repairAttemptsDigest,
 	repairableCoverage,
+	runcloudAmbiguousCreateName,
 	verifiedRetainedAllocation,
 	verifyCleanupRecovery,
 	verifyExperimentPlan,

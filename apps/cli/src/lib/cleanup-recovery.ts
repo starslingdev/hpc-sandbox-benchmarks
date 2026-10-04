@@ -5,6 +5,7 @@ import {
 	evidenceDigest,
 	failedBeforeExecution,
 	originalSandboxId,
+	runcloudAmbiguousCreateName,
 	verifiedRetainedAllocation,
 	verifyCleanupRecovery,
 } from "@sandbox-benchmarks/results";
@@ -28,6 +29,8 @@ export async function recoverExperimentCleanup(options: {
 	openDriver: (provider: ProviderId) => Promise<SandboxDriver>;
 	/** Read-only, complete V1/V2 inventories twice, anchored to an original sandbox in this App. */
 	observeModalApp: (anchorSandboxId: string) => Promise<CleanupRecovery["observation"]>;
+	/** Read-only positive identity evidence: the exact retained name must have one destroyed row twice. */
+	observeRuncloudName?: (name: string) => Promise<CleanupRecovery["observation"]>;
 	modalAnchor?: string;
 	assertQuiescent: (runId: string, sha: string) => Promise<void>;
 	signal: AbortSignal;
@@ -85,7 +88,7 @@ export async function recoverExperimentCleanup(options: {
 					previous.observation.kind !== "sandbox" ||
 					previous.observation.sandboxId !== release.ref.id ||
 					previous.observation.provider !== release.ref.provider
-				: records.length !== 2 || allocation || previous.observation.kind !== "modal-app"
+				: records.length !== 2 || allocation || previous.observation.kind === "sandbox"
 		)
 			throw new Error("existing cleanup recovery contradicts journal ownership");
 		verifyCleanupRecovery(options.plan, { ...attempt, cleanupRecovery: previous });
@@ -113,6 +116,7 @@ export async function recoverExperimentCleanup(options: {
 		records = [...records, retained];
 	}
 	let observation: CleanupRecovery["observation"];
+	const retainedName = runcloudAmbiguousCreateName(options.plan, attempt);
 	if (allocation) {
 		if (
 			evidenceDigest(verifiedRetainedAllocation(options.plan, attempt)) !==
@@ -132,6 +136,13 @@ export async function recoverExperimentCleanup(options: {
 			sandboxId: allocation.ref.id,
 			state: state.state,
 		};
+	} else if (retainedName) {
+		const observeName = options.observeRuncloudName;
+		if (!observeName)
+			throw new Error("reviewed Runcloud recovery requires its named sandbox observer");
+		observation = await withinSignal(options.signal, () => observeName(retainedName));
+		if (observation.kind !== "runcloud-named-sandbox")
+			throw new Error("missing positive Runcloud named sandbox observation");
 	} else {
 		if (
 			cell.provider !== "modal-gvisor" ||

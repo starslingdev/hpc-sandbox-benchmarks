@@ -60,6 +60,7 @@
         "@sandbox-benchmarks/modal": "workspace:*",
         "@sandbox-benchmarks/providers": "workspace:*",
         "@sandbox-benchmarks/results": "workspace:*",
+        "@sandbox-benchmarks/runcloud": "workspace:*",
         "@sandbox-benchmarks/schema": "workspace:*",
         "@sandbox-benchmarks/templates": "workspace:*",
         "arktype": "catalog:",
@@ -342,6 +343,7 @@
       "dependencies": {
         "@run-cloud/sdk": "catalog:computesdk",
         "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
