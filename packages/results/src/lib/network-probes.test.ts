@@ -10,9 +10,11 @@ import {
 } from "@sandbox-benchmarks/schema";
 import { isNetworkProbeFile, networkProbeContributions } from "./network-probes.ts";
 
-/** One real `%{json}` capture. Phase expectations below are the hand totals in curl-phases.test.ts. */
 function capturedCurl(url: string): Record<string, unknown> {
-	const rows = readFileSync(join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"), "utf8")
+	const rows = readFileSync(
+		join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"),
+		"utf8",
+	)
 		.split("\n")
 		.filter((line) => line.length > 0)
 		.map((line) => JSON.parse(line) as Record<string, unknown>)
@@ -96,9 +98,7 @@ describe("latency artifact", () => {
 		});
 
 		const plain = networkProbeContributions(NETWORK_LATENCY_FILE, {
-			endpoints: [
-				{ url: "https://pypi.org/", curl_records: [capturedCurl("http://pypi.org/")] },
-			],
+			endpoints: [{ url: "https://pypi.org/", curl_records: [capturedCurl("http://pypi.org/")] }],
 		});
 		expect(plain.map((row) => row.metricId)).toEqual([
 			"network_https_pypi_org_total_ms",

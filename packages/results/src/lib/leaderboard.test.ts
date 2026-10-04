@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
 import { aggregate, ECONOMICS_METRIC_IDS, NETWORK_LATENCY_FILE } from "@sandbox-benchmarks/schema";
-import { networkProbeContributions } from "./network-probes.ts";
 import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
 import {
 	buildLeaderboard,
@@ -13,6 +12,7 @@ import {
 	REPO_URL,
 	renderLeaderboardMarkdown,
 } from "./leaderboard.ts";
+import { networkProbeContributions } from "./network-probes.ts";
 import { rederiveRunEconomics } from "./reprice.ts";
 
 /**
@@ -284,7 +284,10 @@ describe("buildLeaderboard", () => {
 	});
 
 	it("renders a curl TLS phase the latency probe measured", () => {
-		const record = readFileSync(join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"), "utf8")
+		const record = readFileSync(
+			join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"),
+			"utf8",
+		)
 			.split("\n")
 			.filter((line) => line.length > 0)
 			.map((line) => JSON.parse(line) as { url?: string })
