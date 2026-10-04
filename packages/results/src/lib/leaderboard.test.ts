@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { MetricResult, ProviderRun, Run } from "@sandbox-benchmarks/schema";
-import { aggregate, ECONOMICS_METRIC_IDS } from "@sandbox-benchmarks/schema";
+import { aggregate, ECONOMICS_METRIC_IDS, NETWORK_LATENCY_FILE } from "@sandbox-benchmarks/schema";
+import { networkProbeContributions } from "./network-probes.ts";
 import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
 import {
 	buildLeaderboard,
@@ -278,6 +281,26 @@ describe("buildLeaderboard", () => {
 	it("renders a placeholder when nothing is ranked", () => {
 		const md = render(buildLeaderboard(run([provider("daytona-vm", [])])));
 		expect(md).toContain("No ranked metrics yet");
+	});
+
+	it("renders a curl TLS phase the latency probe measured", () => {
+		const record = readFileSync(join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"), "utf8")
+			.split("\n")
+			.filter((line) => line.length > 0)
+			.map((line) => JSON.parse(line) as { url?: string })
+			.find((row) => row.url === "https://index.crates.io/config.json");
+		const tls = networkProbeContributions(NETWORK_LATENCY_FILE, {
+			endpoints: [{ url: "https://index.crates.io/config.json", curl_records: [record] }],
+		}).find((row) => row.metricId === "network_https_index_crates_io_config_tls_ms");
+		expect(tls).toEqual({
+			metricId: "network_https_index_crates_io_config_tls_ms",
+			samples: [25.822],
+		});
+		const md = render(
+			buildLeaderboard(run([provider("e2b", [metric(tls?.metricId ?? "", tls?.samples ?? [])])])),
+		);
+		expect(md).toContain("### index.crates.io config HTTPS TLS");
+		expect(md).toContain("| 1 | E2B | 25.82 |");
 	});
 
 	it("ranks every emitted catalogued Metric, including non-headlines", () => {
