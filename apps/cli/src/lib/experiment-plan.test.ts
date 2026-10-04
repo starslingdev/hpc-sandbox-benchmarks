@@ -401,9 +401,8 @@ test("a sub-millisecond cold DNS sample is retained and an absent probe is not p
 	expect(withheldReport.cells[0]?.retainedMetrics).toEqual([dns]);
 	const partial = aggregateExperiment(planned, [withheld], { allowPartial: true });
 	const partialProvider = partial.run?.providers.find((provider) => provider.providerId === "e2b");
-	expect(partialProvider?.metrics.map((metric) => [metric.metricId, metric.samples])).toEqual([
-		[dns, [0]],
-	]);
+	expect(partialProvider?.metrics.find((metric) => metric.metricId === dns)?.samples).toEqual([0]);
+	expect(partialProvider?.metrics.some((metric) => metric.metricId === https)).toBe(false);
 	expect(partialProvider?.gaps.map((gap) => gap.reason)).toEqual([
 		`Partial publication withheld unverified measurements: ${https}`,
 	]);

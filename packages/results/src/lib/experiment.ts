@@ -27,6 +27,7 @@ import {
 	getMetric,
 	getProvider,
 	MODAL_CREATED_REQUEST_REVISION,
+	NETWORK_DNS_TARGETS,
 	parseRun,
 	providerReportedNothing,
 	RUNCLOUD_AMBIGUOUS_CREATE_REVISION,
@@ -36,6 +37,9 @@ import {
 } from "@sandbox-benchmarks/schema";
 import { aggregateRuns } from "./aggregate.ts";
 import type { PtsTrialEvidence } from "./pts-trial-evidence.ts";
+
+/** dig reports whole milliseconds, so 0 is a finished cache miss. */
+const SUB_MILLISECOND_DNS = new Set<string>(NETWORK_DNS_TARGETS.map((target) => target.id));
 
 const benchmarkWaveRanks = new Map<BenchmarkWave, number>(
 	BENCHMARK_WAVE_ORDER.map((wave, index) => [wave, index]),
@@ -449,7 +453,11 @@ export function evaluateExperiment(
 				.filter(
 					(metric) =>
 						metric.samples.length > 0 &&
-						metric.samples.every((sample) => Number.isFinite(sample) && sample > 0) &&
+						metric.samples.every(
+							(sample) =>
+								Number.isFinite(sample) &&
+								(sample > 0 || (sample === 0 && SUB_MILLISECOND_DNS.has(metric.metricId))),
+						) &&
 						// PTS Value alone has unknown trial count; verified one-execution metadata can
 						// prove one trial. Harness timings have their own sampling contract.
 						!passShortfalls.some((entry) => entry.metricId === metric.metricId),

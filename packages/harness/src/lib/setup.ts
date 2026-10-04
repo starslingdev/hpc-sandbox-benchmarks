@@ -37,6 +37,7 @@ const MISE_VERSION = "v2026.7.11";
 const MISE_SHA256_X64 = "d31578a16ae2708385249b439c95533068e04b9507a118e905aa6768905671fc";
 const MISE_SHA256_ARM64 = "e3cb3bf4795f494a0e9be3f69ee1464de9d12a991589f126035eebd973c17796";
 const NODE_VERSION = "22.23.1";
+const JC_VERSION = "1.25.7";
 const PNPM_VERSION = "10.34.5";
 const PTS_VERSION = "10.8.4";
 
@@ -120,6 +121,19 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 				"node -v && pnpm -v",
 			].join(" && "),
 			timeoutMs: 10 * MIN,
+			retries: 2,
+		});
+	}
+
+	if (suite.setupJc) {
+		steps.push({
+			label: "setup jc",
+			script: [
+				'cd "$HOME"',
+				`if jc --version 2>/dev/null | grep -Fq "${JC_VERSION}"; then :; else mise use --global --yes jc@${JC_VERSION}; fi`,
+				`jc --version | grep -Fq "${JC_VERSION}"`,
+			].join(" && "),
+			timeoutMs: 5 * MIN,
 			retries: 2,
 		});
 	}

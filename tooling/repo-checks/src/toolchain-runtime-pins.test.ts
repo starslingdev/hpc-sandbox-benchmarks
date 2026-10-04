@@ -89,6 +89,10 @@ describe("harness runtime pins match the baked toolchain", () => {
 		expect(harnessConstant("PTS_VERSION")).toBe(bakePin("ptsVersion"));
 	});
 
+	it("pins the same jc release the image bakes", () => {
+		expect(harnessConstant("JC_VERSION")).toBe(bakePin("jcVersion"));
+	});
+
 	// The gate is only meaningful while the version check stays exact — a fuzzy check (node@22) would
 	// satisfy every assertion above while silently reintroducing "some node, whichever we find".
 	it("keeps the version check exact, which is what makes a stale pin fail loudly", () => {

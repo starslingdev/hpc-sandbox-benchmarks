@@ -34,6 +34,8 @@ export interface Suite {
 	setupPts?: boolean;
 	/** Install Node 22 + pnpm 10 during setup. */
 	setupNode?: boolean;
+	/** Install pinned jc during setup. */
+	setupJc?: boolean;
 	/** Timeout applied to each benchmark command, in minutes. */
 	commandTimeoutMinutes: number;
 	/** Requested sandbox lifetime, in minutes (covers setup + the suite). */
@@ -249,6 +251,7 @@ export const SUITES = {
 	network: {
 		wave: "synthetic-system",
 		setupPts: true,
+		setupJc: true,
 		commandTimeoutMinutes: 30,
 		timeoutMinutes: 40,
 		ptsTimesToRun: 2,
