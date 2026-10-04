@@ -1,6 +1,6 @@
 import type { CleanupRecovery } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
-import { runcloudTransport } from "./index.ts";
+import { runcloudTransport } from "./transport.ts";
 import type { RuncloudTransport } from "./vendor.ts";
 import { RUNCLOUD_SANDBOX_ID } from "./vendor.ts";
 

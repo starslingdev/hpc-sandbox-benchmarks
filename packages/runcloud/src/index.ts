@@ -1,11 +1,11 @@
 // The run.cloud DriverModule: the kit's driver over run.cloud's adapter, bound to the real SDK
 // here and nowhere else. Tests lower the same module over a fake transport through `vendorDriver`.
 
-import { Client } from "@run-cloud/sdk";
 import { defineVendorDriver, mapped } from "@sandbox-benchmarks/driver/vendor";
+import { observeRuncloudNamedCleanup } from "./cleanup-observation.ts";
 import { runcloudCostEvidence } from "./cost.ts";
 import { RUNCLOUD_PROVENANCE } from "./provenance.ts";
-import type { RuncloudTransport } from "./vendor.ts";
+import { runcloudTransport } from "./transport.ts";
 import {
 	RUNCLOUD_CONTROL_TIMEOUT_MS,
 	RUNCLOUD_NAME,
@@ -15,6 +15,7 @@ import {
 	runcloudVendor,
 } from "./vendor.ts";
 
+export { runcloudTransport } from "./transport.ts";
 export { RUNCLOUD_PROVENANCE, RUNCLOUD_SANDBOX_ID };
 
 /** Poll cadence while a create sits in `building_image`/`starting`, and while a delete settles. */
@@ -43,44 +44,7 @@ export const RUNCLOUD_CREATE_CEILING_MS =
 	RUNCLOUD_CONTROL_TIMEOUT_MS +
 	RUNCLOUD_REMOVAL_DEADLINE_MS;
 
-/** Every fetch bounded by the control-plane timeout and, for an inventory page, the caller. */
-function boundedFetch(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
-	return Object.assign(
-		(...[input, init]: Parameters<typeof fetch>) =>
-			fetchImpl(input, {
-				...init,
-				signal: AbortSignal.any([
-					AbortSignal.timeout(RUNCLOUD_CONTROL_TIMEOUT_MS),
-					...(signal ? [signal] : []),
-					...(init?.signal ? [init.signal] : []),
-				]),
-			}),
-		{ preconnect: fetch.preconnect },
-	);
-}
-
-/**
- * The real transport. Inventory reads the raw envelope at the API's 200-row maximum, because the
- * SDK's `list` drops `nextCursor` and admission must read every page, including old allocations
- * hidden behind newer `destroyed` tombstones.
- */
-export function runcloudTransport(
-	apiKey: string,
-	fetchImpl: typeof fetch = fetch,
-): RuncloudTransport {
-	const client = (signal?: AbortSignal) =>
-		new Client({ apiKey, fetch: boundedFetch(fetchImpl, signal) });
-	return {
-		sandboxes: client().sandboxes,
-		page: (cursor, signal) =>
-			client(signal).request(
-				"GET",
-				`/run-cloud/sandboxes?limit=200${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
-			),
-	};
-}
-
-export default defineVendorDriver("runcloud", {
+const driver = defineVendorDriver("runcloud", {
 	provenance: RUNCLOUD_PROVENANCE,
 	sandboxId: RUNCLOUD_SANDBOX_ID,
 	// The requested disk is a block-device quota the guest formats; its filesystem then reports the
@@ -106,3 +70,6 @@ export default defineVendorDriver("runcloud", {
 	vendor: ({ env, resolvedArtifact }) =>
 		runcloudVendor({ resolvedArtifact }, runcloudTransport(env.RUN_CLOUD_API_KEY)),
 });
+
+/** Read-only historical cleanup evidence, reached through the generated fleet loader. */
+export default Object.freeze({ ...driver, observeNamedCleanup: observeRuncloudNamedCleanup });

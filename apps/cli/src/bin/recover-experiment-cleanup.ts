@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { loadDriverModule } from "@sandbox-benchmarks/drivers";
 import { observeModalCleanupApp } from "@sandbox-benchmarks/modal/cleanup-observation";
-import { observeRuncloudNamedCleanup } from "@sandbox-benchmarks/runcloud/cleanup-observation";
 import { type } from "arktype";
 import { recoverExperimentCleanup } from "../lib/cleanup-recovery.ts";
 import { verifyCleanupWorkflowSource } from "../lib/cleanup-workflow.ts";
@@ -46,7 +46,8 @@ const result = await recoverExperimentCleanup({
 	},
 	modalAnchor: anchor,
 	observeModalApp: (id) => observeModalCleanupApp(id, signal),
-	observeRuncloudName: (name) => observeRuncloudNamedCleanup(name, signal),
+	observeRuncloudName: async (name) =>
+		(await loadDriverModule("runcloud")).observeNamedCleanup(name, signal),
 	assertQuiescent: async (id, sha) => {
 		const run = type({ status: "'completed'", head_sha: "string" }).assert(
 			await request("GET", `/actions/runs/${id}`),

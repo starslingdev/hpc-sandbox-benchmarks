@@ -60,8 +60,7 @@
     "dotenv": "catalog:",
     "@sandbox-benchmarks/modal": "workspace:*",
     "@sandbox-benchmarks/freestyle": "workspace:*",
-    "arktype": "catalog:",
-    "@sandbox-benchmarks/runcloud": "workspace:*"
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

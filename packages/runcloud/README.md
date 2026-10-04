@@ -6,8 +6,8 @@ The fleet loader selects this package lazily; shared session mechanics live in
 
 Run `bun run --filter @sandbox-benchmarks/runcloud test` or `typecheck` from the repo root.
 
-`./cleanup-observation` exposes a read-only observer for the reviewed historical cleanup path
-in ADR-0025. It reads two complete inventories, retaining destroyed tombstones, and requires one
+The driver module exposes `observeNamedCleanup`, a read-only observer for the reviewed historical
+cleanup path in ADR-0025. The CLI reaches it through the generated fleet loader. It reads two complete inventories, retaining destroyed tombstones, and requires one
 identical destroyed sandbox under the exact caller-owned name. Empty or uncertain lookups fail.
 
 ## Boot failure diagnostics
