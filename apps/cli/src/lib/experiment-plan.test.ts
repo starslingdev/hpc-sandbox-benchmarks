@@ -10,7 +10,7 @@ import {
 	readPtsTrialEvidence,
 	verifyExperimentPlan,
 } from "@sandbox-benchmarks/results";
-import type { ExperimentCell, Run } from "@sandbox-benchmarks/schema";
+import type { ExperimentCell, ResultGap, Run } from "@sandbox-benchmarks/schema";
 import { aggregate, getMetric, parseRun } from "@sandbox-benchmarks/schema";
 import { rawTreeDigest, writeImmutableJson } from "./experiment-artifacts.ts";
 import { planExperiment, ROUND_BATCH_LIMIT } from "./experiment-plan.ts";
@@ -342,6 +342,76 @@ test("declared metrics with non-positive samples cannot satisfy coverage", () =>
 	zero.evidence.runDigest = evidenceDigest(zero.run);
 	expect(evaluateExperiment(plan(), [zero]).complete).toBe(false);
 	expect(evaluateExperiment(plan(), [zero]).cells[0]?.missingMetrics).toEqual(["stream_type_copy"]);
+});
+
+test("a sub-millisecond cold DNS sample is retained and an absent probe is not published", () => {
+	const dns = "network_dns_cold_docker_io_ms";
+	const https = "network_https_crates_io_total_ms";
+	const networkCell = {
+		...cell(),
+		id: "e2b-network-r0",
+		suite: "network" as const,
+		workloadRevision: "network-fixed-v1",
+		metrics: [dns, https],
+	};
+	const planned = planExperiment({
+		id: "experiment-1",
+		sha,
+		createdOn: "2026-09-10",
+		cells: [networkCell],
+	});
+	const withMetrics = (samples: Record<string, number[]>, gaps?: ResultGap[]) => {
+		const attempt = successful();
+		const provider = attempt.run?.providers[0];
+		const artifact = provider?.artifactEvidence?.[0];
+		if (!attempt.run || !provider || !artifact || !attempt.execution)
+			throw new Error("fixture lacks receipts");
+		artifact.cell.suite = "network";
+		provider.suitesCovered = ["network"];
+		provider.metrics = Object.entries(samples).map(([metricId, values]) => ({
+			metricId,
+			samples: values,
+			sourceFile: "network/network-dns--cold--docker.io.json",
+			aggregates: aggregate(values),
+		}));
+		if (gaps) provider.gaps = gaps;
+		attempt.evidence.cellId = networkCell.id;
+		attempt.evidence.workloadRevision = networkCell.workloadRevision;
+		attempt.evidence.planDigest = planned.digest;
+		attempt.evidence.runDigest = evidenceDigest(attempt.run);
+		attempt.execution.suite = "network";
+		return attempt;
+	};
+	const recorded = withMetrics({ [dns]: [0], [https]: [42.5] });
+	const recordedReport = evaluateExperiment(planned, [recorded]);
+	expect(recordedReport.complete).toBe(true);
+	expect(recordedReport.cells[0]?.missingMetrics).toEqual([]);
+	expect(recordedReport.cells[0]?.retainedMetrics).toEqual([dns, https]);
+	const published = aggregateExperiment(planned, [recorded]);
+	expect(
+		published.run?.providers
+			.find((provider) => provider.providerId === "e2b")
+			?.metrics.find((metric) => metric.metricId === dns)?.samples,
+	).toEqual([0]);
+
+	const withheld = withMetrics({ [dns]: [0] });
+	const withheldReport = evaluateExperiment(planned, [withheld]);
+	expect(withheldReport.complete).toBe(false);
+	expect(withheldReport.cells[0]?.missingMetrics).toEqual([https]);
+	expect(withheldReport.cells[0]?.retainedMetrics).toEqual([dns]);
+	const partial = aggregateExperiment(planned, [withheld], { allowPartial: true });
+	const partialProvider = partial.run?.providers.find((provider) => provider.providerId === "e2b");
+	expect(partialProvider?.metrics.map((metric) => [metric.metricId, metric.samples])).toEqual([
+		[dns, [0]],
+	]);
+	expect(partialProvider?.gaps.map((gap) => gap.reason)).toEqual([
+		`Partial publication withheld unverified measurements: ${https}`,
+	]);
+
+	const skipped = withMetrics({ [dns]: [0], [https]: [42.5] }, [
+		{ scope: "suite", id: "network", outcome: "skipped", reason: "network-dns: jc not installed" },
+	]);
+	expect(evaluateExperiment(planned, [skipped]).cells[0]?.retainedMetrics).toEqual([]);
 });
 
 test("provenance, duplicate attempts, and measured reruns cannot satisfy coverage", () => {

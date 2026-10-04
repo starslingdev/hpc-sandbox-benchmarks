@@ -145,6 +145,39 @@ describe("setupSteps", () => {
 		expect(REPO_URL).toContain("sandbox-benchmarks");
 	});
 
+	it("installs pinned jc for the network suite and leaves a matching jc alone", () => {
+		const step = setupSteps(SUITES.network).find((entry) => entry.label === "setup jc");
+		if (!step) throw new Error("network setup has no jc step");
+		const home = mkdtempSync(join(tmpdir(), "jc-setup-test-"));
+		const log = join(home, "calls.log");
+		try {
+			writeFileSync(
+				join(home, "jc"),
+				'#!/bin/sh\nif [ -f "$HOME/jc-ready" ]; then echo "jc 1.25.7"; exit 0; fi\necho "jc 0.0.0"\n',
+			);
+			writeFileSync(
+				join(home, "mise"),
+				'#!/bin/sh\necho "mise $*" >> "$PROBE_LOG"\ntouch "$HOME/jc-ready"\n',
+			);
+			chmodSync(join(home, "jc"), 0o755);
+			chmodSync(join(home, "mise"), 0o755);
+			const run = () => {
+				writeFileSync(log, "");
+				return Bun.spawnSync(["bash", "-c", `set -eo pipefail; ${step.script}`], {
+					env: { ...process.env, HOME: home, PATH: `${home}:${process.env.PATH}`, PROBE_LOG: log },
+				});
+			};
+			const missing = run();
+			expect(missing.exitCode, missing.stderr.toString()).toBe(0);
+			expect(readFileSync(log, "utf8")).toBe("mise use --global --yes jc@1.25.7\n");
+			const present = run();
+			expect(present.exitCode, present.stderr.toString()).toBe(0);
+			expect(readFileSync(log, "utf8")).toBe("");
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
 	it("omits node/PTS setup for a bare suite", () => {
 		const bare = setupSteps({
 			wave: "synthetic-system",
