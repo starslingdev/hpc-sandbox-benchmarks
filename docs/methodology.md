@@ -94,10 +94,6 @@ back to its raw Samples. (A Run spliced from two CI runs — a composite `<runA>
 run owns the pair.) The order, the collapse, and the links are all gated
 against the committed artifact by `tooling/repo-checks/src/leaderboard-artifact-sync.test.ts`.
 
-Committed Runs are historical source records. The leaderboard projects them onto the currently
-registered providers before rendering, so retiring a provider changes the comparison without
-rewriting the measurements or evidence in archived Runs.
-
 ### The realworld charts
 
 Each chart is one repo. Each bar is one environment's whole pipeline for that repo; each segment is one

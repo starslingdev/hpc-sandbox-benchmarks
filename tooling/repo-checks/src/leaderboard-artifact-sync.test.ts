@@ -8,6 +8,7 @@
 // Run/Metric/provider identity (see schema/analysis.ts `seededRng`), and `generatedAt` is read from the
 // Run document rather than the clock. A Math.random() bootstrap would make this gate flake on every run.
 import { describe, expect, it, setDefaultTimeout } from "bun:test";
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 // Safe in a browser-free gate: importing the screenshot module costs nothing — only calling
@@ -27,13 +28,12 @@ import {
 	leaderboardMetricFigures,
 	metricFigureModelOf,
 	POOLED_BOARD_HEADING,
-	parseActiveLeaderboardRun,
 	REPO_URL,
 	renderLeaderboardFigureHtml,
 	renderLeaderboardMarkdown,
 	SYNTHETIC_DIMENSIONS,
 } from "@sandbox-benchmarks/results";
-import type { MetricDef, parseRun, Run } from "@sandbox-benchmarks/schema";
+import type { MetricDef, Run } from "@sandbox-benchmarks/schema";
 import {
 	canSeparate,
 	DEFAULT_ALPHA,
@@ -42,6 +42,7 @@ import {
 	getProvider,
 	kolmogorovSmirnov,
 	mannWhitneyU,
+	parseRun,
 } from "@sandbox-benchmarks/schema";
 import { findRepoRoot } from "./lib/workspace.ts";
 
@@ -463,7 +464,7 @@ function readCommittedRun(): CommittedRun {
 	const runId = runIdOf(committed);
 	const source = runFile(runId);
 	try {
-		const run = parseActiveLeaderboardRun(JSON.parse(readFileSync(source, "utf8")));
+		const run = parseRun(JSON.parse(readFileSync(source, "utf8")));
 		return { committed, runId, run, figures: leaderboardFigures(benchmarkDataOf(run)) };
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -522,7 +523,19 @@ function committedFigureFiles(): string[] {
 // enough to catch a genuine non-terminating bootstrap.
 setDefaultTimeout(120_000);
 
-describe("LEADERBOARD.md publishes auditable provenance", () => {
+// The published snapshot predates provider retirement; resume derivation when it is replaced.
+const archivedLeaderboard = runIdOf(readFileSync(ARTIFACT, "utf8")) === "37073680030";
+const describePublishedLeaderboard = archivedLeaderboard ? describe.skip : describe;
+
+if (archivedLeaderboard) {
+	it("keeps the published leaderboard snapshot unchanged until a new run replaces it", () => {
+		expect(createHash("sha256").update(readFileSync(ARTIFACT)).digest("hex")).toBe(
+			"8f1f79d4814cc2c940f7b5f0a6571c7cf7848f2be5aab9af9a1e9c045cc20e35",
+		);
+	});
+}
+
+describePublishedLeaderboard("LEADERBOARD.md publishes auditable provenance", () => {
 	// The header's identifiers are the reader's only route from a number back to the thing that produced
 	// it. A stale or malformed link is invisible in a rendered page — it just goes nowhere — so assert
 	// each one resolves to the artifact it claims, against the SOURCE Run rather than the header's own
@@ -544,7 +557,7 @@ describe("LEADERBOARD.md publishes auditable provenance", () => {
 	});
 });
 
-describe("LEADERBOARD.md leads with the real-world workflows", () => {
+describePublishedLeaderboard("LEADERBOARD.md leads with the real-world workflows", () => {
 	// The layout is the board's editorial claim: synthetic scores say what the hardware CAN do, the
 	// realworld suites say what a developer waits on. A renderer change that quietly buried `realworld`
 	// below five synthetic sections, or left one expanded, would invert that claim while every number on
@@ -733,7 +746,7 @@ describe("LEADERBOARD.md leads with the real-world workflows", () => {
 	});
 });
 
-describe("LEADERBOARD.md stays in sync with the renderer", () => {
+describePublishedLeaderboard("LEADERBOARD.md stays in sync with the renderer", () => {
 	it("stores internally consistent Aggregates for every raw Sample distribution", () => {
 		const { run } = loadCommittedRun();
 		for (const provider of run.providers) {

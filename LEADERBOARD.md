@@ -3,14 +3,14 @@
 Run [`37073680030`](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/37073680030) · commit [`f571eec3dc1378680f223a365d586f61a4fc6658`](https://github.com/starslingdev/hpc-sandbox-benchmarks/commit/f571eec3dc1378680f223a365d586f61a4fc6658) ·
 dataset [`data/dataset/runs/37073680030.json`](data/dataset/runs/37073680030.json) · generated 2026-10-03T09:36:17.183Z
 
-**Partial results — incomplete experiment.** 747 of 784 planned cells complete; 37 incomplete; 0 excluded.
+**Partial results — incomplete experiment.** 800 of 840 planned cells complete; 40 incomplete; 0 excluded.
 Only verified measurements are ranked. Missing trials and failed cells remain in the dataset's frozen coverage; provider coverage is uneven and these results do not establish a complete comparison.
 
 Comparison cohort: `sha256:b06e78743cdd7873a2f552f1f8b333bd58f7bae01123132621ada19114db3c6d`. Compare scores only with the same workload and eligible metric cohort.
 
-Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **874 metric records**
-backed by **18247 retained trial observations**, across **65 metrics** and
-**14 providers**; every emitted, catalogued metric has a ranked table below
+Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **939 metric records**
+backed by **19664 retained trial observations**, across **65 metrics** and
+**15 providers**; every emitted, catalogued metric has a ranked table below
 (median across sandboxes), grouped by dimension with its headline first — some behind a disclosure triangle, none omitted.
 Generated from the published Run dataset — do not edit by hand. Methodology:
 [`docs/methodology.md`](docs/methodology.md).
@@ -59,6 +59,7 @@ of provider architecture.
 | Namespace | microVM (dedicated instance) | oci-container (container, likely) on firecracker |
 | Novita | microVM | firecracker (microVM, confirmed) |
 | run.cloud | Firecracker microVM | firecracker (microVM, confirmed) |
+| Runloop | microVM | cloud-hypervisor (microVM, confirmed) |
 | tama | container (shared kernel) | oci-container (container, strong) |
 | Vercel Sandbox | Firecracker microVM | firecracker (microVM, confirmed) |
 
@@ -71,11 +72,11 @@ _Not present in this run: Daytona (container) — registered providers that repo
 What a developer or a CI job actually waits on: each bar is one environment's whole pipeline
 for that repo, segmented by task in execution order. Each chart scales to its own slowest pipeline, so compare bar lengths within a chart and the printed totals across charts.
 
-<img src="docs/figures/realworld-better-auth.webp" width="960" alt="Better-Auth: 10 pipeline tasks across 14 environments, stacked by task and sorted fastest-first">
+<img src="docs/figures/realworld-better-auth.webp" width="960" alt="Better-Auth: 10 pipeline tasks across 15 environments, stacked by task and sorted fastest-first">
 
-<img src="docs/figures/realworld-mastra.webp" width="960" alt="Mastra: 5 pipeline tasks across 14 environments, stacked by task and sorted fastest-first">
+<img src="docs/figures/realworld-mastra.webp" width="960" alt="Mastra: 5 pipeline tasks across 15 environments, stacked by task and sorted fastest-first">
 
-<img src="docs/figures/realworld-openclaw.webp" width="960" alt="OpenClaw: 6 pipeline tasks across 13 environments, 1 disclosed as incomplete, stacked by task and sorted fastest-first">
+<img src="docs/figures/realworld-openclaw.webp" width="960" alt="OpenClaw: 6 pipeline tasks across 14 environments, 1 disclosed as incomplete, stacked by task and sorted fastest-first">
 
 <details>
 <summary><strong>Per-task rankings</strong> · 21 tasks, with medians, intervals and trial counts</summary>
@@ -101,7 +102,8 @@ _Namespace leads · Daytona (VM) is ~1.1× higher (lower is better)._
 | 10 | E2B | 72.9 | 64.17 – 75.85 | 12 | 12 | tied |
 | 10 | tama | 76.38 | 59.17 – 102.1 | 12 | 12 | tied |
 | 10 | Freestyle | 93.83 | 89.68 – 99.52 | 12 | 12 | tied |
-| 14 | run.cloud | 148.1 | 106.8 – 167.6 | 12 | 12 | — |
+| 14 | Runloop | 105.6 | 102.7 – 112.7 | 12 | 12 | — |
+| 15 | run.cloud | 148.1 | 106.8 – 167.6 | 12 | 12 | — |
 
 ### Better-Auth: build
 
@@ -125,6 +127,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 11 | Modal (gVisor) | 100.2 | 98.63 – 101.4 | 12 | 12 | tied |
 | 13 | Freestyle | 113.9 | 113 – 117.5 | 12 | 12 | — |
 | 13 | run.cloud | 120.4 | 93.63 – 135.8 | 12 | 12 | tied |
+| 15 | Runloop | 208.6 | 150 – 211.1 | 12 | 12 | — |
 
 ### Better-Auth: cold install
 
@@ -146,7 +149,8 @@ _Brezel leads · Namespace is ~1.3× higher (lower is better)._
 | 8 | E2B | 20.09 | 19.3 – 20.93 | 12 | 12 | tied |
 | 8 | Vercel Sandbox | 20.24 | 19.61 – 22.27 | 12 | 12 | tied |
 | 12 | Modal (gVisor) | 25.31 | 24.44 – 26.81 | 12 | 12 | — |
-| 13 | run.cloud | 32.01 | 28.04 – 36.52 | 12 | 12 | — |
+| 13 | Runloop | 29.8 | 27.28 – 30.42 | 12 | 12 | — |
+| 13 | run.cloud | 32.01 | 28.04 – 36.52 | 12 | 12 | tied |
 | 13 | Freestyle | 38.16 | 30.22 – 40.15 | 12 | 12 | tied |
 
 ### Better-Auth: git clone
@@ -169,8 +173,9 @@ _Namespace leads · Blaxel is ~1.3× higher (lower is better)._
 | 9 | Modal (VM) | 1.792 | 0.8055 – 2.013 | 12 | 12 | tied |
 | 9 | Brezel | 1.911 | 1.876 – 1.943 | 12 | 12 | tied |
 | 9 | Novita | 1.945 | 1.836 – 2.018 | 12 | 12 | tied |
-| 13 | run.cloud | 3.218 | 2.169 – 7.687 | 12 | 12 | — |
-| 14 | Freestyle | 11.8 | 3.753 – 22.43 | 12 | 12 | — |
+| 9 | Runloop | 2.371 | 1.71 – 3.954 | 12 | 12 | tied |
+| 9 | run.cloud | 3.218 | 2.169 – 7.687 | 12 | 12 | tied |
+| 15 | Freestyle | 11.8 | 3.753 – 22.43 | 12 | 12 | — |
 
 ### Better-Auth: lint (Biome)
 
@@ -194,6 +199,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 12 | run.cloud | 5.761 | 5.191 – 6.808 | 12 | 12 | — |
 | 12 | Freestyle | 5.928 | 5.753 – 6.109 | 12 | 12 | tied |
 | 14 | Modal (gVisor) | 7.849 | 7.631 – 8.177 | 12 | 12 | — |
+| 14 | Runloop | 9.548 | 6.818 – 10.04 | 12 | 12 | tied |
 
 ### Better-Auth: lint deps (Knip)
 
@@ -217,6 +223,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 12 | E2B | 18.57 | 17.46 – 18.97 | 12 | 12 | — |
 | 12 | run.cloud | 19.14 | 17.45 – 21.89 | 12 | 12 | tied |
 | 12 | Freestyle | 20.02 | 19.91 – 20.23 | 12 | 12 | tied |
+| 15 | Runloop | 28.06 | 23.75 – 28.83 | 12 | 12 | — |
 
 ### Better-Auth: lint format
 
@@ -240,6 +247,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 11 | run.cloud | 4.738 | 4.091 – 5.999 | 12 | 12 | tied |
 | 11 | E2B | 5.123 | 4.412 – 5.378 | 12 | 12 | tied |
 | 14 | Freestyle | 5.798 | 5.706 – 5.944 | 12 | 12 | — |
+| 15 | Runloop | 8.042 | 7.391 – 8.251 | 12 | 12 | — |
 
 ### Better-Auth: lint packages
 
@@ -263,6 +271,7 @@ _Brezel leads · Namespace is ~1.2× higher (lower is better)._
 | 12 | run.cloud | 4.511 | 4.131 – 5.455 | 12 | 12 | — |
 | 13 | Freestyle | 5.755 | 5.668 – 5.801 | 12 | 12 | — |
 | 14 | Modal (gVisor) | 6.141 | 6.025 – 6.546 | 12 | 12 | — |
+| 15 | Runloop | 9.306 | 7.154 – 9.742 | 12 | 12 | — |
 
 ### Better-Auth: lint spell
 
@@ -286,6 +295,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 12 | E2B | 13.15 | 12.54 – 13.61 | 12 | 12 | — |
 | 12 | Freestyle | 13.62 | 13.33 – 13.7 | 12 | 12 | tied |
 | 12 | run.cloud | 14.47 | 13.19 – 17.88 | 12 | 12 | tied |
+| 15 | Runloop | 22.51 | 18.44 – 23.91 | 12 | 12 | — |
 
 ### Better-Auth: lint types
 
@@ -309,6 +319,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 12 | Freestyle | 53.13 | 52.57 – 54.11 | 12 | 12 | — |
 | 13 | run.cloud | 68.99 | 67.29 – 77.69 | 12 | 12 | — |
 | 14 | Modal (gVisor) | 87.85 | 83.74 – 95.77 | 12 | 12 | — |
+| 14 | Runloop | 113.9 | 78.57 – 118.7 | 12 | 12 | tied |
 
 ### Better-Auth: typecheck
 
@@ -332,6 +343,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 10 | E2B | 77.11 | 67.98 – 79.36 | 12 | 12 | tied |
 | 13 | Freestyle | 83.12 | 81.46 – 84.08 | 12 | 12 | — |
 | 13 | run.cloud | 92.77 | 82.02 – 110.8 | 12 | 12 | tied |
+| 15 | Runloop | 127.4 | 110.8 – 130.2 | 12 | 12 | — |
 
 ### Mastra: build:core
 
@@ -355,6 +367,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 10 | Modal (gVisor) | 128.3 | 125.4 – 131.9 | 11 | 11 | tied |
 | 10 | run.cloud | 138.2 | 108.9 – 140.2 | 12 | 12 | tied |
 | 10 | Freestyle | 139 | 136.1 – 141 | 12 | 12 | tied |
+| 15 | Runloop | 191.4 | 184.4 – 198.9 | 12 | 12 | — |
 
 ### Mastra: git clone
 
@@ -377,7 +390,8 @@ _Namespace, Daytona (VM) and Microsandbox Cloud share the top on this metric (lo
 | 8 | Modal (gVisor) | 3.746 | 3.308 – 4.227 | 11 | 11 | tied |
 | 12 | Brezel | 4.423 | 4.328 – 4.683 | 12 | 12 | — |
 | 12 | run.cloud | 6.959 | 3.385 – 13.51 | 12 | 12 | tied |
-| 14 | Freestyle | 12.11 | 6.902 – 29.88 | 12 | 12 | — |
+| 12 | Runloop | 7.607 | 4.808 – 11.76 | 12 | 12 | tied |
+| 12 | Freestyle | 12.11 | 6.902 – 29.88 | 12 | 12 | tied |
 
 ### Mastra: lint:format
 
@@ -401,6 +415,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 11 | E2B | 165.9 | 137.7 – 173.9 | 12 | 12 | tied |
 | 11 | Freestyle | 171.1 | 169.3 – 173.6 | 12 | 12 | tied |
 | 11 | run.cloud | 181.1 | 144.3 – 185.6 | 12 | 12 | tied |
+| 15 | Runloop | 231.3 | 225.9 – 266.6 | 12 | 12 | — |
 
 ### Mastra: test:core
 
@@ -424,6 +439,7 @@ _Brezel leads on median (lower is better); see notes for how ranks are decided._
 | 11 | E2B | 1418 | 1330 – 1464 | 12 | 12 | tied |
 | 13 | Freestyle | 1501 | 1489 – 1508 | 12 | 12 | — |
 | 14 | run.cloud | 1658 | 1350 – 1699 | 12 | 12 | — |
+| 15 | Runloop | 1807 | 1781 – 1934 | 11 | 11 | — |
 
 ### OpenClaw: cold install
 
@@ -445,7 +461,8 @@ _Brezel leads · Namespace is ~1.2× higher (lower is better)._
 | 10 | E2B | 20.32 | 19.91 – 21.73 | 12 | 12 | — |
 | 11 | Modal (gVisor) | 24.84 | 21.35 – 29.44 | 12 | 12 | — |
 | 11 | run.cloud | 25.4 | 22.95 – 26.46 | 8 | 8 | tied |
-| 13 | Freestyle | 46.17 | 27.48 – 56.02 | 12 | 12 | — |
+| 11 | Runloop | 27.9 | 24.61 – 28.69 | 12 | 12 | tied |
+| 14 | Freestyle | 46.17 | 27.48 – 56.02 | 12 | 12 | — |
 
 ### OpenClaw: git clone
 
@@ -465,9 +482,10 @@ _Namespace leads · Blaxel is ~1.2× higher (lower is better)._
 | 5 | E2B | 4.97 | 4.54 – 7.314 | 12 | 12 | tied |
 | 5 | Modal (VM) | 5.036 | 4.258 – 9.108 | 11 | 11 | tied |
 | 5 | Modal (gVisor) | 5.674 | 5.116 – 9.832 | 12 | 12 | tied |
+| 5 | Runloop | 8.421 | 5.934 – 11.64 | 12 | 12 | tied |
 | 5 | Brezel | 8.658 | 8.572 – 8.819 | 12 | 12 | tied |
-| 12 | run.cloud | 9.883 | 9.632 – 10.89 | 8 | 8 | — |
-| 13 | Freestyle | 33.58 | 16.51 – 45.37 | 12 | 12 | — |
+| 13 | run.cloud | 9.883 | 9.632 – 10.89 | 8 | 8 | — |
+| 14 | Freestyle | 33.58 | 16.51 – 45.37 | 12 | 12 | — |
 
 ### OpenClaw: lint (all extensions)
 
@@ -490,6 +508,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 11 | Freestyle | 286.9 | 275.5 – 292.3 | 12 | 12 | — |
 | 11 | run.cloud | 292.7 | 169.6 – 331.3 | 8 | 8 | tied |
 | 11 | E2B | 310.6 | 262.5 – 326.6 | 12 | 12 | tied |
+| 14 | Runloop | 381.3 | 341.1 – 386.6 | 12 | 12 | — |
 
 ### OpenClaw: lint (Oxlint)
 
@@ -512,6 +531,7 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 11 | run.cloud | 493.1 | 469.5 – 676.3 | 8 | 8 | — |
 | 11 | Freestyle | 543 | 539.9 – 547.5 | 12 | 12 | tied |
 | 11 | E2B | 607.5 | 516.2 – 626.3 | 12 | 12 | tied |
+| 14 | Runloop | 699.5 | 599.6 – 708.3 | 12 | 12 | — |
 
 ### OpenClaw: typecheck (test tree)
 
@@ -534,6 +554,7 @@ _Brezel leads · boat is ~1.2× higher (lower is better)._
 | 9 | Vercel Sandbox | 151.5 | 149.4 – 158.6 | 12 | 12 | tied |
 | 12 | E2B | 185.3 | 160.2 – 200.9 | 12 | 12 | — |
 | 12 | Freestyle | 194.1 | 187.5 – 196.8 | 12 | 12 | tied |
+| 14 | Runloop | 262.6 | 225.1 – 271 | 12 | 12 | — |
 
 ### OpenClaw: typecheck (tsgo)
 
@@ -556,12 +577,13 @@ _Brezel leads · boat is ~1.1× higher (lower is better)._
 | 9 | run.cloud | 27.41 | 18.27 – 39.66 | 8 | 8 | tied |
 | 9 | Freestyle | 34.84 | 34.13 – 35.86 | 12 | 12 | tied |
 | 9 | E2B | 35.14 | 32.58 – 39.17 | 12 | 12 | tied |
+| 14 | Runloop | 44 | 39.37 – 46.42 | 12 | 12 | — |
 
 </details>
 
 ## cpu
 
-<img src="docs/figures/node_web_tooling_runs_per_s.webp" width="960" alt="Node.js web tooling: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/node_web_tooling_runs_per_s.webp" width="960" alt="Node.js web tooling: 15 environments ranked best-first, with 95% intervals">
 
 <details>
 <summary><strong>1 synthetic metric</strong> · headline: Node.js web tooling</summary>
@@ -588,12 +610,13 @@ _Brezel leads · ~1.1× boat on median (higher is better)._
 | 7 | Modal (gVisor) | 12.6 | 12.25 – 12.86 | 5 | 10 | tied |
 | 7 | E2B | 11.08 | 10.93 – 13.4 | 5 | 10 | tied |
 | 14 | Freestyle | 10.22 | 10.04 – 10.47 | 5 | 10 | — |
+| 15 | Runloop | 8.93 | 8.72 – 9.53 | 5 | 10 | — |
 
 </details>
 
 ## disk
 
-<img src="docs/figures/fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio rand write 4KB, O_DIRECT (MB/s): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio rand write 4KB, O_DIRECT (MB/s): 15 environments ranked best-first, with 95% intervals">
 
 <details>
 <summary><strong>9 synthetic metrics</strong> · headline: fio rand write 4KB, O_DIRECT (MB/s)</summary>
@@ -614,12 +637,13 @@ _Brezel leads · ~1.9× Vercel Sandbox on median (higher is better)._
 | 6 | run.cloud | 752.9 | 498.1 – 779.1 | 3 | 6 | too few sandboxes |
 | 7 | Modal (gVisor) | 749.7 | 742.9 – 752.9 | 3 | 6 | too few sandboxes |
 | 8 | Modal (VM) | 731.9 | 588.3 – 1161 | 3 | 6 | too few sandboxes |
-| 9 | Namespace | 432 | 421 – 439.9 | 3 | 6 | too few sandboxes |
-| 10 | Novita | 324.5 | 323 – 339.2 | 3 | 6 | too few sandboxes |
-| 11 | Microsandbox Cloud | 284.2 | 271.1 – 523.2 | 3 | 6 | too few sandboxes |
-| 12 | tama | 262.7 | 245.4 – 275.3 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 202.9 | 199.8 – 319.8 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 200.8 | 199.8 – 243.8 | 3 | 6 | too few sandboxes |
+| 9 | Runloop | 636.5 | 628.1 – 650.1 | 3 | 6 | too few sandboxes |
+| 10 | Namespace | 432 | 421 – 439.9 | 3 | 6 | too few sandboxes |
+| 11 | Novita | 324.5 | 323 – 339.2 | 3 | 6 | too few sandboxes |
+| 12 | Microsandbox Cloud | 284.2 | 271.1 – 523.2 | 3 | 6 | too few sandboxes |
+| 13 | tama | 262.7 | 245.4 – 275.3 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 202.9 | 199.8 – 319.8 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 200.8 | 199.8 – 243.8 | 3 | 6 | too few sandboxes |
 
 ### fio rand read 4KB, O_DIRECT (IOPS)
 
@@ -627,7 +651,7 @@ IOPS · higher is better
 
 _Brezel leads · ~1.1× boat on median (higher is better)._
 
-<img src="docs/figures/fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio rand read 4KB, O_DIRECT (IOPS): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio rand read 4KB, O_DIRECT (IOPS): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio rand read 4KB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -638,13 +662,14 @@ _Brezel leads · ~1.1× boat on median (higher is better)._
 | 5 | Modal (VM) | 232500 | 230000 – 303000 | 3 | 6 | too few sandboxes |
 | 6 | Blaxel | 229500 | 206500 – 302500 | 3 | 6 | too few sandboxes |
 | 7 | Microsandbox Cloud | 179000 | 137500 – 186500 | 3 | 6 | too few sandboxes |
-| 8 | run.cloud | 153000 | 140000 – 164000 | 3 | 6 | too few sandboxes |
-| 9 | Modal (gVisor) | 128000 | 125500 – 139500 | 3 | 6 | too few sandboxes |
-| 10 | Namespace | 92450 | 92050 – 132500 | 3 | 6 | too few sandboxes |
-| 11 | tama | 85050 | 80150 – 98200 | 3 | 6 | too few sandboxes |
-| 12 | Freestyle | 82800 | 82700 – 88500 | 3 | 6 | too few sandboxes |
-| 13 | Novita | 79750 | 74100 – 79900 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 46800 | 46750 – 59650 | 3 | 6 | too few sandboxes |
+| 8 | Runloop | 161500 | 159000 – 166000 | 3 | 6 | too few sandboxes |
+| 9 | run.cloud | 153000 | 140000 – 164000 | 3 | 6 | too few sandboxes |
+| 10 | Modal (gVisor) | 128000 | 125500 – 139500 | 3 | 6 | too few sandboxes |
+| 11 | Namespace | 92450 | 92050 – 132500 | 3 | 6 | too few sandboxes |
+| 12 | tama | 85050 | 80150 – 98200 | 3 | 6 | too few sandboxes |
+| 13 | Freestyle | 82800 | 82700 – 88500 | 3 | 6 | too few sandboxes |
+| 14 | Novita | 79750 | 74100 – 79900 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 46800 | 46750 – 59650 | 3 | 6 | too few sandboxes |
 
 ### fio rand read 4KB, O_DIRECT (MB/s)
 
@@ -652,7 +677,7 @@ MB/s · higher is better
 
 _Brezel leads · ~1.1× boat on median (higher is better)._
 
-<img src="docs/figures/fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio rand read 4KB, O_DIRECT (MB/s): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio rand read 4KB, O_DIRECT (MB/s): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio rand read 4KB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -663,13 +688,14 @@ _Brezel leads · ~1.1× boat on median (higher is better)._
 | 5 | Modal (VM) | 951.6 | 940.6 – 1241 | 3 | 6 | too few sandboxes |
 | 6 | Blaxel | 940.6 | 845.2 – 1239 | 3 | 6 | too few sandboxes |
 | 7 | Microsandbox Cloud | 733.5 | 564.1 – 763.9 | 3 | 6 | too few sandboxes |
-| 8 | run.cloud | 626 | 574.1 – 671.6 | 3 | 6 | too few sandboxes |
-| 9 | Modal (gVisor) | 525.3 | 514.9 – 572 | 3 | 6 | too few sandboxes |
-| 10 | Namespace | 379.1 | 377.5 – 543.2 | 3 | 6 | too few sandboxes |
-| 11 | tama | 348.1 | 328.2 – 403.2 | 3 | 6 | too few sandboxes |
-| 12 | Freestyle | 339.2 | 338.7 – 362.3 | 3 | 6 | too few sandboxes |
-| 13 | Novita | 326.6 | 303.6 – 327.2 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 191.9 | 191.4 – 244.3 | 3 | 6 | too few sandboxes |
+| 8 | Runloop | 660.6 | 649.6 – 679.5 | 3 | 6 | too few sandboxes |
+| 9 | run.cloud | 626 | 574.1 – 671.6 | 3 | 6 | too few sandboxes |
+| 10 | Modal (gVisor) | 525.3 | 514.9 – 572 | 3 | 6 | too few sandboxes |
+| 11 | Namespace | 379.1 | 377.5 – 543.2 | 3 | 6 | too few sandboxes |
+| 12 | tama | 348.1 | 328.2 – 403.2 | 3 | 6 | too few sandboxes |
+| 13 | Freestyle | 339.2 | 338.7 – 362.3 | 3 | 6 | too few sandboxes |
+| 14 | Novita | 326.6 | 303.6 – 327.2 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 191.9 | 191.4 – 244.3 | 3 | 6 | too few sandboxes |
 
 ### fio rand write 4KB, O_DIRECT (IOPS)
 
@@ -677,7 +703,7 @@ IOPS · higher is better
 
 _Brezel leads · ~1.9× Vercel Sandbox on median (higher is better)._
 
-<img src="docs/figures/fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio rand write 4KB, O_DIRECT (IOPS): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio rand write 4KB, O_DIRECT (IOPS): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio rand write 4KB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -689,12 +715,13 @@ _Brezel leads · ~1.9× Vercel Sandbox on median (higher is better)._
 | 6 | Modal (gVisor) | 183500 | 181500 – 184000 | 3 | 6 | too few sandboxes |
 | 6 | run.cloud | 183500 | 122000 – 190000 | 3 | 6 | too few sandboxes, equal medians |
 | 8 | Modal (VM) | 179000 | 143500 – 283500 | 3 | 6 | too few sandboxes |
-| 9 | Namespace | 105500 | 102950 – 107000 | 3 | 6 | too few sandboxes |
-| 10 | Novita | 79200 | 78750 – 82800 | 3 | 6 | too few sandboxes |
-| 11 | Microsandbox Cloud | 69400 | 66200 – 128000 | 3 | 6 | too few sandboxes |
-| 12 | tama | 64050 | 59950 – 67300 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 49500 | 48800 – 78150 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 49000 | 48750 – 59500 | 3 | 6 | too few sandboxes |
+| 9 | Runloop | 155000 | 153500 – 159000 | 3 | 6 | too few sandboxes |
+| 10 | Namespace | 105500 | 102950 – 107000 | 3 | 6 | too few sandboxes |
+| 11 | Novita | 79200 | 78750 – 82800 | 3 | 6 | too few sandboxes |
+| 12 | Microsandbox Cloud | 69400 | 66200 – 128000 | 3 | 6 | too few sandboxes |
+| 13 | tama | 64050 | 59950 – 67300 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 49500 | 48800 – 78150 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 49000 | 48750 – 59500 | 3 | 6 | too few sandboxes |
 
 ### fio seq read 1MB, O_DIRECT (IOPS)
 
@@ -702,7 +729,7 @@ IOPS · higher is better
 
 _Modal (gVisor) leads · ~2.7× Brezel on median (higher is better)._
 
-<img src="docs/figures/fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio seq read 1MB, O_DIRECT (IOPS): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio seq read 1MB, O_DIRECT (IOPS): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio seq read 1MB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -717,9 +744,10 @@ _Modal (gVisor) leads · ~2.7× Brezel on median (higher is better)._
 | 9 | Freestyle | 4949 | 4919 – 5221 | 3 | 6 | too few sandboxes |
 | 10 | Vercel Sandbox | 4340 | 4273 – 4395 | 3 | 6 | too few sandboxes |
 | 11 | Namespace | 2346 | 2321 – 2383 | 3 | 6 | too few sandboxes |
-| 12 | Modal (VM) | 1011 | 993.5 – 1573 | 3 | 6 | too few sandboxes |
-| 13 | tama | 618 | 566 – 1366 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 599.5 | 599 – 599.5 | 3 | 6 | too few sandboxes |
+| 12 | Runloop | 1993 | 1707 – 2350 | 3 | 6 | too few sandboxes |
+| 13 | Modal (VM) | 1011 | 993.5 – 1573 | 3 | 6 | too few sandboxes |
+| 14 | tama | 618 | 566 – 1366 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 599.5 | 599 – 599.5 | 3 | 6 | too few sandboxes |
 
 ### fio seq read 1MB, O_DIRECT (MB/s)
 
@@ -727,7 +755,7 @@ MB/s · higher is better
 
 _Modal (gVisor) leads · ~2.7× Brezel on median (higher is better)._
 
-<img src="docs/figures/fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio seq read 1MB, O_DIRECT (MB/s): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio seq read 1MB, O_DIRECT (MB/s): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio seq read 1MB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -742,9 +770,10 @@ _Modal (gVisor) leads · ~2.7× Brezel on median (higher is better)._
 | 9 | Freestyle | 5191 | 5159 – 5476 | 3 | 6 | too few sandboxes |
 | 10 | Vercel Sandbox | 4552 | 4482 – 4610 | 3 | 6 | too few sandboxes |
 | 11 | Namespace | 2461 | 2435 – 2500 | 3 | 6 | too few sandboxes |
-| 12 | Modal (VM) | 1062 | 1043 – 1650 | 3 | 6 | too few sandboxes |
-| 13 | tama | 649.6 | 595.1 – 1434 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 630.2 | 630.2 – 630.7 | 3 | 6 | too few sandboxes |
+| 12 | Runloop | 2091 | 1790 – 2465 | 3 | 6 | too few sandboxes |
+| 13 | Modal (VM) | 1062 | 1043 – 1650 | 3 | 6 | too few sandboxes |
+| 14 | tama | 649.6 | 595.1 – 1434 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 630.2 | 630.2 – 630.7 | 3 | 6 | too few sandboxes |
 
 ### fio seq write 1MB, O_DIRECT (IOPS)
 
@@ -752,7 +781,7 @@ IOPS · higher is better
 
 _Brezel leads on median (higher is better); see notes for how ranks are decided._
 
-<img src="docs/figures/fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio seq write 1MB, O_DIRECT (IOPS): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops.webp" width="960" alt="fio seq write 1MB, O_DIRECT (IOPS): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio seq write 1MB, O_DIRECT (IOPS) (IOPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -767,9 +796,10 @@ _Brezel leads on median (higher is better); see notes for how ranks are decided.
 | 9 | Freestyle | 2742 | 2316 – 2973 | 3 | 6 | too few sandboxes |
 | 10 | boat | 2350 | 1939 – 4383 | 3 | 6 | too few sandboxes |
 | 11 | Namespace | 1937 | 1741 – 2010 | 3 | 6 | too few sandboxes |
-| 12 | tama | 930 | 888 – 1402 | 3 | 6 | too few sandboxes |
-| 13 | Modal (VM) | 814 | 798.5 – 1137 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 599.5 | 599 – 600 | 3 | 6 | too few sandboxes |
+| 12 | Runloop | 1296 | 1276 – 1964 | 3 | 6 | too few sandboxes |
+| 13 | tama | 930 | 888 – 1402 | 3 | 6 | too few sandboxes |
+| 14 | Modal (VM) | 814 | 798.5 – 1137 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 599.5 | 599 – 600 | 3 | 6 | too few sandboxes |
 
 ### fio seq write 1MB, O_DIRECT (MB/s)
 
@@ -777,7 +807,7 @@ MB/s · higher is better
 
 _Brezel leads on median (higher is better); see notes for how ranks are decided._
 
-<img src="docs/figures/fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio seq write 1MB, O_DIRECT (MB/s): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s.webp" width="960" alt="fio seq write 1MB, O_DIRECT (MB/s): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | fio seq write 1MB, O_DIRECT (MB/s) (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -792,9 +822,10 @@ _Brezel leads on median (higher is better); see notes for how ranks are decided.
 | 9 | Freestyle | 2876 | 2430 – 3119 | 3 | 6 | too few sandboxes |
 | 10 | boat | 2465 | 2035 – 4597 | 3 | 6 | too few sandboxes |
 | 11 | Namespace | 2033 | 1828 – 2110 | 3 | 6 | too few sandboxes |
-| 12 | tama | 976.7 | 933.2 – 1471 | 3 | 6 | too few sandboxes |
-| 13 | Modal (VM) | 855.6 | 838.9 – 1193 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 630.2 | 629.7 – 630.7 | 3 | 6 | too few sandboxes |
+| 12 | Runloop | 1360 | 1339 – 2060 | 3 | 6 | too few sandboxes |
+| 13 | tama | 976.7 | 933.2 – 1471 | 3 | 6 | too few sandboxes |
+| 14 | Modal (VM) | 855.6 | 838.9 – 1193 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 630.2 | 629.7 – 630.7 | 3 | 6 | too few sandboxes |
 
 ### Hardlink throughput
 
@@ -802,7 +833,7 @@ bogo ops/s · higher is better
 
 _Daytona (VM) leads · ~1.4× Blaxel on median (higher is better)._
 
-<img src="docs/figures/hardlink_bogo_ops_per_s.webp" width="960" alt="Hardlink throughput: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/hardlink_bogo_ops_per_s.webp" width="960" alt="Hardlink throughput: 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | Hardlink throughput (bogo ops/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -810,22 +841,23 @@ _Daytona (VM) leads · ~1.4× Blaxel on median (higher is better)._
 | 2 | Blaxel | 17.71 | 17.16 – 18.29 | 3 | 6 | too few sandboxes |
 | 3 | Brezel | 16.62 | 16.55 – 16.68 | 3 | 6 | too few sandboxes |
 | 4 | Namespace | 15.31 | 14.8 – 15.34 | 3 | 6 | too few sandboxes |
-| 5 | Novita | 11.49 | 11.47 – 11.51 | 3 | 6 | too few sandboxes |
-| 6 | Vercel Sandbox | 10.98 | 10.84 – 11 | 3 | 6 | too few sandboxes |
-| 7 | boat | 9.93 | 9.615 – 10.31 | 3 | 6 | too few sandboxes |
-| 8 | Microsandbox Cloud | 8.475 | 8.275 – 8.655 | 3 | 6 | too few sandboxes |
-| 9 | Modal (VM) | 8.075 | 8.055 – 28.62 | 3 | 6 | too few sandboxes |
-| 10 | tama | 8.035 | 7.82 – 8.125 | 3 | 6 | too few sandboxes |
-| 11 | run.cloud | 7.625 | 4.425 – 7.635 | 3 | 6 | too few sandboxes |
-| 12 | Modal (gVisor) | 4.22 | 4.14 – 4.245 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 3.74 | 3.74 – 4.08 | 3 | 6 | too few sandboxes |
-| 14 | E2B | 1.415 | 1.345 – 1.865 | 3 | 6 | too few sandboxes |
+| 5 | Runloop | 15.12 | 14.96 – 15.3 | 3 | 6 | too few sandboxes |
+| 6 | Novita | 11.49 | 11.47 – 11.51 | 3 | 6 | too few sandboxes |
+| 7 | Vercel Sandbox | 10.98 | 10.84 – 11 | 3 | 6 | too few sandboxes |
+| 8 | boat | 9.93 | 9.615 – 10.31 | 3 | 6 | too few sandboxes |
+| 9 | Microsandbox Cloud | 8.475 | 8.275 – 8.655 | 3 | 6 | too few sandboxes |
+| 10 | Modal (VM) | 8.075 | 8.055 – 28.62 | 3 | 6 | too few sandboxes |
+| 11 | tama | 8.035 | 7.82 – 8.125 | 3 | 6 | too few sandboxes |
+| 12 | run.cloud | 7.625 | 4.425 – 7.635 | 3 | 6 | too few sandboxes |
+| 13 | Modal (gVisor) | 4.22 | 4.14 – 4.245 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 3.74 | 3.74 – 4.08 | 3 | 6 | too few sandboxes |
+| 15 | E2B | 1.415 | 1.345 – 1.865 | 3 | 6 | too few sandboxes |
 
 </details>
 
 ## memory
 
-<img src="docs/figures/stream_type_triad.webp" width="960" alt="STREAM Triad: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/stream_type_triad.webp" width="960" alt="STREAM Triad: 15 environments ranked best-first, with 95% intervals">
 
 <details>
 <summary><strong>4 synthetic metrics</strong> · headline: STREAM Triad</summary>
@@ -850,8 +882,9 @@ _Daytona (VM) leads on median (higher is better); see notes for how ranks are de
 | 10 | E2B | 48960 | 43980 – 51460 | 3 | 6 | too few sandboxes |
 | 11 | Brezel | 45689 | 45559 – 45710 | 3 | 6 | too few sandboxes |
 | 12 | run.cloud | 44940 | 44770 – 45270 | 3 | 6 | too few sandboxes |
-| 13 | Namespace | 33180 | 31030 – 33410 | 3 | 6 | too few sandboxes |
-| 14 | boat | 32500 | 29850 – 32920 | 3 | 6 | too few sandboxes |
+| 13 | Runloop | 41630 | 39810 – 45430 | 3 | 6 | too few sandboxes |
+| 14 | Namespace | 33180 | 31030 – 33410 | 3 | 6 | too few sandboxes |
+| 15 | boat | 32500 | 29850 – 32920 | 3 | 6 | too few sandboxes |
 
 ### STREAM Add
 
@@ -859,7 +892,7 @@ MB/s · higher is better
 
 _tama leads · ~1.1× Daytona (VM) on median (higher is better)._
 
-<img src="docs/figures/stream_type_add.webp" width="960" alt="STREAM Add: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/stream_type_add.webp" width="960" alt="STREAM Add: 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | STREAM Add (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -875,8 +908,9 @@ _tama leads · ~1.1× Daytona (VM) on median (higher is better)._
 | 10 | E2B | 48950 | 44420 – 51660 | 3 | 6 | too few sandboxes |
 | 11 | Brezel | 45650 | 45490 – 45660 | 3 | 6 | too few sandboxes |
 | 12 | run.cloud | 44950 | 44800 – 45290 | 3 | 6 | too few sandboxes |
-| 13 | Namespace | 33060 | 31030 – 33350 | 3 | 6 | too few sandboxes |
-| 14 | boat | 32440 | 29920 – 32840 | 3 | 6 | too few sandboxes |
+| 13 | Runloop | 39240 | 39060 – 44720 | 3 | 6 | too few sandboxes |
+| 14 | Namespace | 33060 | 31030 – 33350 | 3 | 6 | too few sandboxes |
+| 15 | boat | 32440 | 29920 – 32840 | 3 | 6 | too few sandboxes |
 
 ### STREAM Copy
 
@@ -884,7 +918,7 @@ MB/s · higher is better
 
 _Daytona (VM) leads · ~1.1× tama on median (higher is better)._
 
-<img src="docs/figures/stream_type_copy.webp" width="960" alt="STREAM Copy: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/stream_type_copy.webp" width="960" alt="STREAM Copy: 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | STREAM Copy (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -902,6 +936,7 @@ _Daytona (VM) leads · ~1.1× tama on median (higher is better)._
 | 12 | Brezel | 48740 | 48670 – 48740 | 3 | 6 | too few sandboxes |
 | 13 | Namespace | 43570 | 42080 – 44260 | 3 | 6 | too few sandboxes |
 | 14 | boat | 43150 | 39060 – 43890 | 3 | 6 | too few sandboxes |
+| 15 | Runloop | 41900 | 39700 – 44030 | 3 | 6 | too few sandboxes |
 
 ### STREAM Scale
 
@@ -909,7 +944,7 @@ MB/s · higher is better
 
 _Daytona (VM) leads on median (higher is better); see notes for how ranks are decided._
 
-<img src="docs/figures/stream_type_scale.webp" width="960" alt="STREAM Scale: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/stream_type_scale.webp" width="960" alt="STREAM Scale: 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | STREAM Scale (MB/s) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -925,16 +960,17 @@ _Daytona (VM) leads on median (higher is better); see notes for how ranks are de
 | 10 | E2B | 43600 | 39510 – 44770 | 3 | 6 | too few sandboxes |
 | 11 | Brezel | 41400 | 41260 – 41420 | 3 | 6 | too few sandboxes |
 | 12 | run.cloud | 40580 | 40410 – 40860 | 3 | 6 | too few sandboxes |
-| 13 | Namespace | 30140 | 28680 – 30250 | 3 | 6 | too few sandboxes |
-| 14 | boat | 29610 | 27480 – 29880 | 3 | 6 | too few sandboxes |
+| 13 | Runloop | 36610 | 35930 – 42070 | 3 | 6 | too few sandboxes |
+| 14 | Namespace | 30140 | 28680 – 30250 | 3 | 6 | too few sandboxes |
+| 15 | boat | 29610 | 27480 – 29880 | 3 | 6 | too few sandboxes |
 
 </details>
 
 ## network
 
-<img src="docs/figures/iperf_wan_direction_download.webp" width="960" alt="iperf3 WAN download: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/iperf_wan_direction_download.webp" width="960" alt="iperf3 WAN download: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
-<img src="docs/figures/iperf_wan_direction_upload.webp" width="960" alt="iperf3 WAN upload: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/iperf_wan_direction_upload.webp" width="960" alt="iperf3 WAN upload: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 <details>
 <summary><strong>22 synthetic metrics</strong> · headlines: iperf3 WAN download · iperf3 WAN upload</summary>
@@ -954,12 +990,13 @@ _Vercel Sandbox leads · ~1.1× tama on median (higher is better)._
 | 5 | E2B | 3028 | 1151 – 3461 | 3 | 6 | too few sandboxes |
 | 6 | Blaxel | 2167 | 1739 – 2322 | 3 | 6 | too few sandboxes |
 | 7 | Modal (gVisor) | 1857 | 1749 – 2055 | 3 | 6 | too few sandboxes |
-| 8 | Freestyle | 1753 | 1637 – 2013 | 3 | 6 | too few sandboxes |
-| 9 | Brezel | 1733 | 1729 – 1734 | 3 | 6 | too few sandboxes |
-| 10 | Modal (VM) | 1424 | 528.2 – 2375 | 3 | 6 | too few sandboxes |
-| 11 | Namespace | 1165 | 1110 – 1335 | 3 | 6 | too few sandboxes |
-| 12 | Microsandbox Cloud | 947.2 | 268.9 – 2038 | 3 | 6 | too few sandboxes |
-| 13 | run.cloud | 937 | 933.6 – 937 | 3 | 6 | too few sandboxes |
+| 8 | Runloop | 1816 | 1732 – 2071 | 3 | 6 | too few sandboxes |
+| 9 | Freestyle | 1753 | 1637 – 2013 | 3 | 6 | too few sandboxes |
+| 10 | Brezel | 1733 | 1729 – 1734 | 3 | 6 | too few sandboxes |
+| 11 | Modal (VM) | 1424 | 528.2 – 2375 | 3 | 6 | too few sandboxes |
+| 12 | Namespace | 1165 | 1110 – 1335 | 3 | 6 | too few sandboxes |
+| 13 | Microsandbox Cloud | 947.2 | 268.9 – 2038 | 3 | 6 | too few sandboxes |
+| 14 | run.cloud | 937 | 933.6 – 937 | 3 | 6 | too few sandboxes |
 
 ### iperf3 WAN upload _(headline)_
 
@@ -977,11 +1014,12 @@ _Modal (VM) leads · ~1.1× Vercel Sandbox on median (higher is better)._
 | 6 | tama | 2978 | 2058 – 3898 | 2 | 4 | too few sandboxes |
 | 7 | Daytona (VM) | 2965 | 2573 – 4082 | 3 | 6 | too few sandboxes |
 | 8 | Namespace | 2885 | 2836 – 3815 | 3 | 6 | too few sandboxes |
-| 9 | Microsandbox Cloud | 1765 | 1427 – 3603 | 3 | 6 | too few sandboxes |
-| 10 | Brezel | 1308 | 1277 – 1309 | 3 | 6 | too few sandboxes |
-| 11 | E2B | 1030 | 922 – 1396 | 3 | 6 | too few sandboxes |
-| 12 | run.cloud | 934.4 | 934.3 – 934.4 | 3 | 6 | too few sandboxes |
-| 13 | Modal (gVisor) | 142.8 | 117.6 – 2961 | 3 | 6 | too few sandboxes |
+| 9 | Runloop | 2171 | 1957 – 2182 | 3 | 6 | too few sandboxes |
+| 10 | Microsandbox Cloud | 1765 | 1427 – 3603 | 3 | 6 | too few sandboxes |
+| 11 | Brezel | 1308 | 1277 – 1309 | 3 | 6 | too few sandboxes |
+| 12 | E2B | 1030 | 922 – 1396 | 3 | 6 | too few sandboxes |
+| 13 | run.cloud | 934.4 | 934.3 – 934.4 | 3 | 6 | too few sandboxes |
+| 14 | Modal (gVisor) | 142.8 | 117.6 – 2961 | 3 | 6 | too few sandboxes |
 
 ### iperf3 loopback TCP, 1 stream
 
@@ -989,7 +1027,7 @@ Mbits/sec · higher is better
 
 _Blaxel leads · ~1.1× Novita on median (higher is better)._
 
-<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1.webp" width="960" alt="iperf3 loopback TCP, 1 stream: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1.webp" width="960" alt="iperf3 loopback TCP, 1 stream: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | iperf3 loopback TCP, 1 stream (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1001,11 +1039,12 @@ _Blaxel leads · ~1.1× Novita on median (higher is better)._
 | 6 | Vercel Sandbox | 67440 | 66160 – 67560 | 3 | 6 | too few sandboxes |
 | 7 | tama | 61680 | 60834 – 62530 | 2 | 4 | too few sandboxes |
 | 8 | E2B | 56690 | 48049 – 57810 | 3 | 6 | too few sandboxes |
-| 9 | Namespace | 36680 | 36390 – 36980 | 3 | 6 | too few sandboxes |
-| 10 | run.cloud | 33548 | 28104 – 34459 | 3 | 6 | too few sandboxes |
-| 11 | Modal (gVisor) | 30270 | 15234 – 35870 | 3 | 6 | too few sandboxes |
-| 12 | Modal (VM) | 19370 | 17590 – 60850 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 17980 | 16370 – 19480 | 3 | 6 | too few sandboxes |
+| 9 | Runloop | 38483 | 35157 – 40170 | 3 | 6 | too few sandboxes |
+| 10 | Namespace | 36680 | 36390 – 36980 | 3 | 6 | too few sandboxes |
+| 11 | run.cloud | 33548 | 28104 – 34459 | 3 | 6 | too few sandboxes |
+| 12 | Modal (gVisor) | 30270 | 15234 – 35870 | 3 | 6 | too few sandboxes |
+| 13 | Modal (VM) | 19370 | 17590 – 60850 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 17980 | 16370 – 19480 | 3 | 6 | too few sandboxes |
 
 ### iperf3 loopback TCP, 10 streams
 
@@ -1013,7 +1052,7 @@ Mbits/sec · higher is better
 
 _Brezel leads · ~1.2× Blaxel on median (higher is better)._
 
-<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10.webp" width="960" alt="iperf3 loopback TCP, 10 streams: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10.webp" width="960" alt="iperf3 loopback TCP, 10 streams: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | iperf3 loopback TCP, 10 streams (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1026,18 +1065,19 @@ _Brezel leads · ~1.2× Blaxel on median (higher is better)._
 | 7 | Vercel Sandbox | 56970 | 48110 – 60003 | 3 | 6 | too few sandboxes |
 | 8 | Namespace | 42100 | 40719 – 43897 | 3 | 6 | too few sandboxes |
 | 9 | tama | 39080 | 38886 – 39267 | 2 | 4 | too few sandboxes |
-| 10 | run.cloud | 33628 | 29527 – 35639 | 3 | 6 | too few sandboxes |
-| 11 | Modal (gVisor) | 32024 | 15229 – 34530 | 3 | 6 | too few sandboxes |
-| 12 | Freestyle | 23686 | 19747 – 29914 | 3 | 6 | too few sandboxes |
-| 13 | Modal (VM) | 16719 | 15260 – 59560 | 3 | 6 | too few sandboxes |
+| 10 | Runloop | 34881 | 33400 – 40650 | 3 | 6 | too few sandboxes |
+| 11 | run.cloud | 33628 | 29527 – 35639 | 3 | 6 | too few sandboxes |
+| 12 | Modal (gVisor) | 32024 | 15229 – 34530 | 3 | 6 | too few sandboxes |
+| 13 | Freestyle | 23686 | 19747 – 29914 | 3 | 6 | too few sandboxes |
+| 14 | Modal (VM) | 16719 | 15260 – 59560 | 3 | 6 | too few sandboxes |
 
 ### iperf3 loopback UDP, 10G objective
 
 Mbits/sec · higher is better
 
-_Blaxel, Brezel, Daytona (VM), E2B, Freestyle, Microsandbox Cloud, Modal (VM), Namespace, Novita, run.cloud, tama and Vercel Sandbox share the top on this metric (higher is better)._
+_Blaxel, Brezel, Daytona (VM), E2B, Freestyle, Microsandbox Cloud, Modal (VM), Namespace, Novita, run.cloud, Runloop, tama and Vercel Sandbox share the top on this metric (higher is better)._
 
-<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1.webp" width="960" alt="iperf3 loopback UDP, 10G objective: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1.webp" width="960" alt="iperf3 loopback UDP, 10G objective: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | iperf3 loopback UDP, 10G objective (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1051,9 +1091,10 @@ _Blaxel, Brezel, Daytona (VM), E2B, Freestyle, Microsandbox Cloud, Modal (VM), N
 | 1 | Namespace | 9999 | 9999 – 9999 | 3 | 6 | too few sandboxes, equal medians |
 | 1 | Novita | 9999 | 9999 – 9999 | 3 | 6 | too few sandboxes, equal medians |
 | 1 | run.cloud | 9999 | 9999 – 10000 | 3 | 6 | too few sandboxes, equal medians |
+| 1 | Runloop | 9999 | 9999 – 9999 | 3 | 6 | too few sandboxes, equal medians |
 | 1 | tama | 9999 | 9999 – 9999 | 2 | 4 | too few sandboxes, equal medians |
 | 1 | Vercel Sandbox | 9999 | 9999 – 9999 | 3 | 6 | too few sandboxes, equal medians |
-| 13 | Modal (gVisor) | 470 | 428.5 – 484 | 3 | 6 | too few sandboxes |
+| 14 | Modal (gVisor) | 470 | 428.5 – 484 | 3 | 6 | too few sandboxes |
 
 ### github.com HTTPS
 
@@ -1061,7 +1102,7 @@ ms · lower is better
 
 _Namespace leads · Vercel Sandbox is ~1.1× higher (lower is better)._
 
-<img src="docs/figures/network_https_github_com_total_ms.webp" width="960" alt="github.com HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_github_com_total_ms.webp" width="960" alt="github.com HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | github.com HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1077,7 +1118,8 @@ _Namespace leads · Vercel Sandbox is ~1.1× higher (lower is better)._
 | 10 | Blaxel | 120.9 | 120.5 – 122.1 | 3 | 90 | too few sandboxes |
 | 11 | Freestyle | 193.7 | 186.8 – 200.7 | 3 | 90 | too few sandboxes |
 | 12 | Microsandbox Cloud | 218.3 | 217.3 – 225.4 | 3 | 90 | too few sandboxes |
-| 13 | Novita | 583.3 | 545.9 – 600 | 3 | 90 | too few sandboxes |
+| 13 | Runloop | 280.6 | 278.5 – 289.2 | 3 | 90 | too few sandboxes |
+| 14 | Novita | 583.3 | 545.9 – 600 | 3 | 90 | too few sandboxes |
 
 ### api.github.com HTTPS
 
@@ -1085,7 +1127,7 @@ ms · lower is better
 
 _Namespace leads · Vercel Sandbox is ~1.7× higher (lower is better)._
 
-<img src="docs/figures/network_https_api_github_com_total_ms.webp" width="960" alt="api.github.com HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_api_github_com_total_ms.webp" width="960" alt="api.github.com HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | api.github.com HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1097,11 +1139,12 @@ _Namespace leads · Vercel Sandbox is ~1.7× higher (lower is better)._
 | 6 | run.cloud | 32.75 | 29.26 – 33.03 | 3 | 90 | too few sandboxes |
 | 7 | E2B | 37.57 | 34.13 – 39.22 | 3 | 90 | too few sandboxes |
 | 8 | Daytona (VM) | 41.81 | 36.73 – 42.09 | 3 | 90 | too few sandboxes |
-| 9 | Brezel | 49.6 | 49.15 – 49.98 | 3 | 90 | too few sandboxes |
-| 10 | Blaxel | 56.41 | 56.05 – 56.81 | 3 | 90 | too few sandboxes |
-| 11 | Freestyle | 90.34 | 79.98 – 91.6 | 3 | 90 | too few sandboxes |
-| 12 | Microsandbox Cloud | 98.25 | 93.35 – 100.1 | 3 | 90 | too few sandboxes |
-| 13 | Novita | 192.7 | 192 – 195.8 | 3 | 90 | too few sandboxes |
+| 9 | Runloop | 48.03 | 43.53 – 48.51 | 3 | 90 | too few sandboxes |
+| 10 | Brezel | 49.6 | 49.15 – 49.98 | 3 | 90 | too few sandboxes |
+| 11 | Blaxel | 56.41 | 56.05 – 56.81 | 3 | 90 | too few sandboxes |
+| 12 | Freestyle | 90.34 | 79.98 – 91.6 | 3 | 90 | too few sandboxes |
+| 13 | Microsandbox Cloud | 98.25 | 93.35 – 100.1 | 3 | 90 | too few sandboxes |
+| 14 | Novita | 192.7 | 192 – 195.8 | 3 | 90 | too few sandboxes |
 
 ### raw.githubusercontent.com HTTPS
 
@@ -1109,7 +1152,7 @@ ms · lower is better
 
 _Brezel leads · Modal (VM) is ~1.1× higher (lower is better)._
 
-<img src="docs/figures/network_https_raw_githubusercontent_com_total_ms.webp" width="960" alt="raw.githubusercontent.com HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_raw_githubusercontent_com_total_ms.webp" width="960" alt="raw.githubusercontent.com HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | raw.githubusercontent.com HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1117,15 +1160,16 @@ _Brezel leads · Modal (VM) is ~1.1× higher (lower is better)._
 | 2 | Modal (VM) | 10.22 | 10.14 – 10.22 | 3 | 90 | too few sandboxes |
 | 3 | Microsandbox Cloud | 14.67 | 11.93 – 21.69 | 3 | 90 | too few sandboxes |
 | 4 | Vercel Sandbox | 15.72 | 14.16 – 16.66 | 3 | 90 | too few sandboxes |
-| 5 | Daytona (VM) | 23.83 | 13.93 – 24.27 | 3 | 90 | too few sandboxes |
-| 6 | Namespace | 25.95 | 25.14 – 26.16 | 3 | 90 | too few sandboxes |
-| 7 | Modal (gVisor) | 27.26 | 17.74 – 29.87 | 3 | 90 | too few sandboxes |
-| 8 | E2B | 31.21 | 30.87 – 31.29 | 3 | 90 | too few sandboxes |
-| 9 | Blaxel | 33.02 | 32.45 – 33.18 | 3 | 90 | too few sandboxes |
-| 10 | Freestyle | 37.26 | 34.29 – 38.9 | 3 | 90 | too few sandboxes |
-| 11 | Novita | 41.36 | 41.16 – 42.29 | 3 | 90 | too few sandboxes |
-| 12 | run.cloud | 59.73 | 59.06 – 60.31 | 3 | 90 | too few sandboxes |
-| 13 | tama | 219.3 | 219.3 – 219.4 | 2 | 60 | too few sandboxes |
+| 5 | Runloop | 19.78 | 19.73 – 21.16 | 3 | 90 | too few sandboxes |
+| 6 | Daytona (VM) | 23.83 | 13.93 – 24.27 | 3 | 90 | too few sandboxes |
+| 7 | Namespace | 25.95 | 25.14 – 26.16 | 3 | 90 | too few sandboxes |
+| 8 | Modal (gVisor) | 27.26 | 17.74 – 29.87 | 3 | 90 | too few sandboxes |
+| 9 | E2B | 31.21 | 30.87 – 31.29 | 3 | 90 | too few sandboxes |
+| 10 | Blaxel | 33.02 | 32.45 – 33.18 | 3 | 90 | too few sandboxes |
+| 11 | Freestyle | 37.26 | 34.29 – 38.9 | 3 | 90 | too few sandboxes |
+| 12 | Novita | 41.36 | 41.16 – 42.29 | 3 | 90 | too few sandboxes |
+| 13 | run.cloud | 59.73 | 59.06 – 60.31 | 3 | 90 | too few sandboxes |
+| 14 | tama | 219.3 | 219.3 – 219.4 | 2 | 60 | too few sandboxes |
 
 ### registry.npmjs.org HTTPS
 
@@ -1133,23 +1177,24 @@ ms · lower is better
 
 _Namespace leads · Modal (VM) is ~1.3× higher (lower is better)._
 
-<img src="docs/figures/network_https_registry_npmjs_org_total_ms.webp" width="960" alt="registry.npmjs.org HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_registry_npmjs_org_total_ms.webp" width="960" alt="registry.npmjs.org HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | registry.npmjs.org HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Namespace | 16.22 | 15.27 – 16.34 | 3 | 90 | — |
 | 2 | Modal (VM) | 20.71 | 19.03 – 90.19 | 3 | 90 | too few sandboxes |
 | 3 | Vercel Sandbox | 22.73 | 22.56 – 25.73 | 3 | 90 | too few sandboxes |
-| 4 | Brezel | 29.31 | 29.1 – 29.55 | 3 | 90 | too few sandboxes |
-| 5 | Blaxel | 30.47 | 29.87 – 31.18 | 3 | 90 | too few sandboxes |
-| 6 | Daytona (VM) | 32.92 | 23.5 – 33.63 | 3 | 90 | too few sandboxes |
-| 7 | Modal (gVisor) | 35.22 | 28.6 – 35.36 | 3 | 90 | too few sandboxes |
-| 8 | run.cloud | 44.24 | 43.84 – 45.42 | 3 | 90 | too few sandboxes |
-| 9 | E2B | 45.63 | 44.43 – 47.08 | 3 | 90 | too few sandboxes |
-| 10 | Freestyle | 56.63 | 45.32 – 59.03 | 3 | 90 | too few sandboxes |
-| 11 | Microsandbox Cloud | 57.85 | 53.7 – 58.17 | 3 | 90 | too few sandboxes |
-| 12 | Novita | 63.66 | 63.25 – 64.12 | 3 | 90 | too few sandboxes |
-| 13 | tama | 229.9 | 229.3 – 230.5 | 2 | 60 | too few sandboxes |
+| 4 | Runloop | 25.9 | 25.88 – 26.38 | 3 | 90 | too few sandboxes |
+| 5 | Brezel | 29.31 | 29.1 – 29.55 | 3 | 90 | too few sandboxes |
+| 6 | Blaxel | 30.47 | 29.87 – 31.18 | 3 | 90 | too few sandboxes |
+| 7 | Daytona (VM) | 32.92 | 23.5 – 33.63 | 3 | 90 | too few sandboxes |
+| 8 | Modal (gVisor) | 35.22 | 28.6 – 35.36 | 3 | 90 | too few sandboxes |
+| 9 | run.cloud | 44.24 | 43.84 – 45.42 | 3 | 90 | too few sandboxes |
+| 10 | E2B | 45.63 | 44.43 – 47.08 | 3 | 90 | too few sandboxes |
+| 11 | Freestyle | 56.63 | 45.32 – 59.03 | 3 | 90 | too few sandboxes |
+| 12 | Microsandbox Cloud | 57.85 | 53.7 – 58.17 | 3 | 90 | too few sandboxes |
+| 13 | Novita | 63.66 | 63.25 – 64.12 | 3 | 90 | too few sandboxes |
+| 14 | tama | 229.9 | 229.3 – 230.5 | 2 | 60 | too few sandboxes |
 
 ### pypi.org HTTPS
 
@@ -1157,7 +1202,7 @@ ms · lower is better
 
 _Brezel leads · Modal (VM) is ~1.1× higher (lower is better)._
 
-<img src="docs/figures/network_https_pypi_org_total_ms.webp" width="960" alt="pypi.org HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_pypi_org_total_ms.webp" width="960" alt="pypi.org HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | pypi.org HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1166,14 +1211,15 @@ _Brezel leads · Modal (VM) is ~1.1× higher (lower is better)._
 | 3 | Namespace | 15.6 | 15.1 – 29.17 | 3 | 90 | too few sandboxes |
 | 4 | Microsandbox Cloud | 16.23 | 13.14 – 17.23 | 3 | 90 | too few sandboxes |
 | 5 | Vercel Sandbox | 17.1 | 16.55 – 19.44 | 3 | 90 | too few sandboxes |
-| 6 | Daytona (VM) | 25.69 | 15.99 – 25.92 | 3 | 90 | too few sandboxes |
-| 7 | Modal (gVisor) | 29.8 | 19.14 – 34.25 | 3 | 90 | too few sandboxes |
-| 8 | run.cloud | 31.7 | 31.42 – 34.06 | 3 | 90 | too few sandboxes |
-| 9 | E2B | 33.19 | 32.41 – 33.74 | 3 | 90 | too few sandboxes |
-| 10 | Blaxel | 34.97 | 34.78 – 35.16 | 3 | 90 | too few sandboxes |
-| 11 | Freestyle | 43.57 | 37.12 – 44.13 | 3 | 89 | too few sandboxes |
-| 12 | Novita | 45.99 | 43.68 – 46.56 | 3 | 90 | too few sandboxes |
-| 13 | tama | 221.2 | 220.8 – 221.7 | 2 | 60 | too few sandboxes |
+| 6 | Runloop | 21.61 | 21.17 – 22.98 | 3 | 90 | too few sandboxes |
+| 7 | Daytona (VM) | 25.69 | 15.99 – 25.92 | 3 | 90 | too few sandboxes |
+| 8 | Modal (gVisor) | 29.8 | 19.14 – 34.25 | 3 | 90 | too few sandboxes |
+| 9 | run.cloud | 31.7 | 31.42 – 34.06 | 3 | 90 | too few sandboxes |
+| 10 | E2B | 33.19 | 32.41 – 33.74 | 3 | 90 | too few sandboxes |
+| 11 | Blaxel | 34.97 | 34.78 – 35.16 | 3 | 90 | too few sandboxes |
+| 12 | Freestyle | 43.57 | 37.12 – 44.13 | 3 | 89 | too few sandboxes |
+| 13 | Novita | 45.99 | 43.68 – 46.56 | 3 | 90 | too few sandboxes |
+| 14 | tama | 221.2 | 220.8 – 221.7 | 2 | 60 | too few sandboxes |
 
 ### files.pythonhosted.org HTTPS
 
@@ -1181,7 +1227,7 @@ ms · lower is better
 
 _Modal (VM) leads · Namespace is ~1.2× higher (lower is better)._
 
-<img src="docs/figures/network_https_files_pythonhosted_org_total_ms.webp" width="960" alt="files.pythonhosted.org HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_files_pythonhosted_org_total_ms.webp" width="960" alt="files.pythonhosted.org HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | files.pythonhosted.org HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1196,8 +1242,9 @@ _Modal (VM) leads · Namespace is ~1.2× higher (lower is better)._
 | 9 | Blaxel | 31.93 | 31.86 – 32.24 | 3 | 90 | too few sandboxes |
 | 10 | E2B | 32.14 | 31.19 – 32.4 | 3 | 90 | too few sandboxes |
 | 11 | Freestyle | 35.45 | 32.65 – 37.22 | 3 | 90 | too few sandboxes |
-| 12 | Novita | 40.94 | 40.42 – 41.02 | 3 | 90 | too few sandboxes |
-| 13 | tama | 219.4 | 219.4 – 219.5 | 2 | 60 | too few sandboxes |
+| 12 | Runloop | 37.81 | 31.93 – 38.45 | 3 | 90 | too few sandboxes |
+| 13 | Novita | 40.94 | 40.42 – 41.02 | 3 | 90 | too few sandboxes |
+| 14 | tama | 219.4 | 219.4 – 219.5 | 2 | 60 | too few sandboxes |
 
 ### ghcr.io/v2 HTTPS
 
@@ -1205,7 +1252,7 @@ ms · lower is better
 
 _Namespace leads · Vercel Sandbox is ~1.1× higher (lower is better)._
 
-<img src="docs/figures/network_https_ghcr_io_v2_total_ms.webp" width="960" alt="ghcr.io/v2 HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_ghcr_io_v2_total_ms.webp" width="960" alt="ghcr.io/v2 HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | ghcr.io/v2 HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1213,15 +1260,16 @@ _Namespace leads · Vercel Sandbox is ~1.1× higher (lower is better)._
 | 2 | Vercel Sandbox | 18.27 | 16.62 – 21.06 | 3 | 90 | too few sandboxes |
 | 3 | tama | 23.69 | 23.31 – 24.08 | 2 | 60 | too few sandboxes |
 | 4 | Modal (VM) | 31.84 | 31.51 – 85.15 | 3 | 90 | too few sandboxes |
-| 5 | Blaxel | 64.59 | 62.46 – 64.87 | 3 | 90 | too few sandboxes |
-| 6 | Daytona (VM) | 98.09 | 94.01 – 101 | 3 | 90 | too few sandboxes |
-| 7 | Modal (gVisor) | 100.6 | 35.11 – 103.5 | 3 | 90 | too few sandboxes |
-| 8 | E2B | 107.6 | 107.3 – 109.6 | 3 | 90 | too few sandboxes |
-| 9 | Microsandbox Cloud | 122.1 | 121.1 – 124.8 | 3 | 90 | too few sandboxes |
-| 10 | run.cloud | 128.9 | 128 – 130.1 | 3 | 90 | too few sandboxes |
-| 11 | Freestyle | 144.2 | 134.6 – 144.5 | 3 | 90 | too few sandboxes |
-| 12 | Brezel | 148.5 | 147.7 – 149.1 | 3 | 90 | too few sandboxes |
-| 13 | Novita | 201.9 | 201.7 – 203.8 | 3 | 90 | too few sandboxes |
+| 5 | Runloop | 58.82 | 51.55 – 59.66 | 3 | 90 | too few sandboxes |
+| 6 | Blaxel | 64.59 | 62.46 – 64.87 | 3 | 90 | too few sandboxes |
+| 7 | Daytona (VM) | 98.09 | 94.01 – 101 | 3 | 90 | too few sandboxes |
+| 8 | Modal (gVisor) | 100.6 | 35.11 – 103.5 | 3 | 90 | too few sandboxes |
+| 9 | E2B | 107.6 | 107.3 – 109.6 | 3 | 90 | too few sandboxes |
+| 10 | Microsandbox Cloud | 122.1 | 121.1 – 124.8 | 3 | 90 | too few sandboxes |
+| 11 | run.cloud | 128.9 | 128 – 130.1 | 3 | 90 | too few sandboxes |
+| 12 | Freestyle | 144.2 | 134.6 – 144.5 | 3 | 90 | too few sandboxes |
+| 13 | Brezel | 148.5 | 147.7 – 149.1 | 3 | 90 | too few sandboxes |
+| 14 | Novita | 201.9 | 201.7 – 203.8 | 3 | 90 | too few sandboxes |
 
 ### gcr.io/v2 HTTPS
 
@@ -1229,7 +1277,7 @@ ms · lower is better
 
 _Namespace leads · E2B is ~1.3× higher (lower is better)._
 
-<img src="docs/figures/network_https_gcr_io_v2_total_ms.webp" width="960" alt="gcr.io/v2 HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_gcr_io_v2_total_ms.webp" width="960" alt="gcr.io/v2 HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | gcr.io/v2 HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1240,12 +1288,13 @@ _Namespace leads · E2B is ~1.3× higher (lower is better)._
 | 5 | Modal (gVisor) | 46.8 | 33.25 – 49.66 | 3 | 90 | too few sandboxes |
 | 6 | Daytona (VM) | 49.46 | 47.35 – 50.44 | 3 | 90 | too few sandboxes |
 | 7 | Blaxel | 55.08 | 54.85 – 55.4 | 3 | 90 | too few sandboxes |
-| 8 | Freestyle | 109.3 | 100.5 – 111.4 | 3 | 89 | too few sandboxes |
-| 9 | Microsandbox Cloud | 109.3 | 87.28 – 126.3 | 3 | 90 | too few sandboxes |
-| 10 | run.cloud | 132.3 | 131.7 – 134.5 | 3 | 90 | too few sandboxes |
-| 11 | Novita | 172.9 | 171.6 – 173 | 3 | 90 | too few sandboxes |
-| 12 | tama | 267.6 | 266.4 – 268.7 | 2 | 60 | too few sandboxes |
-| 13 | Brezel | 521.6 | 520.3 – 527.1 | 3 | 90 | too few sandboxes |
+| 8 | Runloop | 68.15 | 66.53 – 97.87 | 3 | 90 | too few sandboxes |
+| 9 | Freestyle | 109.3 | 100.5 – 111.4 | 3 | 89 | too few sandboxes |
+| 10 | Microsandbox Cloud | 109.3 | 87.28 – 126.3 | 3 | 90 | too few sandboxes |
+| 11 | run.cloud | 132.3 | 131.7 – 134.5 | 3 | 90 | too few sandboxes |
+| 12 | Novita | 172.9 | 171.6 – 173 | 3 | 90 | too few sandboxes |
+| 13 | tama | 267.6 | 266.4 – 268.7 | 2 | 60 | too few sandboxes |
+| 14 | Brezel | 521.6 | 520.3 – 527.1 | 3 | 90 | too few sandboxes |
 
 ### auth.docker.io token HTTPS
 
@@ -1253,7 +1302,7 @@ ms · lower is better
 
 _Namespace leads · Vercel Sandbox is ~1.4× higher (lower is better)._
 
-<img src="docs/figures/network_https_auth_docker_io_registry_token_total_ms.webp" width="960" alt="auth.docker.io token HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_auth_docker_io_registry_token_total_ms.webp" width="960" alt="auth.docker.io token HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | auth.docker.io token HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1261,15 +1310,16 @@ _Namespace leads · Vercel Sandbox is ~1.4× higher (lower is better)._
 | 2 | Vercel Sandbox | 36.38 | 34.66 – 37.05 | 3 | 90 | too few sandboxes |
 | 3 | Modal (VM) | 37.6 | 36.41 – 84.58 | 3 | 90 | too few sandboxes |
 | 4 | Blaxel | 43.1 | 40.21 – 43.17 | 3 | 90 | too few sandboxes |
-| 5 | Microsandbox Cloud | 53.92 | 53.91 – 55.05 | 3 | 90 | too few sandboxes |
-| 6 | Daytona (VM) | 104.5 | 92.77 – 104.7 | 3 | 90 | too few sandboxes |
-| 7 | Modal (gVisor) | 115.1 | 44.55 – 121.9 | 3 | 90 | too few sandboxes |
-| 8 | Brezel | 115.4 | 114.9 – 115.8 | 3 | 90 | too few sandboxes |
-| 9 | Novita | 120.1 | 119.5 – 122.4 | 3 | 90 | too few sandboxes |
-| 10 | Freestyle | 128.4 | 126.5 – 133.1 | 3 | 90 | too few sandboxes |
-| 11 | E2B | 130.5 | 129.6 – 134.4 | 3 | 90 | too few sandboxes |
-| 12 | run.cloud | 143.5 | 140.5 – 145.1 | 3 | 90 | too few sandboxes |
-| 13 | tama | 238.4 | 238.2 – 238.5 | 2 | 60 | too few sandboxes |
+| 5 | Runloop | 48.61 | 48.43 – 48.82 | 3 | 90 | too few sandboxes |
+| 6 | Microsandbox Cloud | 53.92 | 53.91 – 55.05 | 3 | 90 | too few sandboxes |
+| 7 | Daytona (VM) | 104.5 | 92.77 – 104.7 | 3 | 90 | too few sandboxes |
+| 8 | Modal (gVisor) | 115.1 | 44.55 – 121.9 | 3 | 90 | too few sandboxes |
+| 9 | Brezel | 115.4 | 114.9 – 115.8 | 3 | 90 | too few sandboxes |
+| 10 | Novita | 120.1 | 119.5 – 122.4 | 3 | 90 | too few sandboxes |
+| 11 | Freestyle | 128.4 | 126.5 – 133.1 | 3 | 90 | too few sandboxes |
+| 12 | E2B | 130.5 | 129.6 – 134.4 | 3 | 90 | too few sandboxes |
+| 13 | run.cloud | 143.5 | 140.5 – 145.1 | 3 | 90 | too few sandboxes |
+| 14 | tama | 238.4 | 238.2 – 238.5 | 2 | 60 | too few sandboxes |
 
 ### crates.io HTTPS
 
@@ -1277,7 +1327,7 @@ ms · lower is better
 
 _Modal (VM) leads · Brezel is ~1.4× higher (lower is better)._
 
-<img src="docs/figures/network_https_crates_io_total_ms.webp" width="960" alt="crates.io HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_crates_io_total_ms.webp" width="960" alt="crates.io HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | crates.io HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1287,13 +1337,14 @@ _Modal (VM) leads · Brezel is ~1.4× higher (lower is better)._
 | 4 | Namespace | 22.19 | 17.14 – 27.89 | 3 | 90 | too few sandboxes |
 | 5 | Vercel Sandbox | 22.88 | 22.86 – 28.3 | 3 | 90 | too few sandboxes |
 | 6 | Daytona (VM) | 23.26 | 21.05 – 28.33 | 3 | 90 | too few sandboxes |
-| 7 | Modal (gVisor) | 31.14 | 20.06 – 33.71 | 3 | 90 | too few sandboxes |
-| 8 | run.cloud | 33.07 | 32.1 – 35.33 | 3 | 90 | too few sandboxes |
-| 9 | Blaxel | 34.3 | 33.99 – 35.38 | 3 | 90 | too few sandboxes |
-| 10 | E2B | 36.26 | 35.03 – 36.86 | 3 | 90 | too few sandboxes |
-| 11 | Novita | 45.3 | 44.53 – 45.61 | 3 | 90 | too few sandboxes |
-| 12 | Freestyle | 52.02 | 38.73 – 52.13 | 3 | 89 | too few sandboxes |
-| 13 | tama | 235.9 | 234.3 – 237.4 | 2 | 60 | too few sandboxes |
+| 7 | Runloop | 24.39 | 24.11 – 25.02 | 3 | 90 | too few sandboxes |
+| 8 | Modal (gVisor) | 31.14 | 20.06 – 33.71 | 3 | 90 | too few sandboxes |
+| 9 | run.cloud | 33.07 | 32.1 – 35.33 | 3 | 90 | too few sandboxes |
+| 10 | Blaxel | 34.3 | 33.99 – 35.38 | 3 | 90 | too few sandboxes |
+| 11 | E2B | 36.26 | 35.03 – 36.86 | 3 | 90 | too few sandboxes |
+| 12 | Novita | 45.3 | 44.53 – 45.61 | 3 | 90 | too few sandboxes |
+| 13 | Freestyle | 52.02 | 38.73 – 52.13 | 3 | 89 | too few sandboxes |
+| 14 | tama | 235.9 | 234.3 – 237.4 | 2 | 60 | too few sandboxes |
 
 ### index.crates.io config HTTPS
 
@@ -1301,7 +1352,7 @@ ms · lower is better
 
 _Modal (VM) leads · Microsandbox Cloud is ~1.3× higher (lower is better)._
 
-<img src="docs/figures/network_https_index_crates_io_config_total_ms.webp" width="960" alt="index.crates.io config HTTPS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_https_index_crates_io_config_total_ms.webp" width="960" alt="index.crates.io config HTTPS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | index.crates.io config HTTPS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1316,8 +1367,9 @@ _Modal (VM) leads · Microsandbox Cloud is ~1.3× higher (lower is better)._
 | 9 | run.cloud | 28.77 | 28.59 – 31.22 | 3 | 90 | too few sandboxes |
 | 10 | E2B | 33.02 | 31.83 – 33.03 | 3 | 90 | too few sandboxes |
 | 11 | Freestyle | 33.98 | 32.19 – 35.76 | 2 | 60 | too few sandboxes |
-| 12 | Novita | 40.76 | 40.18 – 41.5 | 3 | 90 | too few sandboxes |
-| 13 | tama | 219.7 | 219.2 – 220.2 | 2 | 60 | too few sandboxes |
+| 12 | Runloop | 34.47 | 32.31 – 35.11 | 3 | 90 | too few sandboxes |
+| 13 | Novita | 40.76 | 40.18 – 41.5 | 3 | 90 | too few sandboxes |
+| 14 | tama | 219.7 | 219.2 – 220.2 | 2 | 60 | too few sandboxes |
 
 ### github.com cold DNS
 
@@ -1325,7 +1377,7 @@ ms · lower is better
 
 _Daytona (VM), Microsandbox Cloud and Vercel Sandbox share the top on this metric (lower is better)._
 
-<img src="docs/figures/network_dns_cold_github_com_ms.webp" width="960" alt="github.com cold DNS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_dns_cold_github_com_ms.webp" width="960" alt="github.com cold DNS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | github.com cold DNS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1342,78 +1394,82 @@ _Daytona (VM), Microsandbox Cloud and Vercel Sandbox share the top on this metri
 | 10 | Brezel | 12 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
 | 10 | E2B | 12 | 12 – 16 | 3 | 3 | too few sandboxes, equal medians |
 | 10 | Novita | 12 | 11 – 16 | 3 | 3 | too few sandboxes, equal medians |
+| 14 | Runloop | 16 | — | 1 | 1 | — |
 
 ### registry.npmjs.org cold DNS
 
 ms · lower is better
 
-_Namespace leads · Freestyle is ~2.0× higher (lower is better)._
+_Namespace and Runloop share the top on this metric (lower is better)._
 
-<img src="docs/figures/network_dns_cold_registry_npmjs_org_ms.webp" width="960" alt="registry.npmjs.org cold DNS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_dns_cold_registry_npmjs_org_ms.webp" width="960" alt="registry.npmjs.org cold DNS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | registry.npmjs.org cold DNS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Namespace | 4 | 4 – 8 | 3 | 3 | — |
-| 2 | Freestyle | 8 | 5 – 12 | 3 | 3 | too few sandboxes |
-| 2 | Modal (VM) | 8 | 8 – 31 | 3 | 3 | too few sandboxes, equal medians |
-| 2 | run.cloud | 8 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
-| 5 | Modal (gVisor) | 9 | 5 – 22 | 3 | 3 | too few sandboxes |
-| 6 | tama | 10 | 8 – 12 | 2 | 2 | too few sandboxes |
-| 7 | Blaxel | 12 | 12 – 12 | 3 | 3 | too few sandboxes |
-| 7 | Brezel | 12 | 12 – 16 | 3 | 3 | too few sandboxes, equal medians |
-| 7 | Daytona (VM) | 12 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
-| 7 | E2B | 12 | 12 – 12 | 3 | 3 | too few sandboxes, equal medians |
-| 7 | Microsandbox Cloud | 12 | 12 – 12 | 3 | 3 | too few sandboxes, equal medians |
-| 12 | Novita | 16 | 16 – 71 | 3 | 3 | too few sandboxes |
-| 13 | Vercel Sandbox | 28 | 23 – 35 | 3 | 3 | too few sandboxes |
+| 1 | Runloop | 4 | 4 – 4 | 3 | 3 | too few sandboxes, equal medians |
+| 3 | Freestyle | 8 | 5 – 12 | 3 | 3 | too few sandboxes |
+| 3 | Modal (VM) | 8 | 8 – 31 | 3 | 3 | too few sandboxes, equal medians |
+| 3 | run.cloud | 8 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
+| 6 | Modal (gVisor) | 9 | 5 – 22 | 3 | 3 | too few sandboxes |
+| 7 | tama | 10 | 8 – 12 | 2 | 2 | too few sandboxes |
+| 8 | Blaxel | 12 | 12 – 12 | 3 | 3 | too few sandboxes |
+| 8 | Brezel | 12 | 12 – 16 | 3 | 3 | too few sandboxes, equal medians |
+| 8 | Daytona (VM) | 12 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
+| 8 | E2B | 12 | 12 – 12 | 3 | 3 | too few sandboxes, equal medians |
+| 8 | Microsandbox Cloud | 12 | 12 – 12 | 3 | 3 | too few sandboxes, equal medians |
+| 13 | Novita | 16 | 16 – 71 | 3 | 3 | too few sandboxes |
+| 14 | Vercel Sandbox | 28 | 23 – 35 | 3 | 3 | too few sandboxes |
 
 ### docker.io cold DNS
 
 ms · lower is better
 
-_Daytona (VM), Microsandbox Cloud, Modal (VM), tama and Vercel Sandbox share the top on this metric (lower is better)._
+_Daytona (VM), Microsandbox Cloud, Modal (VM), Runloop, tama and Vercel Sandbox share the top on this metric (lower is better)._
 
-<img src="docs/figures/network_dns_cold_docker_io_ms.webp" width="960" alt="docker.io cold DNS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_dns_cold_docker_io_ms.webp" width="960" alt="docker.io cold DNS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | docker.io cold DNS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Daytona (VM) | 4 | 4 – 8 | 3 | 3 | — |
 | 1 | Microsandbox Cloud | 4 | 4 – 4 | 2 | 2 | too few sandboxes, equal medians |
 | 1 | Modal (VM) | 4 | 4 – 24 | 3 | 3 | too few sandboxes, equal medians |
+| 1 | Runloop | 4 | 4 – 4 | 2 | 2 | too few sandboxes, equal medians |
 | 1 | tama | 4 | 4 – 4 | 2 | 2 | too few sandboxes, equal medians |
 | 1 | Vercel Sandbox | 4 | 4 – 4 | 2 | 2 | too few sandboxes, equal medians |
-| 6 | Freestyle | 8 | 4 – 8 | 3 | 3 | too few sandboxes |
-| 7 | Modal (gVisor) | 9 | 4 – 19 | 3 | 3 | too few sandboxes |
-| 8 | Blaxel | 12 | 12 – 12 | 3 | 3 | too few sandboxes |
-| 8 | run.cloud | 12 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
-| 10 | Namespace | 14 | 12 – 16 | 2 | 2 | too few sandboxes |
-| 11 | Brezel | 20 | 12 – 28 | 3 | 3 | too few sandboxes |
-| 11 | E2B | 20 | 20 – 36 | 3 | 3 | too few sandboxes, equal medians |
-| 13 | Novita | 48 | 23 – 52 | 3 | 3 | too few sandboxes |
+| 7 | Freestyle | 8 | 4 – 8 | 3 | 3 | too few sandboxes |
+| 8 | Modal (gVisor) | 9 | 4 – 19 | 3 | 3 | too few sandboxes |
+| 9 | Blaxel | 12 | 12 – 12 | 3 | 3 | too few sandboxes |
+| 9 | run.cloud | 12 | 8 – 12 | 3 | 3 | too few sandboxes, equal medians |
+| 11 | Namespace | 14 | 12 – 16 | 2 | 2 | too few sandboxes |
+| 12 | Brezel | 20 | 12 – 28 | 3 | 3 | too few sandboxes |
+| 12 | E2B | 20 | 20 – 36 | 3 | 3 | too few sandboxes, equal medians |
+| 14 | Novita | 48 | 23 – 52 | 3 | 3 | too few sandboxes |
 
 ### pypi.org cold DNS
 
 ms · lower is better
 
-_Namespace leads · Vercel Sandbox is ~1.5× higher (lower is better)._
+_Namespace and Runloop share the top on this metric (lower is better)._
 
-<img src="docs/figures/network_dns_cold_pypi_org_ms.webp" width="960" alt="pypi.org cold DNS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_dns_cold_pypi_org_ms.webp" width="960" alt="pypi.org cold DNS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | pypi.org cold DNS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Namespace | 4 | 4 – 64 | 3 | 3 | — |
-| 2 | Vercel Sandbox | 6 | 4 – 8 | 2 | 2 | too few sandboxes |
-| 3 | Freestyle | 8 | 4 – 8 | 3 | 3 | too few sandboxes |
-| 4 | Blaxel | 12 | 12 – 12 | 3 | 3 | too few sandboxes |
-| 4 | Daytona (VM) | 12 | 8 – 16 | 3 | 3 | too few sandboxes, equal medians |
-| 4 | run.cloud | 12 | 12 – 20 | 3 | 3 | too few sandboxes, equal medians |
-| 7 | Modal (VM) | 16 | 12 – 35 | 3 | 3 | too few sandboxes |
-| 8 | tama | 18 | 16 – 20 | 2 | 2 | too few sandboxes |
-| 9 | Modal (gVisor) | 24 | 12 – 66 | 3 | 3 | too few sandboxes |
-| 9 | Novita | 24 | 20 – 171 | 3 | 3 | too few sandboxes, equal medians |
-| 11 | Brezel | 40 | 36 – 148 | 3 | 3 | too few sandboxes |
-| 12 | Microsandbox Cloud | 60 | 60 – 152 | 3 | 3 | too few sandboxes |
-| 13 | E2B | 64 | 28 – 76 | 3 | 3 | too few sandboxes |
+| 1 | Runloop | 4 | 4 – 4 | 3 | 3 | too few sandboxes, equal medians |
+| 3 | Vercel Sandbox | 6 | 4 – 8 | 2 | 2 | too few sandboxes |
+| 4 | Freestyle | 8 | 4 – 8 | 3 | 3 | too few sandboxes |
+| 5 | Blaxel | 12 | 12 – 12 | 3 | 3 | too few sandboxes |
+| 5 | Daytona (VM) | 12 | 8 – 16 | 3 | 3 | too few sandboxes, equal medians |
+| 5 | run.cloud | 12 | 12 – 20 | 3 | 3 | too few sandboxes, equal medians |
+| 8 | Modal (VM) | 16 | 12 – 35 | 3 | 3 | too few sandboxes |
+| 9 | tama | 18 | 16 – 20 | 2 | 2 | too few sandboxes |
+| 10 | Modal (gVisor) | 24 | 12 – 66 | 3 | 3 | too few sandboxes |
+| 10 | Novita | 24 | 20 – 171 | 3 | 3 | too few sandboxes, equal medians |
+| 12 | Brezel | 40 | 36 – 148 | 3 | 3 | too few sandboxes |
+| 13 | Microsandbox Cloud | 60 | 60 – 152 | 3 | 3 | too few sandboxes |
+| 14 | E2B | 64 | 28 – 76 | 3 | 3 | too few sandboxes |
 
 ### rubygems.org cold DNS
 
@@ -1421,53 +1477,55 @@ ms · lower is better
 
 _Blaxel leads · run.cloud is ~1.3× higher (lower is better)._
 
-<img src="docs/figures/network_dns_cold_rubygems_org_ms.webp" width="960" alt="rubygems.org cold DNS: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_dns_cold_rubygems_org_ms.webp" width="960" alt="rubygems.org cold DNS: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | rubygems.org cold DNS (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 1 | Blaxel | 12 | 12 – 12 | 3 | 3 | — |
 | 2 | run.cloud | 16 | 16 – 16 | 3 | 3 | too few sandboxes |
 | 3 | Brezel | 28 | 24 – 28 | 3 | 3 | too few sandboxes |
-| 4 | Vercel Sandbox | 55 | 52 – 59 | 3 | 3 | too few sandboxes |
-| 5 | Daytona (VM) | 60 | 60 – 64 | 3 | 3 | too few sandboxes |
-| 5 | Freestyle | 60 | 56 – 60 | 3 | 3 | too few sandboxes, equal medians |
-| 5 | tama | 60 | 60 – 60 | 2 | 2 | too few sandboxes, equal medians |
-| 8 | Namespace | 64 | 60 – 64 | 3 | 3 | too few sandboxes |
-| 9 | Novita | 68 | 68 – 71 | 3 | 3 | too few sandboxes |
-| 10 | Modal (VM) | 75 | 64 – 84 | 3 | 3 | too few sandboxes |
-| 11 | Modal (gVisor) | 83 | 64 – 83 | 3 | 3 | too few sandboxes |
-| 12 | E2B | 96 | 96 – 100 | 3 | 3 | too few sandboxes |
-| 13 | Microsandbox Cloud | 156 | 152 – 328 | 3 | 3 | too few sandboxes |
+| 4 | Runloop | 48 | 47 – 48 | 3 | 3 | too few sandboxes |
+| 5 | Vercel Sandbox | 55 | 52 – 59 | 3 | 3 | too few sandboxes |
+| 6 | Daytona (VM) | 60 | 60 – 64 | 3 | 3 | too few sandboxes |
+| 6 | Freestyle | 60 | 56 – 60 | 3 | 3 | too few sandboxes, equal medians |
+| 6 | tama | 60 | 60 – 60 | 2 | 2 | too few sandboxes, equal medians |
+| 9 | Namespace | 64 | 60 – 64 | 3 | 3 | too few sandboxes |
+| 10 | Novita | 68 | 68 – 71 | 3 | 3 | too few sandboxes |
+| 11 | Modal (VM) | 75 | 64 – 84 | 3 | 3 | too few sandboxes |
+| 12 | Modal (gVisor) | 83 | 64 – 83 | 3 | 3 | too few sandboxes |
+| 13 | E2B | 96 | 96 – 100 | 3 | 3 | too few sandboxes |
+| 14 | Microsandbox Cloud | 156 | 152 – 328 | 3 | 3 | too few sandboxes |
 
 ### Node 22 download
 
 Mbits/sec · higher is better
 
-_Namespace leads · ~1.1× Vercel Sandbox on median (higher is better)._
+_Runloop leads on median (higher is better); see notes for how ranks are decided._
 
-<img src="docs/figures/network_download_node_v22_23_1_linux_x64_mbits_per_sec.webp" width="960" alt="Node 22 download: 13 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
+<img src="docs/figures/network_download_node_v22_23_1_linux_x64_mbits_per_sec.webp" width="960" alt="Node 22 download: 14 environments ranked best-first, 1 disclosed as unmeasured, with 95% intervals">
 
 | Rank | Provider | Node 22 download (Mbits/sec) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
-| 1 | Namespace | 2497 | 1302 – 2534 | 3 | 3 | — |
-| 2 | Vercel Sandbox | 2377 | 2273 – 2613 | 3 | 3 | too few sandboxes |
-| 3 | Brezel | 2000 | 1111 – 2360 | 3 | 3 | too few sandboxes |
-| 4 | Daytona (VM) | 1700 | 1695 – 2484 | 3 | 3 | too few sandboxes |
-| 5 | Microsandbox Cloud | 1458 | 1433 – 2249 | 3 | 3 | too few sandboxes |
-| 6 | Modal (gVisor) | 1367 | 934.7 – 1378 | 3 | 3 | too few sandboxes |
-| 7 | Novita | 1285 | 1163 – 1353 | 3 | 3 | too few sandboxes |
-| 8 | Blaxel | 1214 | 607.2 – 2403 | 3 | 3 | too few sandboxes |
-| 9 | Modal (VM) | 1199 | 850.4 – 1255 | 3 | 3 | too few sandboxes |
-| 10 | E2B | 1011 | 892 – 1858 | 3 | 3 | too few sandboxes |
-| 11 | Freestyle | 957.2 | 674.5 – 1035 | 3 | 3 | too few sandboxes |
-| 12 | tama | 949.4 | 938.4 – 960.3 | 2 | 2 | too few sandboxes |
-| 13 | run.cloud | 824.8 | 804.7 – 833.8 | 3 | 3 | too few sandboxes |
+| 1 | Runloop | 2525 | 1920 – 2660 | 3 | 3 | — |
+| 2 | Namespace | 2497 | 1302 – 2534 | 3 | 3 | too few sandboxes |
+| 3 | Vercel Sandbox | 2377 | 2273 – 2613 | 3 | 3 | too few sandboxes |
+| 4 | Brezel | 2000 | 1111 – 2360 | 3 | 3 | too few sandboxes |
+| 5 | Daytona (VM) | 1700 | 1695 – 2484 | 3 | 3 | too few sandboxes |
+| 6 | Microsandbox Cloud | 1458 | 1433 – 2249 | 3 | 3 | too few sandboxes |
+| 7 | Modal (gVisor) | 1367 | 934.7 – 1378 | 3 | 3 | too few sandboxes |
+| 8 | Novita | 1285 | 1163 – 1353 | 3 | 3 | too few sandboxes |
+| 9 | Blaxel | 1214 | 607.2 – 2403 | 3 | 3 | too few sandboxes |
+| 10 | Modal (VM) | 1199 | 850.4 – 1255 | 3 | 3 | too few sandboxes |
+| 11 | E2B | 1011 | 892 – 1858 | 3 | 3 | too few sandboxes |
+| 12 | Freestyle | 957.2 | 674.5 – 1035 | 3 | 3 | too few sandboxes |
+| 13 | tama | 949.4 | 938.4 – 960.3 | 2 | 2 | too few sandboxes |
+| 14 | run.cloud | 824.8 | 804.7 – 833.8 | 3 | 3 | too few sandboxes |
 
 </details>
 
 ## system
 
-<img src="docs/figures/git_seconds.webp" width="960" alt="Git common operations: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/git_seconds.webp" width="960" alt="Git common operations: 15 environments ranked best-first, with 95% intervals">
 
 <details>
 <summary><strong>7 synthetic metrics</strong> · headline: Git common operations</summary>
@@ -1494,6 +1552,7 @@ _Brezel leads · Namespace is ~1.1× higher (lower is better)._
 | 12 | Modal (gVisor) | 62.74 | 62.29 – 64.01 | 3 | 6 | too few sandboxes |
 | 13 | Vercel Sandbox | 64.56 | 63.65 – 86.79 | 3 | 6 | too few sandboxes |
 | 14 | E2B | 67.08 | 59.95 – 67.33 | 3 | 6 | too few sandboxes |
+| 15 | Runloop | 80.94 | 80.11 – 87.1 | 3 | 6 | too few sandboxes |
 
 ### pgbench RO (s100, 50c)
 
@@ -1501,7 +1560,7 @@ TPS · higher is better
 
 _Brezel leads · ~1.3× boat on median (higher is better)._
 
-<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_only.webp" width="960" alt="pgbench RO (s100, 50c): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_only.webp" width="960" alt="pgbench RO (s100, 50c): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | pgbench RO (s100, 50c) (TPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1517,8 +1576,9 @@ _Brezel leads · ~1.3× boat on median (higher is better)._
 | 10 | Vercel Sandbox | 167500 | 127900 – 170000 | 3 | 6 | too few sandboxes |
 | 11 | E2B | 167200 | 163100 – 177100 | 3 | 6 | too few sandboxes |
 | 12 | run.cloud | 137600 | 135600 – 168900 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 109100 | 103100 – 113900 | 3 | 6 | too few sandboxes |
-| 14 | Modal (gVisor) | 105800 | 100900 – 122200 | 3 | 6 | too few sandboxes |
+| 13 | Runloop | 114400 | 112100 – 116100 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 109100 | 103100 – 113900 | 3 | 6 | too few sandboxes |
+| 15 | Modal (gVisor) | 105800 | 100900 – 122200 | 3 | 6 | too few sandboxes |
 
 ### pgbench RO latency (s100, 50c)
 
@@ -1526,7 +1586,7 @@ ms · lower is better
 
 _Brezel leads · boat is ~1.3× higher (lower is better)._
 
-<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency.webp" width="960" alt="pgbench RO latency (s100, 50c): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency.webp" width="960" alt="pgbench RO latency (s100, 50c): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | pgbench RO latency (s100, 50c) (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1542,8 +1602,9 @@ _Brezel leads · boat is ~1.3× higher (lower is better)._
 | 10 | Vercel Sandbox | 0.2985 | 0.294 – 0.391 | 3 | 6 | too few sandboxes |
 | 11 | E2B | 0.299 | 0.282 – 0.3065 | 3 | 6 | too few sandboxes |
 | 12 | run.cloud | 0.365 | 0.298 – 0.37 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 0.4585 | 0.4395 – 0.485 | 3 | 6 | too few sandboxes |
-| 14 | Modal (gVisor) | 0.473 | 0.409 – 0.4955 | 3 | 6 | too few sandboxes |
+| 13 | Runloop | 0.437 | 0.4305 – 0.446 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 0.4585 | 0.4395 – 0.485 | 3 | 6 | too few sandboxes |
+| 15 | Modal (gVisor) | 0.473 | 0.409 – 0.4955 | 3 | 6 | too few sandboxes |
 
 ### pgbench RW (s100, 50c)
 
@@ -1551,7 +1612,7 @@ TPS · higher is better
 
 _Brezel leads · ~1.8× Novita on median (higher is better)._
 
-<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_write.webp" width="960" alt="pgbench RW (s100, 50c): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_write.webp" width="960" alt="pgbench RW (s100, 50c): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | pgbench RW (s100, 50c) (TPS) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1568,7 +1629,8 @@ _Brezel leads · ~1.8× Novita on median (higher is better)._
 | 11 | Modal (gVisor) | 12090 | 10510 – 12650 | 3 | 6 | too few sandboxes |
 | 12 | E2B | 11410 | 10540 – 11480 | 3 | 6 | too few sandboxes |
 | 13 | run.cloud | 11120 | 10850 – 16320 | 3 | 6 | too few sandboxes |
-| 14 | Freestyle | 7032 | 6738 – 8646 | 3 | 6 | too few sandboxes |
+| 14 | Runloop | 10490 | 8387 – 10880 | 3 | 6 | too few sandboxes |
+| 15 | Freestyle | 7032 | 6738 – 8646 | 3 | 6 | too few sandboxes |
 
 ### pgbench RW latency (s100, 50c)
 
@@ -1576,7 +1638,7 @@ ms · lower is better
 
 _Brezel leads · Novita is ~1.8× higher (lower is better)._
 
-<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency.webp" width="960" alt="pgbench RW latency (s100, 50c): 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency.webp" width="960" alt="pgbench RW latency (s100, 50c): 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | pgbench RW latency (s100, 50c) (ms) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1593,7 +1655,8 @@ _Brezel leads · Novita is ~1.8× higher (lower is better)._
 | 11 | Modal (gVisor) | 4.138 | 3.954 – 4.76 | 3 | 6 | too few sandboxes |
 | 12 | E2B | 4.38 | 4.359 – 4.742 | 3 | 6 | too few sandboxes |
 | 13 | run.cloud | 4.498 | 3.064 – 4.61 | 3 | 6 | too few sandboxes |
-| 14 | Freestyle | 7.556 | 5.788 – 8.017 | 3 | 6 | too few sandboxes |
+| 14 | Runloop | 4.771 | 4.599 – 6.867 | 3 | 6 | too few sandboxes |
+| 15 | Freestyle | 7.556 | 5.788 – 8.017 | 3 | 6 | too few sandboxes |
 
 ### PyBench
 
@@ -1601,7 +1664,7 @@ Milliseconds · lower is better
 
 _Brezel leads on median (lower is better); see notes for how ranks are decided._
 
-<img src="docs/figures/pybench_milliseconds.webp" width="960" alt="PyBench: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/pybench_milliseconds.webp" width="960" alt="PyBench: 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | PyBench (Milliseconds) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1619,6 +1682,7 @@ _Brezel leads on median (lower is better); see notes for how ranks are decided._
 | 12 | Vercel Sandbox | 767 | 762 – 1182 | 3 | 6 | too few sandboxes |
 | 13 | Modal (gVisor) | 771.5 | 771 – 772.5 | 3 | 6 | too few sandboxes |
 | 14 | Freestyle | 833 | 770.5 – 833.5 | 3 | 6 | too few sandboxes |
+| 15 | Runloop | 1176 | 1166 – 1177 | 3 | 6 | too few sandboxes |
 
 ### SQLite Speedtest
 
@@ -1626,7 +1690,7 @@ Seconds · lower is better
 
 _Brezel leads · Daytona (VM) is ~1.1× higher (lower is better)._
 
-<img src="docs/figures/sqlite_speedtest_seconds.webp" width="960" alt="SQLite Speedtest: 14 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/sqlite_speedtest_seconds.webp" width="960" alt="SQLite Speedtest: 15 environments ranked best-first, with 95% intervals">
 
 | Rank | Provider | SQLite Speedtest (Seconds) | 95% bootstrap interval | Sandboxes | Trials | Note |
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
@@ -1642,14 +1706,15 @@ _Brezel leads · Daytona (VM) is ~1.1× higher (lower is better)._
 | 10 | Vercel Sandbox | 68.25 | 66.61 – 117.5 | 3 | 6 | too few sandboxes |
 | 11 | E2B | 68.72 | 63.1 – 72.12 | 3 | 6 | too few sandboxes |
 | 12 | run.cloud | 81.77 | 60 – 95.96 | 3 | 6 | too few sandboxes |
-| 13 | Freestyle | 97.39 | 92.28 – 98.5 | 3 | 6 | too few sandboxes |
-| 14 | Modal (gVisor) | 187.5 | 187 – 205.8 | 3 | 6 | too few sandboxes |
+| 13 | Runloop | 84.69 | 81.84 – 85.22 | 3 | 6 | too few sandboxes |
+| 14 | Freestyle | 97.39 | 92.28 – 98.5 | 3 | 6 | too few sandboxes |
+| 15 | Modal (gVisor) | 187.5 | 187 – 205.8 | 3 | 6 | too few sandboxes |
 
 </details>
 
 ## economics
 
-<img src="docs/figures/usd_per_hour.webp" width="960" alt="Hourly cost: 6 environments ranked best-first, with 95% intervals">
+<img src="docs/figures/usd_per_hour.webp" width="960" alt="Hourly cost: 7 environments ranked best-first, with 95% intervals">
 
 ### Hourly cost _(headline)_
 
@@ -1665,10 +1730,11 @@ _boat is cheapest · tama is ~2.1× higher (lower is better)._
 | 4 | Freestyle | 0.2645 | — | 1 | 1 | — |
 | 5 | Daytona (VM) | 0.3312 | — | 1 | 1 | — |
 | 5 | E2B | 0.3312 | — | 1 | 1 | equal values |
+| 7 | Runloop | 0.6336 | — | 1 | 1 | — |
 
 ## Coverage gaps
 
-42 uncovered results across 9 providers (boat 2, Freestyle 1, Microsandbox Cloud 1, Modal (gVisor) 2, Modal (VM) 3, Namespace 2, run.cloud 5, tama 24, Vercel Sandbox 2). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
+46 uncovered results across 10 providers (boat 2, Freestyle 1, Microsandbox Cloud 1, Modal (gVisor) 2, Modal (VM) 3, Namespace 2, run.cloud 5, Runloop 4, tama 24, Vercel Sandbox 2). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.
 
 <details>
 <summary>Full coverage table</summary>
@@ -1691,6 +1757,10 @@ _boat is cheapest · tama is ~2.1× higher (lower is better)._
 | run.cloud | realworld-openclaw | **failed** | Failed to create sandbox: account runcloud admission stopped after runcloud-realworld-openclaw-r8: allocation ownership or journal release remains unresolved |
 | run.cloud | realworld-openclaw | **failed** | runcloud-realworld-openclaw-r10: account runcloud admission stopped after runcloud-realworld-openclaw-r8: allocation ownership or journal release remains unresolved |
 | run.cloud | realworld-openclaw | **failed** | runcloud-realworld-openclaw-r11: account runcloud admission stopped after runcloud-realworld-openclaw-r8: allocation ownership or journal release remains unresolved |
+| Runloop | network | **failed** | Partial publication withheld unverified measurements: network_dns_cold_github_com_ms, network_dns_cold_docker_io_ms |
+| Runloop | network | **failed** | Partial publication withheld unverified measurements: network_dns_cold_github_com_ms |
+| Runloop | realworld-mastra | **failed** | PTS ran but every trial failed for 1 of 5 declared metrics: realworld_mastra_task_test_core (realworld-mastra/pts_realworld-mastra.xml) — attempted, no value recorded |
+| Runloop | realworld-mastra | **failed** | Partial publication withheld unverified measurements: realworld_mastra_task_test_core |
 | tama | network | **failed** | Failed to create sandbox: tama new bench-decc70d3-22b4-4197-a18c-943f5d61a98e --ttl 0 --json --image ghcr.io/starslingdev/sandbox-benchmarks-toolchain:v8 --cpu 4 --memory 8192: exit 1; tama: bench-decc70d3-22b4-4197-a18c-943f5d61a98e failed to provision; inspect it in the console; provisioning: status=failed; process exit 1 |
 | tama | network | **failed** | Partial publication withheld unverified measurements: iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1, iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10, iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1, iperf_wan_direction_download, iperf_wan_direction_upload, network_https_github_com_total_ms, network_https_api_github_com_total_ms, network_https_raw_githubusercontent_com_total_ms, network_https_registry_npmjs_org_total_ms, network_https_pypi_org_total_ms, network_https_files_pythonhosted_org_total_ms, network_https_ghcr_io_v2_total_ms, network_https_gcr_io_v2_total_ms, network_https_auth_docker_io_registry_token_total_ms, network_https_crates_io_total_ms, network_https_index_crates_io_config_total_ms, network_dns_cold_github_com_ms, network_dns_cold_registry_npmjs_org_ms, network_dns_cold_docker_io_ms, network_dns_cold_pypi_org_ms, network_dns_cold_rubygems_org_ms, network_download_node_v22_23_1_linux_x64_mbits_per_sec |
 | tama | realworld-better-auth | **failed** | Failed to create sandbox: tama new bench-c10ec06d-eb62-48d1-80b8-a6f4c433e9a6 --ttl 0 --json --image ghcr.io/starslingdev/sandbox-benchmarks-toolchain:v8 --cpu 4 --memory 8192: exit 1; tama: bench-c10ec06d-eb62-48d1-80b8-a6f4c433e9a6 failed to provision; inspect it in the console; provisioning: status=failed; process exit 1 |
@@ -1774,7 +1844,7 @@ separate*, never *the providers are equal*.
 
 `too few sandboxes` is the extreme of that: the deciding test's best attainable p already exceeds α,
 so it could not have separated the rows at any effect size, however far apart their values are.
-The floor is a property of the design — here 2 v 2 sandboxes floors at p ≈ 1.0; 2 v 3 sandboxes floors at p ≈ 0.10; 2 v 3 sandboxes floors at p ≈ 0.20; 2 v 3 sandboxes floors at p ≈ 0.40; 2 v 3 sandboxes floors at p ≈ 1.0; 3 v 2 sandboxes floors at p ≈ 0.10; 3 v 2 sandboxes floors at p ≈ 0.20; 3 v 2 sandboxes floors at p ≈ 0.40; 3 v 2 sandboxes floors at p ≈ 0.60; 3 v 3 sandboxes floors at p ≈ 0.10; 3 v 3 sandboxes floors at p ≈ 0.20; 3 v 3 sandboxes floors at p ≈ 0.30; 3 v 3 sandboxes floors at p ≈ 0.40; 3 v 3 sandboxes floors at p ≈ 0.60; 3 v 3 sandboxes floors at p ≈ 1.0.
+The floor is a property of the design — here 2 v 2 sandboxes floors at p ≈ 1.0; 2 v 3 sandboxes floors at p ≈ 0.10; 2 v 3 sandboxes floors at p ≈ 0.20; 2 v 3 sandboxes floors at p ≈ 0.40; 2 v 3 sandboxes floors at p ≈ 1.0; 3 v 2 sandboxes floors at p ≈ 0.10; 3 v 2 sandboxes floors at p ≈ 0.20; 3 v 2 sandboxes floors at p ≈ 0.40; 3 v 2 sandboxes floors at p ≈ 0.60; 3 v 2 sandboxes floors at p ≈ 1.0; 3 v 3 sandboxes floors at p ≈ 0.10; 3 v 3 sandboxes floors at p ≈ 0.20; 3 v 3 sandboxes floors at p ≈ 0.30; 3 v 3 sandboxes floors at p ≈ 0.40; 3 v 3 sandboxes floors at p ≈ 0.60; 3 v 3 sandboxes floors at p ≈ 1.0.
 At three sandboxes a side the floor is 2/C(6,3) = 0.1, which is above α, so **no** three-sandbox
 comparison in this table can ever be declared separated. That is a fact about the replicate count,
 not about the providers. One shape can appear more than once above with different floors: ties
@@ -1813,7 +1883,8 @@ correction is applied across providers or metrics.
 | realworld | Mastra: cold install | E2B | 1.0 (tied) | 0.46 |
 | realworld | Mastra: cold install | tama | 0.38 (tied) | 0.19 |
 | realworld | Mastra: cold install | Freestyle | 0.18 (tied) | 0.019 |
-| realworld | Mastra: cold install | run.cloud | 0.033 | <0.001 |
+| realworld | Mastra: cold install | Runloop | 0.0011 | <0.001 |
+| realworld | Mastra: cold install | run.cloud | 0.039 | <0.001 |
 | realworld | Better-Auth: build | Brezel | — | — |
 | realworld | Better-Auth: build | boat | <0.001 | <0.001 |
 | realworld | Better-Auth: build | Namespace | 0.0045 | 0.0046 |
@@ -1828,6 +1899,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: build | Modal (gVisor) | 0.89 (tied) | 0.99 |
 | realworld | Better-Auth: build | Freestyle | <0.001 | <0.001 |
 | realworld | Better-Auth: build | run.cloud | 0.59 (tied) | 0.066 |
+| realworld | Better-Auth: build | Runloop | <0.001 | <0.001 |
 | realworld | Better-Auth: cold install | Brezel | — | — |
 | realworld | Better-Auth: cold install | Namespace | <0.001 | <0.001 |
 | realworld | Better-Auth: cold install | Daytona (VM) | <0.001 | <0.001 |
@@ -1840,7 +1912,8 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: cold install | E2B | 0.21 (tied) | 0.16 |
 | realworld | Better-Auth: cold install | Vercel Sandbox | 0.44 (tied) | 0.43 |
 | realworld | Better-Auth: cold install | Modal (gVisor) | <0.001 | <0.001 |
-| realworld | Better-Auth: cold install | run.cloud | 0.0036 | <0.001 |
+| realworld | Better-Auth: cold install | Runloop | <0.001 | <0.001 |
+| realworld | Better-Auth: cold install | run.cloud | 0.11 (tied) | 0.066 |
 | realworld | Better-Auth: cold install | Freestyle | 0.27 (tied) | 0.19 |
 | realworld | Better-Auth: git clone | Namespace | — | — |
 | realworld | Better-Auth: git clone | Blaxel | <0.001 | <0.001 |
@@ -1854,7 +1927,8 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: git clone | Modal (VM) | 0.90 (tied) | 0.43 |
 | realworld | Better-Auth: git clone | Brezel | 0.33 (tied) | 0.066 |
 | realworld | Better-Auth: git clone | Novita | 0.62 (tied) | 0.43 |
-| realworld | Better-Auth: git clone | run.cloud | 0.0043 | <0.001 |
+| realworld | Better-Auth: git clone | Runloop | 0.40 (tied) | 0.066 |
+| realworld | Better-Auth: git clone | run.cloud | 0.18 (tied) | 0.43 |
 | realworld | Better-Auth: git clone | Freestyle | 0.024 | 0.066 |
 | realworld | Better-Auth: lint (Biome) | Brezel | — | — |
 | realworld | Better-Auth: lint (Biome) | boat | <0.001 | <0.001 |
@@ -1870,6 +1944,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint (Biome) | run.cloud | 0.010 | 0.0046 |
 | realworld | Better-Auth: lint (Biome) | Freestyle | 0.71 (tied) | 0.19 |
 | realworld | Better-Auth: lint (Biome) | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | Better-Auth: lint (Biome) | Runloop | 0.18 (tied) | 0.0046 |
 | realworld | Better-Auth: lint deps (Knip) | Brezel | — | — |
 | realworld | Better-Auth: lint deps (Knip) | boat | <0.001 | <0.001 |
 | realworld | Better-Auth: lint deps (Knip) | Daytona (VM) | <0.001 | <0.001 |
@@ -1884,6 +1959,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint deps (Knip) | E2B | 0.024 | 0.0046 |
 | realworld | Better-Auth: lint deps (Knip) | run.cloud | 0.48 (tied) | 0.43 |
 | realworld | Better-Auth: lint deps (Knip) | Freestyle | 0.29 (tied) | 0.19 |
+| realworld | Better-Auth: lint deps (Knip) | Runloop | <0.001 | <0.001 |
 | realworld | Better-Auth: lint format | Brezel | — | — |
 | realworld | Better-Auth: lint format | boat | <0.001 | <0.001 |
 | realworld | Better-Auth: lint format | Namespace | 0.017 | 0.019 |
@@ -1898,6 +1974,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint format | run.cloud | 0.84 (tied) | 0.19 |
 | realworld | Better-Auth: lint format | E2B | 0.80 (tied) | 0.43 |
 | realworld | Better-Auth: lint format | Freestyle | <0.001 | <0.001 |
+| realworld | Better-Auth: lint format | Runloop | <0.001 | <0.001 |
 | realworld | Better-Auth: lint packages | Brezel | — | — |
 | realworld | Better-Auth: lint packages | Namespace | <0.001 | <0.001 |
 | realworld | Better-Auth: lint packages | boat | 0.012 | <0.001 |
@@ -1912,6 +1989,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint packages | run.cloud | 0.045 | 0.066 |
 | realworld | Better-Auth: lint packages | Freestyle | 0.0029 | <0.001 |
 | realworld | Better-Auth: lint packages | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | Better-Auth: lint packages | Runloop | <0.001 | <0.001 |
 | realworld | Better-Auth: lint spell | Brezel | — | — |
 | realworld | Better-Auth: lint spell | boat | <0.001 | <0.001 |
 | realworld | Better-Auth: lint spell | Namespace | 0.0014 | <0.001 |
@@ -1926,6 +2004,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint spell | E2B | <0.001 | <0.001 |
 | realworld | Better-Auth: lint spell | Freestyle | 0.11 (tied) | 0.066 |
 | realworld | Better-Auth: lint spell | run.cloud | 0.32 (tied) | 0.066 |
+| realworld | Better-Auth: lint spell | Runloop | <0.001 | <0.001 |
 | realworld | Better-Auth: lint types | Brezel | — | — |
 | realworld | Better-Auth: lint types | boat | <0.001 | <0.001 |
 | realworld | Better-Auth: lint types | Daytona (VM) | 0.028 | 0.019 |
@@ -1940,6 +2019,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: lint types | Freestyle | 0.045 | 0.0046 |
 | realworld | Better-Auth: lint types | run.cloud | <0.001 | <0.001 |
 | realworld | Better-Auth: lint types | Modal (gVisor) | <0.001 | <0.001 |
+| realworld | Better-Auth: lint types | Runloop | 0.13 (tied) | 0.0046 |
 | realworld | Better-Auth: typecheck | Brezel | — | — |
 | realworld | Better-Auth: typecheck | boat | <0.001 | <0.001 |
 | realworld | Better-Auth: typecheck | Namespace | 0.0018 | <0.001 |
@@ -1954,6 +2034,7 @@ correction is applied across providers or metrics.
 | realworld | Better-Auth: typecheck | E2B | 0.13 (tied) | 0.0046 |
 | realworld | Better-Auth: typecheck | Freestyle | <0.001 | <0.001 |
 | realworld | Better-Auth: typecheck | run.cloud | 0.18 (tied) | 0.066 |
+| realworld | Better-Auth: typecheck | Runloop | <0.001 | 0.0046 |
 | realworld | Mastra: build:core | Brezel | — | — |
 | realworld | Mastra: build:core | boat | <0.001 | <0.001 |
 | realworld | Mastra: build:core | Namespace | 0.078 (tied) | 0.066 |
@@ -1968,6 +2049,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: build:core | Modal (gVisor) | 0.53 (tied) | 0.20 |
 | realworld | Mastra: build:core | run.cloud | 0.69 (tied) | 0.24 |
 | realworld | Mastra: build:core | Freestyle | 0.29 (tied) | 0.19 |
+| realworld | Mastra: build:core | Runloop | <0.001 | <0.001 |
 | realworld | Mastra: git clone | Namespace | — | — |
 | realworld | Mastra: git clone | Daytona (VM) | 0.41 (tied) | 0.43 |
 | realworld | Mastra: git clone | Microsandbox Cloud | 0.85 (tied) | 0.19 |
@@ -1981,7 +2063,8 @@ correction is applied across providers or metrics.
 | realworld | Mastra: git clone | Modal (gVisor) | 0.94 (tied) | 0.99 |
 | realworld | Mastra: git clone | Brezel | 0.0070 | 0.0017 |
 | realworld | Mastra: git clone | run.cloud | 0.55 (tied) | 0.066 |
-| realworld | Mastra: git clone | Freestyle | 0.045 | 0.19 |
+| realworld | Mastra: git clone | Runloop | 0.55 (tied) | 0.19 |
+| realworld | Mastra: git clone | Freestyle | 0.089 (tied) | 0.19 |
 | realworld | Mastra: lint:format | Brezel | — | — |
 | realworld | Mastra: lint:format | boat | <0.001 | <0.001 |
 | realworld | Mastra: lint:format | Namespace | 0.0068 | <0.001 |
@@ -1996,6 +2079,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: lint:format | E2B | 0.38 (tied) | 0.023 |
 | realworld | Mastra: lint:format | Freestyle | 0.078 (tied) | 0.019 |
 | realworld | Mastra: lint:format | run.cloud | 0.11 (tied) | 0.019 |
+| realworld | Mastra: lint:format | Runloop | <0.001 | <0.001 |
 | realworld | Mastra: test:core | Brezel | — | — |
 | realworld | Mastra: test:core | boat | <0.001 | <0.001 |
 | realworld | Mastra: test:core | Namespace | 0.0029 | <0.001 |
@@ -2010,6 +2094,7 @@ correction is applied across providers or metrics.
 | realworld | Mastra: test:core | E2B | 0.53 (tied) | 0.20 |
 | realworld | Mastra: test:core | Freestyle | <0.001 | <0.001 |
 | realworld | Mastra: test:core | run.cloud | 0.039 | <0.001 |
+| realworld | Mastra: test:core | Runloop | <0.001 | <0.001 |
 | realworld | OpenClaw: cold install | Brezel | — | — |
 | realworld | OpenClaw: cold install | Namespace | <0.001 | <0.001 |
 | realworld | OpenClaw: cold install | Daytona (VM) | <0.001 | <0.001 |
@@ -2022,7 +2107,8 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: cold install | E2B | 0.0056 | <0.001 |
 | realworld | OpenClaw: cold install | Modal (gVisor) | 0.0023 | 0.019 |
 | realworld | OpenClaw: cold install | run.cloud | 0.85 (tied) | 0.29 |
-| realworld | OpenClaw: cold install | Freestyle | 0.0015 | <0.001 |
+| realworld | OpenClaw: cold install | Runloop | 0.16 (tied) | 0.045 |
+| realworld | OpenClaw: cold install | Freestyle | 0.014 | 0.0046 |
 | realworld | OpenClaw: git clone | Namespace | — | — |
 | realworld | OpenClaw: git clone | Blaxel | 0.045 | 0.0046 |
 | realworld | OpenClaw: git clone | Microsandbox Cloud | 0.0045 | <0.001 |
@@ -2033,7 +2119,8 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: git clone | E2B | 0.38 (tied) | 0.19 |
 | realworld | OpenClaw: git clone | Modal (VM) | 0.93 (tied) | 0.98 |
 | realworld | OpenClaw: git clone | Modal (gVisor) | 0.12 (tied) | 0.11 |
-| realworld | OpenClaw: git clone | Brezel | 0.18 (tied) | 0.0046 |
+| realworld | OpenClaw: git clone | Runloop | 0.13 (tied) | 0.066 |
+| realworld | OpenClaw: git clone | Brezel | 1.0 (tied) | 0.066 |
 | realworld | OpenClaw: git clone | run.cloud | <0.001 | <0.001 |
 | realworld | OpenClaw: git clone | Freestyle | 0.0022 | <0.001 |
 | realworld | OpenClaw: lint (all extensions) | Brezel | — | — |
@@ -2049,6 +2136,7 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: lint (all extensions) | Freestyle | <0.001 | <0.001 |
 | realworld | OpenClaw: lint (all extensions) | run.cloud | 0.68 (tied) | 0.29 |
 | realworld | OpenClaw: lint (all extensions) | E2B | 0.47 (tied) | 0.41 |
+| realworld | OpenClaw: lint (all extensions) | Runloop | <0.001 | <0.001 |
 | realworld | OpenClaw: lint (Oxlint) | Brezel | — | — |
 | realworld | OpenClaw: lint (Oxlint) | boat | <0.001 | <0.001 |
 | realworld | OpenClaw: lint (Oxlint) | Microsandbox Cloud | <0.001 | <0.001 |
@@ -2062,6 +2150,7 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: lint (Oxlint) | run.cloud | 0.0030 | 0.0018 |
 | realworld | OpenClaw: lint (Oxlint) | Freestyle | 0.069 (tied) | 0.0038 |
 | realworld | OpenClaw: lint (Oxlint) | E2B | 0.22 (tied) | 0.019 |
+| realworld | OpenClaw: lint (Oxlint) | Runloop | 0.024 | 0.019 |
 | realworld | OpenClaw: typecheck (test tree) | Brezel | — | — |
 | realworld | OpenClaw: typecheck (test tree) | boat | <0.001 | <0.001 |
 | realworld | OpenClaw: typecheck (test tree) | Daytona (VM) | <0.001 | <0.001 |
@@ -2075,6 +2164,7 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: typecheck (test tree) | Vercel Sandbox | 0.18 (tied) | 0.19 |
 | realworld | OpenClaw: typecheck (test tree) | E2B | 0.017 | 0.019 |
 | realworld | OpenClaw: typecheck (test tree) | Freestyle | 0.48 (tied) | 0.066 |
+| realworld | OpenClaw: typecheck (test tree) | Runloop | <0.001 | <0.001 |
 | realworld | OpenClaw: typecheck (tsgo) | Brezel | — | — |
 | realworld | OpenClaw: typecheck (tsgo) | boat | <0.001 | <0.001 |
 | realworld | OpenClaw: typecheck (tsgo) | Daytona (VM) | <0.001 | <0.001 |
@@ -2088,6 +2178,7 @@ correction is applied across providers or metrics.
 | realworld | OpenClaw: typecheck (tsgo) | run.cloud | 0.85 (tied) | 0.41 |
 | realworld | OpenClaw: typecheck (tsgo) | Freestyle | 0.18 (tied) | 0.026 |
 | realworld | OpenClaw: typecheck (tsgo) | E2B | 0.93 (tied) | 0.43 |
+| realworld | OpenClaw: typecheck (tsgo) | Runloop | <0.001 | 0.0046 |
 | cpu | Node.js web tooling | Brezel | — | — |
 | cpu | Node.js web tooling | boat | 0.0079 | <0.001 |
 | cpu | Node.js web tooling | Namespace | 0.42 (tied) | 0.031 |
@@ -2102,6 +2193,7 @@ correction is applied across providers or metrics.
 | cpu | Node.js web tooling | Modal (gVisor) | 0.84 (tied) | 0.68 |
 | cpu | Node.js web tooling | E2B | 0.31 (tied) | 0.031 |
 | cpu | Node.js web tooling | Freestyle | 0.0079 | <0.001 |
+| cpu | Node.js web tooling | Runloop | 0.0079 | <0.001 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Brezel | — | — |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | boat | 0.40 (too few sandboxes) | 0.81 |
@@ -2110,6 +2202,7 @@ correction is applied across providers or metrics.
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | run.cloud | 0.20 (too few sandboxes) | 0.077 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Modal (gVisor) | 0.80 (too few sandboxes) | 0.81 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Modal (VM) | 0.70 (too few sandboxes) | 0.32 |
+| disk | fio rand write 4KB, O_DIRECT (MB/s) | Runloop | 0.70 (too few sandboxes) | 0.077 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Novita | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio rand write 4KB, O_DIRECT (MB/s) | Microsandbox Cloud | 0.70 (too few sandboxes) | 0.077 |
@@ -2123,7 +2216,8 @@ correction is applied across providers or metrics.
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Modal (VM) | 1.0 (too few sandboxes) | 0.81 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Blaxel | 0.40 (too few sandboxes) | 0.32 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Microsandbox Cloud | 0.10 (too few sandboxes) | 0.0013 |
-| disk | fio rand read 4KB, O_DIRECT (IOPS) | run.cloud | 0.70 (too few sandboxes) | 0.012 |
+| disk | fio rand read 4KB, O_DIRECT (IOPS) | Runloop | 0.70 (too few sandboxes) | 0.012 |
+| disk | fio rand read 4KB, O_DIRECT (IOPS) | run.cloud | 0.40 (too few sandboxes) | 0.81 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.077 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | Namespace | 0.40 (too few sandboxes) | 0.077 |
 | disk | fio rand read 4KB, O_DIRECT (IOPS) | tama | 0.40 (too few sandboxes) | 0.077 |
@@ -2137,7 +2231,8 @@ correction is applied across providers or metrics.
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Modal (VM) | 1.0 (too few sandboxes) | 0.81 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Blaxel | 0.50 (too few sandboxes) | 0.32 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Microsandbox Cloud | 0.10 (too few sandboxes) | 0.0013 |
-| disk | fio rand read 4KB, O_DIRECT (MB/s) | run.cloud | 0.70 (too few sandboxes) | 0.012 |
+| disk | fio rand read 4KB, O_DIRECT (MB/s) | Runloop | 0.70 (too few sandboxes) | 0.012 |
+| disk | fio rand read 4KB, O_DIRECT (MB/s) | run.cloud | 0.40 (too few sandboxes) | 0.81 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.077 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | Namespace | 0.40 (too few sandboxes) | 0.077 |
 | disk | fio rand read 4KB, O_DIRECT (MB/s) | tama | 0.40 (too few sandboxes) | 0.077 |
@@ -2152,6 +2247,7 @@ correction is applied across providers or metrics.
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.012 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | run.cloud | 1.0 (too few sandboxes, equal medians) | 0.81 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Modal (VM) | 1.0 (too few sandboxes) | 0.32 |
+| disk | fio rand write 4KB, O_DIRECT (IOPS) | Runloop | 0.70 (too few sandboxes) | 0.077 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Novita | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio rand write 4KB, O_DIRECT (IOPS) | Microsandbox Cloud | 0.70 (too few sandboxes) | 0.077 |
@@ -2169,7 +2265,8 @@ correction is applied across providers or metrics.
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.012 |
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | Namespace | 0.10 (too few sandboxes) | 0.0013 |
-| disk | fio seq read 1MB, O_DIRECT (IOPS) | Modal (VM) | 0.10 (too few sandboxes) | 0.0013 |
+| disk | fio seq read 1MB, O_DIRECT (IOPS) | Runloop | 0.40 (too few sandboxes) | 0.012 |
+| disk | fio seq read 1MB, O_DIRECT (IOPS) | Modal (VM) | 0.10 (too few sandboxes) | 0.012 |
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | tama | 0.40 (too few sandboxes) | 0.077 |
 | disk | fio seq read 1MB, O_DIRECT (IOPS) | E2B | 0.60 (too few sandboxes) | 0.077 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | Modal (gVisor) | — | — |
@@ -2183,7 +2280,8 @@ correction is applied across providers or metrics.
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.012 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | Namespace | 0.10 (too few sandboxes) | 0.0013 |
-| disk | fio seq read 1MB, O_DIRECT (MB/s) | Modal (VM) | 0.10 (too few sandboxes) | 0.0013 |
+| disk | fio seq read 1MB, O_DIRECT (MB/s) | Runloop | 0.40 (too few sandboxes) | 0.012 |
+| disk | fio seq read 1MB, O_DIRECT (MB/s) | Modal (VM) | 0.10 (too few sandboxes) | 0.012 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | tama | 0.40 (too few sandboxes) | 0.077 |
 | disk | fio seq read 1MB, O_DIRECT (MB/s) | E2B | 0.60 (too few sandboxes) | 0.077 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | Brezel | — | — |
@@ -2197,7 +2295,8 @@ correction is applied across providers or metrics.
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | Freestyle | 0.20 (too few sandboxes) | 0.32 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | boat | 1.0 (too few sandboxes) | 0.32 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | Namespace | 0.20 (too few sandboxes) | 0.077 |
-| disk | fio seq write 1MB, O_DIRECT (IOPS) | tama | 0.10 (too few sandboxes) | 0.0013 |
+| disk | fio seq write 1MB, O_DIRECT (IOPS) | Runloop | 0.40 (too few sandboxes) | 0.012 |
+| disk | fio seq write 1MB, O_DIRECT (IOPS) | tama | 0.40 (too few sandboxes) | 0.81 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | Modal (VM) | 0.40 (too few sandboxes) | 0.32 |
 | disk | fio seq write 1MB, O_DIRECT (IOPS) | E2B | 0.10 (too few sandboxes) | 0.0013 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | Brezel | — | — |
@@ -2211,13 +2310,15 @@ correction is applied across providers or metrics.
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | Freestyle | 0.20 (too few sandboxes) | 0.32 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | boat | 1.0 (too few sandboxes) | 0.32 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | Namespace | 0.20 (too few sandboxes) | 0.077 |
-| disk | fio seq write 1MB, O_DIRECT (MB/s) | tama | 0.10 (too few sandboxes) | 0.0013 |
+| disk | fio seq write 1MB, O_DIRECT (MB/s) | Runloop | 0.40 (too few sandboxes) | 0.012 |
+| disk | fio seq write 1MB, O_DIRECT (MB/s) | tama | 0.40 (too few sandboxes) | 0.81 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | Modal (VM) | 0.40 (too few sandboxes) | 0.32 |
 | disk | fio seq write 1MB, O_DIRECT (MB/s) | E2B | 0.10 (too few sandboxes) | 0.0013 |
 | disk | Hardlink throughput | Daytona (VM) | — | — |
 | disk | Hardlink throughput | Blaxel | 0.10 (too few sandboxes) | 0.0013 |
 | disk | Hardlink throughput | Brezel | 0.10 (too few sandboxes) | 0.0013 |
 | disk | Hardlink throughput | Namespace | 0.10 (too few sandboxes) | 0.0013 |
+| disk | Hardlink throughput | Runloop | 0.70 (too few sandboxes) | 0.81 |
 | disk | Hardlink throughput | Novita | 0.10 (too few sandboxes) | 0.0013 |
 | disk | Hardlink throughput | Vercel Sandbox | 0.10 (too few sandboxes) | 0.0013 |
 | disk | Hardlink throughput | boat | 0.10 (too few sandboxes) | 0.012 |
@@ -2240,6 +2341,7 @@ correction is applied across providers or metrics.
 | memory | STREAM Triad | E2B | 0.10 (too few sandboxes) | 0.0013 |
 | memory | STREAM Triad | Brezel | 0.70 (too few sandboxes) | 0.077 |
 | memory | STREAM Triad | run.cloud | 0.10 (too few sandboxes) | 0.0013 |
+| memory | STREAM Triad | Runloop | 0.70 (too few sandboxes) | 0.32 |
 | memory | STREAM Triad | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | memory | STREAM Triad | boat | 0.40 (too few sandboxes) | 0.077 |
 | memory | STREAM Add | tama | — | — |
@@ -2254,7 +2356,8 @@ correction is applied across providers or metrics.
 | memory | STREAM Add | E2B | 0.10 (too few sandboxes) | 0.012 |
 | memory | STREAM Add | Brezel | 0.70 (too few sandboxes) | 0.077 |
 | memory | STREAM Add | run.cloud | 0.10 (too few sandboxes) | 0.0013 |
-| memory | STREAM Add | Namespace | 0.10 (too few sandboxes) | 0.0013 |
+| memory | STREAM Add | Runloop | 0.10 (too few sandboxes) | 0.012 |
+| memory | STREAM Add | Namespace | 0.10 (too few sandboxes) | 0.012 |
 | memory | STREAM Add | boat | 0.40 (too few sandboxes) | 0.077 |
 | memory | STREAM Copy | Daytona (VM) | — | — |
 | memory | STREAM Copy | tama | 1.0 (too few sandboxes) | 0.81 |
@@ -2270,6 +2373,7 @@ correction is applied across providers or metrics.
 | memory | STREAM Copy | Brezel | 0.10 (too few sandboxes) | 0.0013 |
 | memory | STREAM Copy | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | memory | STREAM Copy | boat | 0.70 (too few sandboxes) | 0.32 |
+| memory | STREAM Copy | Runloop | 1.0 (too few sandboxes) | 0.81 |
 | memory | STREAM Scale | Daytona (VM) | — | — |
 | memory | STREAM Scale | tama | 1.0 (too few sandboxes) | 0.81 |
 | memory | STREAM Scale | Modal (VM) | 0.20 (too few sandboxes) | 0.32 |
@@ -2282,6 +2386,7 @@ correction is applied across providers or metrics.
 | memory | STREAM Scale | E2B | 0.10 (too few sandboxes) | 0.0013 |
 | memory | STREAM Scale | Brezel | 0.70 (too few sandboxes) | 0.077 |
 | memory | STREAM Scale | run.cloud | 0.10 (too few sandboxes) | 0.0013 |
+| memory | STREAM Scale | Runloop | 0.70 (too few sandboxes) | 0.32 |
 | memory | STREAM Scale | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | memory | STREAM Scale | boat | 0.40 (too few sandboxes) | 0.077 |
 | network | iperf3 WAN download | Vercel Sandbox | — | — |
@@ -2291,7 +2396,8 @@ correction is applied across providers or metrics.
 | network | iperf3 WAN download | E2B | 0.10 (too few sandboxes) | 0.077 |
 | network | iperf3 WAN download | Blaxel | 0.70 (too few sandboxes) | 0.32 |
 | network | iperf3 WAN download | Modal (gVisor) | 0.70 (too few sandboxes) | 0.32 |
-| network | iperf3 WAN download | Freestyle | 0.70 (too few sandboxes) | 0.81 |
+| network | iperf3 WAN download | Runloop | 1.0 (too few sandboxes) | 0.81 |
+| network | iperf3 WAN download | Freestyle | 0.70 (too few sandboxes) | 0.32 |
 | network | iperf3 WAN download | Brezel | 0.70 (too few sandboxes) | 0.077 |
 | network | iperf3 WAN download | Modal (VM) | 0.70 (too few sandboxes) | 0.077 |
 | network | iperf3 WAN download | Namespace | 0.70 (too few sandboxes) | 0.81 |
@@ -2305,7 +2411,8 @@ correction is applied across providers or metrics.
 | network | iperf3 WAN upload | tama | 1.0 (too few sandboxes) | 0.99 |
 | network | iperf3 WAN upload | Daytona (VM) | 0.80 (too few sandboxes) | 0.89 |
 | network | iperf3 WAN upload | Namespace | 1.0 (too few sandboxes) | 1.0 |
-| network | iperf3 WAN upload | Microsandbox Cloud | 0.40 (too few sandboxes) | 0.077 |
+| network | iperf3 WAN upload | Runloop | 0.10 (too few sandboxes) | 0.0013 |
+| network | iperf3 WAN upload | Microsandbox Cloud | 0.70 (too few sandboxes) | 0.077 |
 | network | iperf3 WAN upload | Brezel | 0.10 (too few sandboxes) | 0.012 |
 | network | iperf3 WAN upload | E2B | 0.70 (too few sandboxes) | 0.32 |
 | network | iperf3 WAN upload | run.cloud | 0.70 (too few sandboxes) | 0.012 |
@@ -2318,7 +2425,8 @@ correction is applied across providers or metrics.
 | network | iperf3 loopback TCP, 1 stream | Vercel Sandbox | 0.70 (too few sandboxes) | 0.012 |
 | network | iperf3 loopback TCP, 1 stream | tama | 0.20 (too few sandboxes) | 0.0047 |
 | network | iperf3 loopback TCP, 1 stream | E2B | 0.20 (too few sandboxes) | 0.030 |
-| network | iperf3 loopback TCP, 1 stream | Namespace | 0.10 (too few sandboxes) | 0.0013 |
+| network | iperf3 loopback TCP, 1 stream | Runloop | 0.10 (too few sandboxes) | 0.0013 |
+| network | iperf3 loopback TCP, 1 stream | Namespace | 0.70 (too few sandboxes) | 0.32 |
 | network | iperf3 loopback TCP, 1 stream | run.cloud | 0.10 (too few sandboxes) | 0.012 |
 | network | iperf3 loopback TCP, 1 stream | Modal (gVisor) | 1.0 (too few sandboxes) | 0.81 |
 | network | iperf3 loopback TCP, 1 stream | Modal (VM) | 1.0 (too few sandboxes) | 0.81 |
@@ -2332,7 +2440,8 @@ correction is applied across providers or metrics.
 | network | iperf3 loopback TCP, 10 streams | Vercel Sandbox | 1.0 (too few sandboxes) | 0.077 |
 | network | iperf3 loopback TCP, 10 streams | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | network | iperf3 loopback TCP, 10 streams | tama | 0.20 (too few sandboxes) | 0.0047 |
-| network | iperf3 loopback TCP, 10 streams | run.cloud | 0.20 (too few sandboxes) | 0.0047 |
+| network | iperf3 loopback TCP, 10 streams | Runloop | 0.80 (too few sandboxes) | 0.14 |
+| network | iperf3 loopback TCP, 10 streams | run.cloud | 0.70 (too few sandboxes) | 0.32 |
 | network | iperf3 loopback TCP, 10 streams | Modal (gVisor) | 0.70 (too few sandboxes) | 0.81 |
 | network | iperf3 loopback TCP, 10 streams | Freestyle | 0.70 (too few sandboxes) | 0.32 |
 | network | iperf3 loopback TCP, 10 streams | Modal (VM) | 0.70 (too few sandboxes) | 0.32 |
@@ -2346,6 +2455,7 @@ correction is applied across providers or metrics.
 | network | iperf3 loopback UDP, 10G objective | Namespace | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | iperf3 loopback UDP, 10G objective | Novita | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | iperf3 loopback UDP, 10G objective | run.cloud | 1.0 (too few sandboxes, equal medians) | 1.0 |
+| network | iperf3 loopback UDP, 10G objective | Runloop | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | iperf3 loopback UDP, 10G objective | tama | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | iperf3 loopback UDP, 10G objective | Vercel Sandbox | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | iperf3 loopback UDP, 10G objective | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
@@ -2361,6 +2471,7 @@ correction is applied across providers or metrics.
 | network | github.com HTTPS | Blaxel | 0.10 (too few sandboxes) | <0.001 |
 | network | github.com HTTPS | Freestyle | 0.10 (too few sandboxes) | <0.001 |
 | network | github.com HTTPS | Microsandbox Cloud | 0.10 (too few sandboxes) | <0.001 |
+| network | github.com HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | github.com HTTPS | Novita | 0.10 (too few sandboxes) | <0.001 |
 | network | api.github.com HTTPS | Namespace | — | — |
 | network | api.github.com HTTPS | Vercel Sandbox | 0.10 (too few sandboxes) | <0.001 |
@@ -2370,6 +2481,7 @@ correction is applied across providers or metrics.
 | network | api.github.com HTTPS | run.cloud | 0.20 (too few sandboxes) | <0.001 |
 | network | api.github.com HTTPS | E2B | 0.10 (too few sandboxes) | <0.001 |
 | network | api.github.com HTTPS | Daytona (VM) | 0.40 (too few sandboxes) | <0.001 |
+| network | api.github.com HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | api.github.com HTTPS | Brezel | 0.10 (too few sandboxes) | <0.001 |
 | network | api.github.com HTTPS | Blaxel | 0.10 (too few sandboxes) | <0.001 |
 | network | api.github.com HTTPS | Freestyle | 0.10 (too few sandboxes) | <0.001 |
@@ -2379,6 +2491,7 @@ correction is applied across providers or metrics.
 | network | raw.githubusercontent.com HTTPS | Modal (VM) | 0.10 (too few sandboxes) | <0.001 |
 | network | raw.githubusercontent.com HTTPS | Microsandbox Cloud | 0.10 (too few sandboxes) | <0.001 |
 | network | raw.githubusercontent.com HTTPS | Vercel Sandbox | 1.0 (too few sandboxes) | <0.001 |
+| network | raw.githubusercontent.com HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | raw.githubusercontent.com HTTPS | Daytona (VM) | 0.70 (too few sandboxes) | <0.001 |
 | network | raw.githubusercontent.com HTTPS | Namespace | 0.10 (too few sandboxes) | <0.001 |
 | network | raw.githubusercontent.com HTTPS | Modal (gVisor) | 0.70 (too few sandboxes) | 0.0026 |
@@ -2391,6 +2504,7 @@ correction is applied across providers or metrics.
 | network | registry.npmjs.org HTTPS | Namespace | — | — |
 | network | registry.npmjs.org HTTPS | Modal (VM) | 0.10 (too few sandboxes) | <0.001 |
 | network | registry.npmjs.org HTTPS | Vercel Sandbox | 0.70 (too few sandboxes) | <0.001 |
+| network | registry.npmjs.org HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | registry.npmjs.org HTTPS | Brezel | 0.10 (too few sandboxes) | <0.001 |
 | network | registry.npmjs.org HTTPS | Blaxel | 0.10 (too few sandboxes) | <0.001 |
 | network | registry.npmjs.org HTTPS | Daytona (VM) | 0.70 (too few sandboxes) | <0.001 |
@@ -2406,6 +2520,7 @@ correction is applied across providers or metrics.
 | network | pypi.org HTTPS | Namespace | 0.10 (too few sandboxes) | <0.001 |
 | network | pypi.org HTTPS | Microsandbox Cloud | 1.0 (too few sandboxes) | <0.001 |
 | network | pypi.org HTTPS | Vercel Sandbox | 0.40 (too few sandboxes) | <0.001 |
+| network | pypi.org HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | pypi.org HTTPS | Daytona (VM) | 0.70 (too few sandboxes) | <0.001 |
 | network | pypi.org HTTPS | Modal (gVisor) | 0.40 (too few sandboxes) | <0.001 |
 | network | pypi.org HTTPS | run.cloud | 0.70 (too few sandboxes) | <0.001 |
@@ -2425,13 +2540,15 @@ correction is applied across providers or metrics.
 | network | files.pythonhosted.org HTTPS | Blaxel | 0.10 (too few sandboxes) | <0.001 |
 | network | files.pythonhosted.org HTTPS | E2B | 1.0 (too few sandboxes) | <0.001 |
 | network | files.pythonhosted.org HTTPS | Freestyle | 0.10 (too few sandboxes) | <0.001 |
+| network | files.pythonhosted.org HTTPS | Runloop | 0.70 (too few sandboxes) | 0.0026 |
 | network | files.pythonhosted.org HTTPS | Novita | 0.10 (too few sandboxes) | <0.001 |
 | network | files.pythonhosted.org HTTPS | tama | 0.20 (too few sandboxes) | <0.001 |
 | network | ghcr.io/v2 HTTPS | Namespace | — | — |
 | network | ghcr.io/v2 HTTPS | Vercel Sandbox | 0.20 (too few sandboxes) | <0.001 |
 | network | ghcr.io/v2 HTTPS | tama | 0.20 (too few sandboxes) | <0.001 |
 | network | ghcr.io/v2 HTTPS | Modal (VM) | 0.20 (too few sandboxes) | <0.001 |
-| network | ghcr.io/v2 HTTPS | Blaxel | 0.70 (too few sandboxes) | <0.001 |
+| network | ghcr.io/v2 HTTPS | Runloop | 0.70 (too few sandboxes) | <0.001 |
+| network | ghcr.io/v2 HTTPS | Blaxel | 0.10 (too few sandboxes) | <0.001 |
 | network | ghcr.io/v2 HTTPS | Daytona (VM) | 0.10 (too few sandboxes) | <0.001 |
 | network | ghcr.io/v2 HTTPS | Modal (gVisor) | 1.0 (too few sandboxes) | <0.001 |
 | network | ghcr.io/v2 HTTPS | E2B | 0.10 (too few sandboxes) | <0.001 |
@@ -2447,6 +2564,7 @@ correction is applied across providers or metrics.
 | network | gcr.io/v2 HTTPS | Modal (gVisor) | 0.20 (too few sandboxes) | <0.001 |
 | network | gcr.io/v2 HTTPS | Daytona (VM) | 0.40 (too few sandboxes) | <0.001 |
 | network | gcr.io/v2 HTTPS | Blaxel | 0.10 (too few sandboxes) | <0.001 |
+| network | gcr.io/v2 HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | gcr.io/v2 HTTPS | Freestyle | 0.10 (too few sandboxes) | <0.001 |
 | network | gcr.io/v2 HTTPS | Microsandbox Cloud | 1.0 (too few sandboxes) | <0.001 |
 | network | gcr.io/v2 HTTPS | run.cloud | 0.10 (too few sandboxes) | <0.001 |
@@ -2457,6 +2575,7 @@ correction is applied across providers or metrics.
 | network | auth.docker.io token HTTPS | Vercel Sandbox | 0.10 (too few sandboxes) | <0.001 |
 | network | auth.docker.io token HTTPS | Modal (VM) | 0.20 (too few sandboxes) | <0.001 |
 | network | auth.docker.io token HTTPS | Blaxel | 0.70 (too few sandboxes) | <0.001 |
+| network | auth.docker.io token HTTPS | Runloop | 0.10 (too few sandboxes) | <0.001 |
 | network | auth.docker.io token HTTPS | Microsandbox Cloud | 0.10 (too few sandboxes) | <0.001 |
 | network | auth.docker.io token HTTPS | Daytona (VM) | 0.10 (too few sandboxes) | <0.001 |
 | network | auth.docker.io token HTTPS | Modal (gVisor) | 0.70 (too few sandboxes) | <0.001 |
@@ -2472,6 +2591,7 @@ correction is applied across providers or metrics.
 | network | crates.io HTTPS | Namespace | 0.40 (too few sandboxes) | <0.001 |
 | network | crates.io HTTPS | Vercel Sandbox | 0.40 (too few sandboxes) | <0.001 |
 | network | crates.io HTTPS | Daytona (VM) | 1.0 (too few sandboxes) | 0.0074 |
+| network | crates.io HTTPS | Runloop | 0.70 (too few sandboxes) | <0.001 |
 | network | crates.io HTTPS | Modal (gVisor) | 0.70 (too few sandboxes) | <0.001 |
 | network | crates.io HTTPS | run.cloud | 0.40 (too few sandboxes) | <0.001 |
 | network | crates.io HTTPS | Blaxel | 0.40 (too few sandboxes) | <0.001 |
@@ -2490,7 +2610,8 @@ correction is applied across providers or metrics.
 | network | index.crates.io config HTTPS | run.cloud | 0.20 (too few sandboxes) | <0.001 |
 | network | index.crates.io config HTTPS | E2B | 0.10 (too few sandboxes) | <0.001 |
 | network | index.crates.io config HTTPS | Freestyle | 0.80 (too few sandboxes) | 0.18 |
-| network | index.crates.io config HTTPS | Novita | 0.20 (too few sandboxes) | <0.001 |
+| network | index.crates.io config HTTPS | Runloop | 1.0 (too few sandboxes) | <0.001 |
+| network | index.crates.io config HTTPS | Novita | 0.10 (too few sandboxes) | <0.001 |
 | network | index.crates.io config HTTPS | tama | 0.20 (too few sandboxes) | <0.001 |
 | network | github.com cold DNS | Daytona (VM) | — | — |
 | network | github.com cold DNS | Microsandbox Cloud | 1.0 (too few sandboxes, equal medians) | 0.98 |
@@ -2505,8 +2626,10 @@ correction is applied across providers or metrics.
 | network | github.com cold DNS | Brezel | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | github.com cold DNS | E2B | 0.60 (too few sandboxes, equal medians) | 0.98 |
 | network | github.com cold DNS | Novita | 1.0 (too few sandboxes, equal medians) | 0.98 |
+| network | github.com cold DNS | Runloop | — | — |
 | network | registry.npmjs.org cold DNS | Namespace | — | — |
-| network | registry.npmjs.org cold DNS | Freestyle | 0.30 (too few sandboxes) | 0.32 |
+| network | registry.npmjs.org cold DNS | Runloop | 1.0 (too few sandboxes, equal medians) | 0.98 |
+| network | registry.npmjs.org cold DNS | Freestyle | 0.10 (too few sandboxes) | 0.033 |
 | network | registry.npmjs.org cold DNS | Modal (VM) | 0.70 (too few sandboxes, equal medians) | 0.98 |
 | network | registry.npmjs.org cold DNS | run.cloud | 1.0 (too few sandboxes, equal medians) | 0.98 |
 | network | registry.npmjs.org cold DNS | Modal (gVisor) | 1.0 (too few sandboxes) | 0.98 |
@@ -2521,7 +2644,8 @@ correction is applied across providers or metrics.
 | network | docker.io cold DNS | Daytona (VM) | — | — |
 | network | docker.io cold DNS | Microsandbox Cloud | 1.0 (too few sandboxes, equal medians) | 0.99 |
 | network | docker.io cold DNS | Modal (VM) | 1.0 (too few sandboxes, equal medians) | 0.99 |
-| network | docker.io cold DNS | tama | 1.0 (too few sandboxes, equal medians) | 0.99 |
+| network | docker.io cold DNS | Runloop | 1.0 (too few sandboxes, equal medians) | 0.99 |
+| network | docker.io cold DNS | tama | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | docker.io cold DNS | Vercel Sandbox | 1.0 (too few sandboxes, equal medians) | 1.0 |
 | network | docker.io cold DNS | Freestyle | 0.40 (too few sandboxes) | 0.42 |
 | network | docker.io cold DNS | Modal (gVisor) | 0.50 (too few sandboxes) | 0.32 |
@@ -2532,7 +2656,8 @@ correction is applied across providers or metrics.
 | network | docker.io cold DNS | E2B | 0.70 (too few sandboxes, equal medians) | 0.98 |
 | network | docker.io cold DNS | Novita | 0.20 (too few sandboxes) | 0.32 |
 | network | pypi.org cold DNS | Namespace | — | — |
-| network | pypi.org cold DNS | Vercel Sandbox | 1.0 (too few sandboxes) | 0.99 |
+| network | pypi.org cold DNS | Runloop | 1.0 (too few sandboxes, equal medians) | 0.98 |
+| network | pypi.org cold DNS | Vercel Sandbox | 0.40 (too few sandboxes) | 0.78 |
 | network | pypi.org cold DNS | Freestyle | 1.0 (too few sandboxes) | 1.0 |
 | network | pypi.org cold DNS | Blaxel | 0.10 (too few sandboxes) | 0.033 |
 | network | pypi.org cold DNS | Daytona (VM) | 1.0 (too few sandboxes, equal medians) | 0.98 |
@@ -2547,6 +2672,7 @@ correction is applied across providers or metrics.
 | network | rubygems.org cold DNS | Blaxel | — | — |
 | network | rubygems.org cold DNS | run.cloud | 0.10 (too few sandboxes) | 0.033 |
 | network | rubygems.org cold DNS | Brezel | 0.10 (too few sandboxes) | 0.033 |
+| network | rubygems.org cold DNS | Runloop | 0.10 (too few sandboxes) | 0.033 |
 | network | rubygems.org cold DNS | Vercel Sandbox | 0.10 (too few sandboxes) | 0.033 |
 | network | rubygems.org cold DNS | Daytona (VM) | 0.10 (too few sandboxes) | 0.033 |
 | network | rubygems.org cold DNS | Freestyle | 0.60 (too few sandboxes, equal medians) | 0.98 |
@@ -2557,7 +2683,8 @@ correction is applied across providers or metrics.
 | network | rubygems.org cold DNS | Modal (gVisor) | 1.0 (too few sandboxes) | 0.98 |
 | network | rubygems.org cold DNS | E2B | 0.10 (too few sandboxes) | 0.033 |
 | network | rubygems.org cold DNS | Microsandbox Cloud | 0.10 (too few sandboxes) | 0.033 |
-| network | Node 22 download | Namespace | — | — |
+| network | Node 22 download | Runloop | — | — |
+| network | Node 22 download | Namespace | 0.70 (too few sandboxes) | 0.98 |
 | network | Node 22 download | Vercel Sandbox | 1.0 (too few sandboxes) | 0.98 |
 | network | Node 22 download | Brezel | 0.20 (too few sandboxes) | 0.32 |
 | network | Node 22 download | Daytona (VM) | 1.0 (too few sandboxes) | 0.98 |
@@ -2584,6 +2711,7 @@ correction is applied across providers or metrics.
 | system | Git common operations | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
 | system | Git common operations | Vercel Sandbox | 0.20 (too few sandboxes) | 0.077 |
 | system | Git common operations | E2B | 1.0 (too few sandboxes) | 0.81 |
+| system | Git common operations | Runloop | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RO (s100, 50c) | Brezel | — | — |
 | system | pgbench RO (s100, 50c) | boat | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RO (s100, 50c) | tama | 0.70 (too few sandboxes) | 0.077 |
@@ -2596,7 +2724,8 @@ correction is applied across providers or metrics.
 | system | pgbench RO (s100, 50c) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RO (s100, 50c) | E2B | 1.0 (too few sandboxes) | 0.81 |
 | system | pgbench RO (s100, 50c) | run.cloud | 0.40 (too few sandboxes) | 0.012 |
-| system | pgbench RO (s100, 50c) | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RO (s100, 50c) | Runloop | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RO (s100, 50c) | Freestyle | 0.20 (too few sandboxes) | 0.077 |
 | system | pgbench RO (s100, 50c) | Modal (gVisor) | 1.0 (too few sandboxes) | 0.81 |
 | system | pgbench RO latency (s100, 50c) | Brezel | — | — |
 | system | pgbench RO latency (s100, 50c) | boat | 0.10 (too few sandboxes) | 0.0013 |
@@ -2610,7 +2739,8 @@ correction is applied across providers or metrics.
 | system | pgbench RO latency (s100, 50c) | Vercel Sandbox | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RO latency (s100, 50c) | E2B | 1.0 (too few sandboxes) | 0.81 |
 | system | pgbench RO latency (s100, 50c) | run.cloud | 0.40 (too few sandboxes) | 0.012 |
-| system | pgbench RO latency (s100, 50c) | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RO latency (s100, 50c) | Runloop | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RO latency (s100, 50c) | Freestyle | 0.20 (too few sandboxes) | 0.077 |
 | system | pgbench RO latency (s100, 50c) | Modal (gVisor) | 1.0 (too few sandboxes) | 0.81 |
 | system | pgbench RW (s100, 50c) | Brezel | — | — |
 | system | pgbench RW (s100, 50c) | Novita | 0.10 (too few sandboxes) | 0.0013 |
@@ -2625,7 +2755,8 @@ correction is applied across providers or metrics.
 | system | pgbench RW (s100, 50c) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.012 |
 | system | pgbench RW (s100, 50c) | E2B | 0.70 (too few sandboxes) | 0.32 |
 | system | pgbench RW (s100, 50c) | run.cloud | 1.0 (too few sandboxes) | 0.81 |
-| system | pgbench RW (s100, 50c) | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RW (s100, 50c) | Runloop | 0.20 (too few sandboxes) | 0.32 |
+| system | pgbench RW (s100, 50c) | Freestyle | 0.20 (too few sandboxes) | 0.012 |
 | system | pgbench RW latency (s100, 50c) | Brezel | — | — |
 | system | pgbench RW latency (s100, 50c) | Novita | 0.10 (too few sandboxes) | 0.0013 |
 | system | pgbench RW latency (s100, 50c) | boat | 1.0 (too few sandboxes) | 1.0 |
@@ -2639,7 +2770,8 @@ correction is applied across providers or metrics.
 | system | pgbench RW latency (s100, 50c) | Modal (gVisor) | 0.10 (too few sandboxes) | 0.012 |
 | system | pgbench RW latency (s100, 50c) | E2B | 0.70 (too few sandboxes) | 0.32 |
 | system | pgbench RW latency (s100, 50c) | run.cloud | 1.0 (too few sandboxes) | 0.81 |
-| system | pgbench RW latency (s100, 50c) | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
+| system | pgbench RW latency (s100, 50c) | Runloop | 0.20 (too few sandboxes) | 0.32 |
+| system | pgbench RW latency (s100, 50c) | Freestyle | 0.20 (too few sandboxes) | 0.012 |
 | system | PyBench | Brezel | — | — |
 | system | PyBench | Namespace | 0.10 (too few sandboxes) | 0.0013 |
 | system | PyBench | Daytona (VM) | 0.10 (too few sandboxes) | 0.0013 |
@@ -2654,6 +2786,7 @@ correction is applied across providers or metrics.
 | system | PyBench | Vercel Sandbox | 0.40 (too few sandboxes) | 0.077 |
 | system | PyBench | Modal (gVisor) | 0.70 (too few sandboxes) | 0.32 |
 | system | PyBench | Freestyle | 0.70 (too few sandboxes) | 0.077 |
+| system | PyBench | Runloop | 0.10 (too few sandboxes) | 0.0013 |
 | system | SQLite Speedtest | Brezel | — | — |
 | system | SQLite Speedtest | Daytona (VM) | 0.10 (too few sandboxes) | 0.0013 |
 | system | SQLite Speedtest | Namespace | 0.10 (too few sandboxes) | 0.012 |
@@ -2666,7 +2799,8 @@ correction is applied across providers or metrics.
 | system | SQLite Speedtest | Vercel Sandbox | 0.10 (too few sandboxes) | 0.012 |
 | system | SQLite Speedtest | E2B | 1.0 (too few sandboxes) | 0.81 |
 | system | SQLite Speedtest | run.cloud | 0.70 (too few sandboxes) | 0.32 |
-| system | SQLite Speedtest | Freestyle | 0.20 (too few sandboxes) | 0.077 |
+| system | SQLite Speedtest | Runloop | 0.70 (too few sandboxes) | 0.32 |
+| system | SQLite Speedtest | Freestyle | 0.10 (too few sandboxes) | 0.0013 |
 | system | SQLite Speedtest | Modal (gVisor) | 0.10 (too few sandboxes) | 0.0013 |
 | economics | Hourly cost | boat | — | — |
 | economics | Hourly cost | tama | — | — |
@@ -2674,6 +2808,7 @@ correction is applied across providers or metrics.
 | economics | Hourly cost | Freestyle | — | — |
 | economics | Hourly cost | Daytona (VM) | — | — |
 | economics | Hourly cost | E2B | — (equal values) | — |
+| economics | Hourly cost | Runloop | — | — |
 
 </details>
 
