@@ -220,7 +220,7 @@ export function validateProviderModules(
 	}
 
 	// Baked artifacts share one canonical base name. Separate vendors own separate control-plane
-	// namespaces and may safely reuse it (e2b/Novita/Runloop do); variants of the same vendor do not.
+	// namespaces and may safely reuse it (e2b/Novita do); variants of the same vendor do not.
 	// Their declared suffix is therefore the collision key that keeps bake/promote from overwriting a
 	// sibling artifact while validating a different one.
 	const bakedNamesByVendor = new Map<string, Map<string, ProviderId>>();

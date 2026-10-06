@@ -18,7 +18,6 @@ describe("sandboxRef", () => {
 		const valid = [
 			["e2b", "i2f3k4abc"],
 			["modal-gvisor", "sb-abc123"],
-			["runloop", "dbx_9f8e7d"],
 			["tama", "m-1"],
 		] as const;
 
@@ -61,7 +60,6 @@ describe("sandboxRef", () => {
 
 	test("the provider remains narrowed while id syntax belongs to its driver", () => {
 		type _modal = Expect<Equal<SandboxRef<"modal-gvisor">["id"], string>>;
-		type _runloop = Expect<Equal<SandboxRef<"runloop">["id"], string>>;
 		type _provider = Expect<Equal<SandboxRef<"tama">["provider"], "tama">>;
 		const modal = sandboxRef("modal-gvisor", "sb-abc");
 		const id: string = modal.id;

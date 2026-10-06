@@ -180,7 +180,7 @@ export interface ProviderMeta {
 	 * (e2b-root.ts), so only a provider with no such lever is `"unprivileged"`.
 	 *
 	 * This exists so the job summary flags DRIFT rather than a supported configuration: a hardcoded
-	 * "expected root" marks every Runloop replicate anomalous on a perfectly healthy run, which trains
+	 * "expected root" marks every unprivileged replicate anomalous on a healthy run, which trains
 	 * readers to ignore the warning that was added to catch a real identity change.
 	 */
 	runtimeIdentity?: ProviderRuntimeIdentity;

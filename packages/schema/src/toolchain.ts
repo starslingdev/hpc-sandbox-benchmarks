@@ -21,7 +21,7 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 // identical; only its layer boundaries moved. Re-bake all providers before the runs that consume v7.
 // v8: no toolchain pin changed from v7 — mise 2026.7.11, node 22.23.1, pnpm 10.34.5, jc 1.25.7, PTS
 // 10.8.4 and the same 10 pre-installed profiles. The delta is entirely about the UNPRIVILEGED runtime
-// user E2B-compatible providers inject (Runloop runs its whole lane that way), and it is two things:
+// user a provider may inject, and it is two things:
 //   - The image ENV no longer exports PTS_USER_PATH_OVERRIDE, only PTS_TEST_INSTALL_ROOT_PATH. Sharing
 //     root's mutable state put an injected user on a 0600 core.pt2so and — because PTS expands its
 //     non-daemon ResultsDirectory through HOME regardless of the override — on a results tree
@@ -35,7 +35,7 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 //     silent no-op meant the network suite benchmarked the unrepaired iperf profile.
 // v7 published WITHOUT PTS_TEST_INSTALL_ROOT_PATH (the ENV postdates that bake), which is why an
 // unprivileged run on it reports 0 of 10 installed profiles; the runtime entry points now set it
-// themselves, so v7 images keep working, but Runloop's vendored-profile path needs THIS image.
+// themselves, so v7 images keep working, but the vendored-profile path needs THIS image.
 // Numbers stay comparable across v7↔v8: no pin, profile, or build flag changed — only an env var and
 // a directory mode. Re-bake all providers before the runs that consume v8.
 export const TOOLCHAIN_VERSION = "v8";
@@ -213,13 +213,13 @@ export const PTS_BAKED_ROOT = "/var/lib/phoronix-test-suite";
  * How every runtime entry point selects PTS's state directory, as ONE shell snippet.
  *
  * The bake installs profiles as root under {@link PTS_BAKED_ROOT}, but E2B-compatible providers
- * (Runloop especially) inject an unprivileged runtime user. Those two identities need DIFFERENT
+ * may inject an unprivileged runtime user. Those two identities need DIFFERENT
  * mutable state and the SAME installed profiles, which is exactly the split below:
  *
  *   - `PTS_TEST_INSTALL_ROOT_PATH` keeps the baked installed tests shared. It is the only path PTS
  *     10.8.4 exposes its own env override for, and without it an unprivileged run falls back to the
  *     config's `~/.phoronix-test-suite/installed-tests/` and reports ZERO installed tests — the
- *     Runloop failure this exists to prevent. The published v7 image predates this ENV, so setting it
+ *     failure this exists to prevent. The published v7 image predates this ENV, so setting it
  *     at runtime is what makes an already-published image work.
  *   - `PTS_USER_PATH_OVERRIDE` is UNSET for a non-root user rather than pointed anywhere. PTS's own
  *     per-user default is already `$HOME/.phoronix-test-suite`, and it creates that directory itself —

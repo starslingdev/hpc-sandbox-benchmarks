@@ -27,7 +27,6 @@ export const MIGRATED_DRIVER_IDS = [
 	"vercel",
 	"blaxel",
 	"microsandbox-cloud",
-	"runloop",
 	"runcloud",
 	"namespace",
 	"boat",

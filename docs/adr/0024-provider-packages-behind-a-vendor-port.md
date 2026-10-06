@@ -41,8 +41,8 @@ The rule that a provider package is its vendor's only importer was intended but 
 - the leaderboard's isolation-class string sniffing
 - seven hard-coded id lists in tests
 
-Two `sdkPackage` values (Runloop and Namespace) had already drifted from the packages the drivers
-actually pin. Each new provider meant editing roughly 21 files by hand.
+The Namespace `sdkPackage` value had already drifted from the package its driver
+actually pins. Each new provider meant editing roughly 21 files by hand.
 
 The design was chosen by an architecture review followed by "design it twice": ten independent
 interface designs across the three candidates, compared on depth, locality and seam placement.
@@ -253,8 +253,8 @@ snapshot comparison), not by `check:providers`.
   account, where an E2B-protocol one reuses `e2bProtocolStub` and an HTTP one states only `restStub`
   routes. An OCI baker for a vendor outside the E2B protocol is not in the table because it is the
   vendor's own build, written by hand at its real cost: today's are 65 (Blaxel's CLI build), 65
-  (E2B's CLI build of the Dockerfile variant) and 77 (Runloop's blueprint build) code lines, against
-  Novita's 16 on the shared builder. `generate-providers` then rewrites 15 files for all four. Before this ADR a provider meant roughly 21 hand-edited files. The cost guard
+  (E2B's CLI build of the Dockerfile variant) code lines, against
+  Novita's 16 on the shared builder. `generate-providers` then rewrites 15 files for the cases shown. Before this ADR a provider meant roughly 21 hand-edited files. The cost guard
   (`packages/schema/scripts/new-provider.test.ts`) fails if the scaffold writes another file, leaves
   another file to edit, or grows its adapter skeleton; `check:new-provider` fails on any file it had
   to touch beyond the scaffold, the fills and the generator's outputs, and on any gate, so a new

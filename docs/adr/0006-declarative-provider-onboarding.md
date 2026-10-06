@@ -10,17 +10,16 @@ status: accepted
 
 ## Context
 
-Adding one benchmarked provider currently touches 25–34 files. Measured over the last four
-additions:
+Adding one benchmarked provider currently touches 25–34 files. Measured over the last three
+additions retained in the benchmark:
 
 | Commit | Files changed |
 |---|---|
 | `4ee64f2` Microsandbox local + cloud | 25 |
 | `6da0dce` Vercel Sandbox | 25 |
 | `22f36c4` run.cloud | 34 |
-| `36a802a` Runloop | 34 |
 
-**Eighteen** of those files were touched by *all four*. That set is the boilerplate spine — it is
+The files common to these additions form the boilerplate spine — it is
 not where the provider-specific work lives:
 
 ```text
@@ -80,7 +79,7 @@ near-identical credential blocks — `bench-suite.yml:240-277`, `toolchain-image
 `requiredEnvVars`. `workflow-sync.ts:105` already computes `requiredCredentialKeys()` — **the
 generator exists inside the checker; it just compares instead of emitting.** The other ~20 CI/doc
 sites have no gate, and `setup-privileged-environment.sh:57-62` is already stale (omits
-`RUNLOOP_API_KEY` and all three `VERCEL_*`).
+all three `VERCEL_*`).
 
 **4. The env gatekeeper hand-syncs a schema against a key array.** `providers/src/config.ts:23-44`
 declares `envSchema`; `:46-62` repeats every key in `ENV_KEYS`; `:73-76` loops over the array to
@@ -194,7 +193,7 @@ of identity.
 export type ProviderArtifact =
   | { kind: "none" }                                  // blaxel: vendor stock image
   | { kind: "image" }                                 // modal, namespace, runcloud, microsandbox
-  | { kind: "baked"; nameSuffix?: string }            // e2b, daytona-*, novita, runloop
+  | { kind: "baked"; nameSuffix?: string }            // e2b, daytona-*, novita
   | { kind: "mirror"; repository: string }            // vercel
   | { kind: "built"; recipe: string };                 // modal-gpu: image built at run time
 ```
@@ -445,7 +444,7 @@ file → optionally one bake file →
   switches. Large but mechanically backstopped (`Record<ProviderId, …>`, exhaustive switches, and
   ADR-0007's correlated loader); it should land alone, with no new provider riding along.
 - **`workflow-hardening.test.ts`'s provider-specific asserts stay hand-maintained.** The Vercel
-  `toHaveLength(3)` count and the scoped `RUNLOOP_API_KEY`/`RUN_CLOUD_API_KEY` expression pins are
+  `toHaveLength(3)` count and the scoped `RUN_CLOUD_API_KEY` expression pin are
   security invariants about *specific* providers, not derivable facts. They are correctly special.
 
 **We explicitly do not:** put vendor option names or create-error regexes in the registry; validate

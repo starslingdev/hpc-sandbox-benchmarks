@@ -27,7 +27,6 @@ import { bakeE2bTemplate } from "./e2b.ts";
 import { bakeFreestyleSnapshot } from "./freestyle.ts";
 import { promoteImage } from "./image.ts";
 import { bakeNovitaTemplate } from "./novita.ts";
-import { bakeRunloopBlueprint } from "./runloop.ts";
 import type { Log } from "./types.ts";
 
 export type BakeProviderArtifact = (
@@ -46,7 +45,6 @@ export const BAKED_ARTIFACT_BUILDERS = {
 	"daytona-container": bakeDaytonaContainerSnapshot,
 	blaxel: bakeBlaxelImage,
 	novita: bakeNovitaTemplate,
-	runloop: bakeRunloopBlueprint,
 	freestyle: bakeFreestyleSnapshot,
 } as const satisfies Record<BakedProviderId, BakeProviderArtifact>;
 

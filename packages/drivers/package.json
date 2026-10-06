@@ -26,7 +26,6 @@
     "@sandbox-benchmarks/namespace": "workspace:*",
     "@sandbox-benchmarks/novita": "workspace:*",
     "@sandbox-benchmarks/runcloud": "workspace:*",
-    "@sandbox-benchmarks/runloop": "workspace:*",
     "@sandbox-benchmarks/tama": "workspace:*",
     "@sandbox-benchmarks/vercel": "workspace:*"
   },

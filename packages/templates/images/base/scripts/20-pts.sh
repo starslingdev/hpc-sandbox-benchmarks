@@ -37,7 +37,7 @@ done
 # > /var/lib/phoronix-test-suite lines up at runtime.
 printf 'y\nn\nn\nn\nn\nn\ny\n' | phoronix-test-suite batch-setup
 
-# > E2B, Novita and Runloop inject an unprivileged runtime user after importing this image. That user
+# > Some providers inject an unprivileged runtime user after importing this image. That user
 # > keeps its OWN mutable PTS state under $HOME (PTS's default, which it creates itself) and shares only
 # > the baked profiles, via the image's PTS_TEST_INSTALL_ROOT_PATH — so what has to be writable here is
 # > the install bookkeeping PTS writes beside the profiles it installs, not root's private state.

@@ -21,8 +21,7 @@ directions end up describing different machinery:
   iodepth 64 collapses to one request in flight, and each cache miss waits a full round trip to
   the virtual disk.
 
-Run 36356024651 shows the result: Runloop posts 267,000 buffered random-write IOPS beside 8,555
-buffered random-read IOPS, and every provider but one reads several times slower than it
+Run 36356024651 shows the result: nearly every provider reads several times slower than it
 writes. Run 31066359914, the last complete O_DIRECT Run, had reads and writes of the same order
 on every provider (for example Blaxel 218,000 / 210,000 IOPS, Daytona (VM) 271,500 / 237,500),
 which is how a storage device behaves.

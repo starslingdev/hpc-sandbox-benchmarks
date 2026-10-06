@@ -77,7 +77,6 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"namespace",
 			"novita",
 			"runcloud",
-			"runloop",
 			"tama",
 			"vercel",
 		]);
@@ -249,7 +248,6 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"daytona-vm": 0.3312,
 			"daytona-container": 0.3312,
 			novita: 0.23328,
-			runloop: 0.6336,
 			boat: 0.036,
 		};
 		for (const [id, cost] of Object.entries(expected)) {

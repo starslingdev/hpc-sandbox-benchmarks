@@ -31,9 +31,9 @@ hypervisor identifiers, and several runtimes expose the same guest devices. The 
 evidence or the absence of a CPUID flag. Weak single hints remain in the ranked evidence but do not
 become a named machine verdict. Detection remains a cross-check on the declaration; a
 contradiction requires review of the underlying signals rather than an automatic relabeling.
-The committed Run 35819944942 predates this stricter rule. Its Runloop and Vercel system records
+The committed Run 35819944942 predates this stricter rule. Its Vercel system records
 label `oci-container` from a weak marker plus just one hardening signal; those historical labels
-should be treated as unconfirmed until those providers are remeasured. The new rule requires two
+should be treated as unconfirmed until that provider is remeasured. The new rule requires two
 independent live containment signals before reporting a generic OCI container.
 
 ## Target spec

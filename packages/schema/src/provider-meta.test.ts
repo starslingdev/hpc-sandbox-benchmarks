@@ -24,7 +24,6 @@ const REQUIRED_INPUTS = {
 	"modal-gvisor": ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 	"modal-vm": ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 	novita: ["NOVITA_API_KEY"],
-	runloop: ["RUNLOOP_API_KEY"],
 	namespace: ["NSC_TOKEN_FILE"],
 	vercel: ["VERCEL_OIDC_TOKEN"],
 	runcloud: ["RUN_CLOUD_API_KEY"],
@@ -43,7 +42,6 @@ const ARTIFACT_KINDS = {
 	"modal-gvisor": "image",
 	"modal-vm": "image",
 	novita: "baked",
-	runloop: "baked",
 	namespace: "image",
 	vercel: "mirror",
 	runcloud: "image",
@@ -60,7 +58,6 @@ const BAKED = {
 	blaxel: true,
 	freestyle: true,
 	novita: true,
-	runloop: true,
 } as const satisfies Record<BakedProviderId, true>;
 
 function localRuntimeDependency(importer: string, specifier: string): string | undefined {
@@ -140,7 +137,6 @@ describe("provider metadata authoring", () => {
 			"blaxel",
 			"freestyle",
 			"novita",
-			"runloop",
 		]);
 		const acceptBaked = (id: BakedProviderId) => id;
 		const acceptStock = (id: StockProviderId) => id;

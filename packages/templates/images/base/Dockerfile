@@ -79,7 +79,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # > unprivileged runtime user, who otherwise falls back to the config's ~/.phoronix-test-suite and
 # > reports zero installed tests. Mutable state is left to PTS's own per-user default instead, so root
 # > keeps /var/lib (its daemonized branch forces that regardless) while an unprivileged user gets
-# > $HOME — sharing root's 0600 core.pt2so and a HOME-expanded results tree is what broke Runloop. The
+# > $HOME — sharing root's 0600 core.pt2so and a HOME-expanded results tree is what broke unprivileged runs. The
 # > runtime entry points restate this (PTS_STATE_SELECT_SH in packages/schema/src/toolchain.ts) because
 # > already-published images predate this ENV.
 ENV MISE_DATA_DIR=/usr/local/share/mise \

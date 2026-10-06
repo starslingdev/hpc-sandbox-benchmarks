@@ -8,8 +8,8 @@
 // makes the baked toolchain MISS on every provider and every sandbox. The fallback then downloads the
 // stale node and rewrites the image's own /etc/mise/config.toml to point at it, and the four
 // setupNode suites measure a runtime-fetched toolchain rather than the pinned one — silently,
-// wherever the sandbox user is root. Where it is not (runloop), the write is denied and the step
-// dies, which is how a repo-wide measurement bug surfaced as one provider looking flaky.
+// wherever the sandbox user is root. Where it is not, the write is denied and the step
+// dies, which can make a repo-wide measurement bug appear provider-specific.
 //
 // The harness deliberately does NOT import the templates package (it stays decoupled from the bake),
 // so the coupling cannot hold by construction the way PTS_APT_DEPS does — this gate is the

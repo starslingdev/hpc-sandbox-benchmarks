@@ -26,16 +26,16 @@ defined by `@computesdk/provider`'s `defineProvider`, and the evidence says it n
 
 ### ComputeSDK is now the minority case
 
-Census of the 14 registered providers on the post-Tama `main` snapshot immediately preceding this
+Census of the 13 retained providers on the post-Tama `main` snapshot immediately preceding this
 ADR series:
 
 | How it attaches | Count | Providers |
 |---|---|---|
 | Published `@computesdk/*` wrapper, unmodified | **3** | `modal-gvisor`, `modal-vm`, `namespace` |
-| Published wrapper, patched through its private `.methods` table | **6** | `e2b`, `daytona-vm`, `daytona-container`, `blaxel`, `runloop`, `novita` |
+| Published wrapper, patched through its private `.methods` table | **5** | `e2b`, `daytona-vm`, `daytona-container`, `blaxel`, `novita` |
 | Hand-written `defineProvider` | **5** | `microsandbox-local`, `microsandbox-cloud`, `vercel`, `runcloud`, `tama` |
 
-**Only 21% consume a wrapper as shipped, and two of those three are the same vendor.** The last
+**Only 23% consume a wrapper as shipped, and two of those three are the same vendor.** The last
 three providers added — runcloud, microsandbox, tama — are all hand-written. tama has no SDK in any
 language: its entire control plane is `spawn()` on a CLI binary (`tama.ts:11`).
 
@@ -97,9 +97,9 @@ that only throws, kept because *"Required by SandboxMethods, so it cannot be omi
 (`tama.ts:214`, `runcloud.ts:359`, `microsandbox.ts:125`); four independent reinventions of the same
 `nohup … &` line; five `mapStatus` functions each collapsing a richer vendor state machine into
 computesdk's three values, each with a comment defending the same lossy choice; six `{ sandbox,
-sandboxId }` rewraps; five near-identical `assertPatchable` guards that exist only because
+sandboxId }` rewraps; four near-identical `assertPatchable` guards that exist only because
 `defineProvider` returns a generated class with no override point, so wrappers reach into its private
-`.methods` table and clone it (`novita.ts:87`, `runloop.ts:31`, `e2b-root.ts:19`,
+`.methods` table and clone it (`novita.ts:87`, `e2b-root.ts:19`,
 `blaxel-volume.ts:36`, `daytona-target.ts:37`).
 
 **An eager import wall.** `adapters.ts:5-25` statically imports every vendor SDK, and the

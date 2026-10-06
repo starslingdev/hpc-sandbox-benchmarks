@@ -73,7 +73,6 @@ describe("buildReleasePlan matrix", () => {
 			"modal-gvisor",
 			"modal-vm",
 			"novita",
-			"runloop",
 			"namespace",
 			"vercel",
 			"runcloud",
@@ -129,23 +128,14 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.image.source).toBe(config.toolchainImageVersion);
 	});
 
-	test("accepts a scoped Runloop release and makes it required", () => {
-		const plan = buildReleasePlan({ ...backfillBase, providers: "runloop" });
-		expect(plan.matrix.include).toEqual([{ provider: "runloop", required: true }]);
-		expect(plan.required).toEqual(["runloop"]);
-		expect(plan.providers[0]?.artifact).toBe(config.runloopBlueprintCandidate);
-	});
-
 	// Unscoped, the same providers are simply skipped — they are not in the required set, so a missing
 	// credential is a skip and the release proceeds. Only a scope makes it a demand.
 	test("the same provider is fine in an unscoped release", () => {
 		const plan = buildReleasePlan(base);
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("blaxel");
-		expect(plan.matrix.include.map((c) => c.provider)).toContain("runloop");
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("boat");
 		expect(plan.required).toContain("blaxel");
 		expect(plan.required).not.toContain("boat");
-		expect(plan.required).not.toContain("runloop");
 		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat", "brezel"]);
 	});
 

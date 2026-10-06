@@ -34,7 +34,6 @@ const envSchema = type({
 	"DAYTONA_CONTAINER_SNAPSHOT?": "string >= 1",
 	"NOVITA_API_KEY?": "string >= 1",
 	"NOVITA_TEMPLATE?": "string >= 1",
-	"RUNLOOP_BLUEPRINT?": "string >= 1",
 	"TAMA_CLI?": "string >= 1",
 	"BOAT_BASE_URL?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
@@ -69,7 +68,6 @@ export const ENV_KEYS = [
 	"DAYTONA_CONTAINER_SNAPSHOT",
 	"NOVITA_API_KEY",
 	"NOVITA_TEMPLATE",
-	"RUNLOOP_BLUEPRINT",
 	"TAMA_CLI",
 	"BOAT_BASE_URL",
 	"MSB_API_URL",
@@ -143,8 +141,6 @@ const daytonaContainerSnapshotDefault = bakedArtifactName("daytona-container", "
 const daytonaContainerSnapshotCandidate = bakedArtifactName("daytona-container", "candidate");
 const novitaTemplateVersion = bakedArtifactName("novita", "version");
 const novitaTemplateCandidate = bakedArtifactName("novita", "candidate");
-const runloopBlueprintVersion = bakedArtifactName("runloop", "version");
-const runloopBlueprintCandidate = bakedArtifactName("runloop", "candidate");
 // VCR refs are rooted at a human-readable Vercel namespace resolved from the environment, defaulting
 // to this repository's own team/project (schema-owned, so the build pins and the runtime agree). The
 // workflow overrides the candidate tag with the immutable fully-qualified digest after mirroring the
@@ -216,13 +212,6 @@ export const config = {
 	novita: {
 		apiKey: env.NOVITA_API_KEY,
 	} satisfies NovitaConfig,
-	/** The Runloop Blueprint runtime boots by name. `RUNLOOP_BLUEPRINT` is a local/CI validation
-	 * override; ordinary benchmark runs use the immutable version-scoped public Blueprint. */
-	runloopBlueprint: env.RUNLOOP_BLUEPRINT ?? runloopBlueprintVersion,
-	/** Public (version-scoped) Runloop Blueprint name; the promote target. */
-	runloopBlueprintVersion,
-	/** Mutable candidate Runloop Blueprint name the bake creates while iterating. */
-	runloopBlueprintCandidate,
 	/** The `tama` binary the CLI-driven adapter spawns for every control-plane call; `TAMA_CLI`
 	 *  override, else the name resolved from PATH (what `.github/actions/setup-tama` installs).
 	 *  Resolved HERE rather than at the spawn site so the empty-is-unset rule above covers it — CI

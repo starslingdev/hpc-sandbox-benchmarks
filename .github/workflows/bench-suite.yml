@@ -128,8 +128,6 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_SECRET || '' }}
           NOVITA_API_KEY: ${{ contains(fromJSON(inputs.providers), 'novita') && secrets.NOVITA_API_KEY || '' }}
           NOVITA_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
-          RUNLOOP_API_KEY: ${{ contains(fromJSON(inputs.providers), 'runloop') && secrets.RUNLOOP_API_KEY || '' }}
-          RUNLOOP_BLUEPRINT: ${{ contains(fromJSON(inputs.providers), 'runloop') && (env.RUNLOOP_BLUEPRINT || vars.RUNLOOP_BLUEPRINT || secrets.RUNLOOP_BLUEPRINT) || '' }}
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}
           VERCEL_OIDC_TOKEN: ${{ contains(fromJSON(inputs.providers), 'vercel') && steps.vercel-auth.outcome == 'success' && env.VERCEL_OIDC_TOKEN || '' }}
           VERCEL_TEAM_SLUG: ${{ contains(fromJSON(inputs.providers), 'vercel') && (env.VERCEL_TEAM_SLUG || vars.VERCEL_TEAM_SLUG || secrets.VERCEL_TEAM_SLUG) || '' }}

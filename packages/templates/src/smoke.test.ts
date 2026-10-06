@@ -125,7 +125,7 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(pts?.cmd).toContain('echo "pts-profile-count=$actual"');
 	});
 
-	// Runloop injects an unprivileged runtime user, so the non-root branch is the one this probe exists
+	// Some providers inject an unprivileged runtime user, so the non-root branch is what this probe exists
 	// for — and the branch a `id() { printf '0' }`-only harness would never execute. Both identities are
 	// run for real below, and every functional case after this repeats under both.
 	it("keeps root on the baked state directory", async () => {

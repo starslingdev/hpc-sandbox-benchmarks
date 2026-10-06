@@ -21,7 +21,6 @@ describe("generated driver loader", () => {
 			"modal-gvisor",
 			"modal-vm",
 			"novita",
-			"runloop",
 			"namespace",
 			"vercel",
 			"runcloud",

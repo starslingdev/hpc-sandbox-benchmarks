@@ -15,7 +15,6 @@ export interface DriverModuleMap {
 	"modal-gvisor": typeof import("@sandbox-benchmarks/modal/gvisor").default;
 	"modal-vm": typeof import("@sandbox-benchmarks/modal/vm").default;
 	novita: typeof import("@sandbox-benchmarks/novita").default;
-	runloop: typeof import("@sandbox-benchmarks/runloop").default;
 	namespace: typeof import("@sandbox-benchmarks/namespace").default;
 	vercel: typeof import("@sandbox-benchmarks/vercel").default;
 	runcloud: typeof import("@sandbox-benchmarks/runcloud").default;
@@ -50,7 +49,6 @@ export const DRIVERS: {
 	"modal-gvisor": () => import("@sandbox-benchmarks/modal/gvisor").then((module) => module.default),
 	"modal-vm": () => import("@sandbox-benchmarks/modal/vm").then((module) => module.default),
 	novita: () => import("@sandbox-benchmarks/novita").then((module) => module.default),
-	runloop: () => import("@sandbox-benchmarks/runloop").then((module) => module.default),
 	namespace: () => import("@sandbox-benchmarks/namespace").then((module) => module.default),
 	vercel: () => import("@sandbox-benchmarks/vercel").then((module) => module.default),
 	runcloud: () => import("@sandbox-benchmarks/runcloud").then((module) => module.default),
@@ -70,7 +68,6 @@ export interface ArtifactBuilderMap {
 	"daytona-container": typeof import("@sandbox-benchmarks/daytona/container/artifact").default;
 	blaxel: typeof import("@sandbox-benchmarks/blaxel/artifact").default;
 	novita: typeof import("@sandbox-benchmarks/novita/artifact").default;
-	runloop: typeof import("@sandbox-benchmarks/runloop/artifact").default;
 	freestyle: SnapshotArtifactBuilder<"freestyle">;
 }
 
@@ -100,7 +97,6 @@ export const ARTIFACT_BUILDERS: {
 		import("@sandbox-benchmarks/daytona/container/artifact").then((module) => module.default),
 	blaxel: () => import("@sandbox-benchmarks/blaxel/artifact").then((module) => module.default),
 	novita: () => import("@sandbox-benchmarks/novita/artifact").then((module) => module.default),
-	runloop: () => import("@sandbox-benchmarks/runloop/artifact").then((module) => module.default),
 	freestyle: () =>
 		import("@sandbox-benchmarks/freestyle").then((module) =>
 			snapshotArtifactBuilder(module.default, module.snapshotBuild),

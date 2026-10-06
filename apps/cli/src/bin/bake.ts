@@ -153,7 +153,6 @@ if (import.meta.main) {
 				daytonaSnapshot: config.daytonaSnapshotDefault,
 				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
 				novitaTemplate: config.novitaTemplateVersion,
-				runloopBlueprint: config.runloopBlueprintVersion,
 				blaxelImage: bakedArtifactName("blaxel", "version"),
 			},
 			reports: promoted.reports,
@@ -201,7 +200,6 @@ if (import.meta.main) {
 		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
-		runloopBlueprintCandidate: config.runloopBlueprintCandidate,
 		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
@@ -266,7 +264,6 @@ if (import.meta.main) {
 			daytonaSnapshot: config.daytonaSnapshotCandidate,
 			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
 			novitaTemplate: config.novitaTemplateCandidate,
-			runloopBlueprint: config.runloopBlueprintCandidate,
 		},
 		reports,
 	});

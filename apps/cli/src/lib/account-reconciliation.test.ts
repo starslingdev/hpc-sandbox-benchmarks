@@ -65,7 +65,6 @@ test("foreign resources still block every account-scoped inventory before any de
 		"tama",
 		"blaxel",
 		"microsandbox-cloud",
-		"runloop",
 		"runcloud",
 		"namespace",
 		"vercel",

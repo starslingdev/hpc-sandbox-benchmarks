@@ -254,7 +254,7 @@ bench_cmd() {
 
 # --- Phoronix Test Suite (PTS) helpers ---
 
-# The toolchain bakes profiles as root under /var/lib, but E2B-compatible providers (Runloop) inject
+# The toolchain bakes profiles as root under /var/lib, but some providers inject
 # an unprivileged runtime user. Keep the installed profiles SHARED via the one path PTS 10.8.4 gives
 # its own env override, and leave that user's mutable state on PTS's own per-user default:
 #

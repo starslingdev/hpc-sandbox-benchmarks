@@ -264,7 +264,6 @@ describe("provider wiring projections", () => {
 			"modal-gvisor",
 			"modal-vm",
 			"novita",
-			"runloop",
 			"namespace",
 			"vercel",
 			"runcloud",

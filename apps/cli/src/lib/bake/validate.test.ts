@@ -10,7 +10,6 @@ const refs: CandidateRefs = {
 	daytonaContainerSnapshotCandidate: "snap-v1-container-candidate",
 	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
-	runloopBlueprintCandidate: "tc-v1-runloop-candidate",
 	blaxelImageCandidate: "tc-v1-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	vercelImageCandidate: "sandbox-benchmarks-toolchain-vercel:v1-candidate",
@@ -56,12 +55,6 @@ describe("candidateCreateOptions", () => {
 	it("points novita at its candidate template via snapshotId (e2b mapping, Novita's control plane)", () => {
 		expect(candidateCreateOptions("novita", refs)).toEqual({
 			snapshotId: "tc-v1-novita-candidate",
-		});
-	});
-
-	it("points Runloop at its candidate Blueprint by name", () => {
-		expect(candidateCreateOptions("runloop", refs)).toEqual({
-			blueprint_name: "tc-v1-runloop-candidate",
 		});
 	});
 

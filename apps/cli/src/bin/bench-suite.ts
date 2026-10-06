@@ -74,9 +74,8 @@ function plural(n: number, singular: string, pluralForm: string = `${singular}s`
 /**
  * Job-summary rendering for the observed effective user, with a visible warning on contract drift.
  *
- * The expectation is per-provider ({@link isUnexpectedRuntimeUser}), NOT a hardcoded "root": Runloop
- * runs its lane as an unprivileged user by design, so a fixed expectation would mark all twelve of its
- * replicates anomalous on a healthy run and bury the identity change this column exists to surface.
+ * The expectation is per-provider ({@link isUnexpectedRuntimeUser}), because some providers
+ * run unprivileged by design. A fixed root expectation would mark healthy runs anomalous.
  */
 export function runtimeUserSummary(providerId: string, user: string | undefined): string {
 	if (!user) return "—";

@@ -14,7 +14,6 @@ import modal_vm from "./modal-vm.ts";
 import namespace from "./namespace.ts";
 import novita from "./novita.ts";
 import runcloud from "./runcloud.ts";
-import runloop from "./runloop.ts";
 import tama from "./tama.ts";
 import vercel from "./vercel.ts";
 
@@ -27,7 +26,6 @@ const MODULES = {
 	"modal-gvisor": modal_gvisor,
 	"modal-vm": modal_vm,
 	novita: novita,
-	runloop: runloop,
 	namespace: namespace,
 	vercel: vercel,
 	runcloud: runcloud,
@@ -46,7 +44,6 @@ export const REGISTRY = {
 	"modal-gvisor": MODULES["modal-gvisor"].meta,
 	"modal-vm": MODULES["modal-vm"].meta,
 	novita: MODULES.novita.meta,
-	runloop: MODULES.runloop.meta,
 	namespace: MODULES.namespace.meta,
 	vercel: MODULES.vercel.meta,
 	runcloud: MODULES.runcloud.meta,

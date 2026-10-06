@@ -120,16 +120,6 @@
       "uncatalogued": []
     },
     {
-      "providerId": "runloop",
-      "costEvidence": [],
-      "validationStatus": "pending",
-      "observedSpecs": {},
-      "metrics": [],
-      "suitesCovered": [],
-      "gaps": [],
-      "uncatalogued": []
-    },
-    {
       "providerId": "tama",
       "costEvidence": [],
       "validationStatus": "validated",

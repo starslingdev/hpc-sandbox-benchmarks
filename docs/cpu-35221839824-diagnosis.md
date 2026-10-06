@@ -31,7 +31,6 @@ The fix reports publication blockers before the bounded metric-shortfall list.
 | Tama synthetic | 2 | Provider CLI reported failed provisioning. |
 | Tama realworld | 20 | Provider CLI reported failed provisioning; no more specific vendor cause was retained. |
 | Blaxel realworld | 21 | Nine gateway/background-launch/clone failures; twelve OpenClaw Test Types failures. |
-| Runloop realworld | 2 | Mastra Git fetch returned HTTP 503; one Better Auth PTS installation was absent despite installer exit 0. |
 | Novita realworld | 1 | OpenClaw PTS installation was absent despite installer exit 0. |
 
 All twelve Blaxel OpenClaw Test Types forensic archives contain native Go TypeScript compiler
@@ -85,13 +84,13 @@ Do not use GitHub's **Re-run failed jobs** for this run. Its frozen retry allowa
 `executeExperimentBatch` refuses cells already present in the journal. New attempts would not
 constitute authorized retry lineage. A fresh experiment is required after the fix is merged.
 
-The six affected accounts (seven providers; both Modal variants share the `modal` quota domain)
+The five affected accounts (six providers; both Modal variants share the `modal` quota domain)
 are now clear for admission. To repeat the affected providers at the
 corrected main revision, preserving normal suite replica/pass defaults:
 
 ```sh
 gh workflow run bench-matrix.yml --repo starslingdev/hpc-sandbox-benchmarks --ref main \
-  -f providers=modal-gvisor,modal-vm,runcloud,tama,blaxel,runloop,novita \
+  -f providers=modal-gvisor,modal-vm,runcloud,tama,blaxel,novita \
   -f allow_partial=true
 ```
 

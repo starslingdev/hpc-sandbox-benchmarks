@@ -148,8 +148,7 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
    | `promote` | Uncheck to bake + verify only; the publish job is skipped. |
 
    A backfill needs no shared build phase: every provider derives its candidate or version artifact
-   from the one already-published toolchain base during bake/promote. Runloop builds a named Blueprint
-   whose Dockerfile starts from that digest. Vercel mirrors the same base into VCR because its platform
+   from the one already-published toolchain base during bake/promote. Vercel mirrors the same base into VCR because its platform
    cannot pull GHCR directly (and injects its own session agent at boot, so there is no provider delta).
 
    `force_republish` is rejected together with a `providers` list — they are opposite operations, and
@@ -163,20 +162,20 @@ Ungated: `ci.yml`, `ci-lint.yml`, and the toolchain `pr-gate` (Docker smoke, no 
      `BL_WORKSPACE` build and validate a candidate image from the shared base, then publish the
      version-named image. A scoped Blaxel dispatch is required/fail-closed.
    - **A drifted candidate base is refused** when the scope contains a provider that bakes its artifact
-     *from* the base (e2b, daytona, blaxel, novita, runloop). Those providers' candidates are verified but their version
+     *from* the base (e2b, daytona, blaxel, novita). Those providers' candidates are verified but their version
      artifacts are rebuilt, so the two are the same bytes only while `:vN-candidate` still is `:vN` —
      bump `TOOLCHAIN_VERSION` and cut a full release. Providers that don't bake from the base (vercel,
      modal, namespace, microsandbox) are unaffected: their version artifact is a retag of the exact
      candidate that was just booted.
 
-   The Runloop-on-v8 flow, as an example — two dispatches, neither of which touches another provider,
+   A scoped Blaxel backfill, as an example — two dispatches, neither of which touches another provider,
    and neither of which runs a build job:
 
-   1. **Actions → Toolchain image → Run workflow** with `providers=runloop`, `build=skip`, `promote`
-      unchecked. Builds the candidate Blueprint from the published GHCR `:v8` digest, boots it, and
+   1. **Actions → Toolchain image → Run workflow** with `providers=blaxel`, `build=skip`, `promote`
+      unchecked. Builds the candidate image from the published GHCR `:v8` digest, boots it, and
       runs the smoke spec. Nothing public moves.
-   2. Same dispatch with `promote` checked. Re-validates the candidate Blueprint and builds the
-      version-named Blueprint from the pinned base. The GHCR base `:v8` is never rewritten.
+   2. Same dispatch with `promote` checked. Re-validates the candidate image and builds the
+      version-named image from the pinned base. The GHCR base `:v8` is never rewritten.
 
    The release pulls exactly **one** GHCR package (`sandbox-benchmarks-toolchain`), anonymously, so the
    one-time Public bootstrap it needs has already been done. Adding a provider never adds a package —
@@ -234,7 +233,6 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `MODAL_TOKEN_ID` | Modal (gVisor), Modal (VM) provider runtime and validation |
    | `MODAL_TOKEN_SECRET` | Modal (gVisor), Modal (VM) provider runtime and validation |
    | `NOVITA_API_KEY` | Novita provider runtime and validation |
-   | `RUNLOOP_API_KEY` | Runloop provider runtime and validation |
    | `RUN_CLOUD_API_KEY` | run.cloud provider runtime and validation |
    | `TAMA_TOKEN` | tama provider runtime and validation |
    | `BOAT_API_KEY` | boat provider runtime and validation |
@@ -297,7 +295,6 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `DAYTONA_CONTAINER_SNAPSHOT` | Daytona (container) | — |
    | `MSB_API_URL` | Microsandbox Cloud | — |
    | `NOVITA_TEMPLATE` | Novita | — |
-   | `RUNLOOP_BLUEPRINT` | Runloop | — |
    | `VERCEL_TEAM_SLUG` | Vercel Sandbox | — |
    | `VERCEL_PROJECT_NAME` | Vercel Sandbox | — |
    | `TAMA_CLI` | tama | — |
@@ -380,13 +377,6 @@ Copy [`.env.example`](../.env.example) to a gitignored `.env` and fill in the pr
 commit them; never paste them into issues or pull requests. See [SECURITY.md](../SECURITY.md).
 
 `microsandbox-cloud` needs `MSB_API_KEY`; `MSB_API_URL` is an optional endpoint override. The cloud adapter keeps the key in the SDK control-plane backend and never adds it to sandbox metadata, create-time environment variables, or guest commands.
-
-Runloop needs `RUNLOOP_API_KEY`. The release lane keeps it in the SDK control-plane client while
-building versioned Blueprints from digest-pinned public toolchain images; the runtime adapter boots the
-released Blueprint by name. The credential is never copied into Blueprint parameters, Devbox create
-options, or the guest. `RUNLOOP_BLUEPRINT` is an optional local runtime override; leave it unset to use
-the canonical version-scoped Blueprint. Runloop disk snapshots remain temporary lifecycle-benchmark
-measurements; they are not release artifacts and are never selected for ordinary benchmark startup.
 
 run.cloud needs `RUN_CLOUD_API_KEY`. Its SDK reads the key directly from the benchmark process; the adapter never adds it to sandbox metadata, create-time environment variables, or guest commands.
 

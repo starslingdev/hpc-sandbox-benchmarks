@@ -15,8 +15,6 @@ export interface CandidateRefs {
 	daytonaContainerSnapshotCandidate: string;
 	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
 	novitaTemplateCandidate: string;
-	/** Candidate Blueprint on Runloop's control plane. */
-	runloopBlueprintCandidate: string;
 	/** Candidate sandbox image in the Blaxel workspace registry. */
 	blaxelImageCandidate: string;
 	toolchainImageCandidate: string;
@@ -90,11 +88,6 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 			return {
 				artifact: { kind: "baked", ref: refs.novitaTemplateCandidate },
 				createOptions: { snapshotId: refs.novitaTemplateCandidate },
-			};
-		case "runloop":
-			return {
-				artifact: { kind: "baked", ref: refs.runloopBlueprintCandidate },
-				createOptions: { blueprint_name: refs.runloopBlueprintCandidate },
 			};
 		case "namespace":
 		// No template/snapshot system — points create() at the candidate image directly, same as modal.

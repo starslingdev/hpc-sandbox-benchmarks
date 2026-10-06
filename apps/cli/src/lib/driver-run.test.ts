@@ -103,7 +103,6 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 			"namespace",
 			"novita",
 			"runcloud",
-			"runloop",
 			"tama",
 			"vercel",
 		]);

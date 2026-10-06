@@ -14,7 +14,6 @@ export const PROVIDER_IDS = [
 	"modal-gvisor",
 	"modal-vm",
 	"novita",
-	"runloop",
 	"namespace",
 	"vercel",
 	"runcloud",
