@@ -1,7 +1,6 @@
 import { dirname, resolve } from "node:path";
 import type { LeaderboardDataset } from "@sandbox-benchmarks/results";
-import { combineLeaderboardDatasets } from "@sandbox-benchmarks/results";
-import { parseRun } from "@sandbox-benchmarks/schema";
+import { combineLeaderboardDatasets, parseActiveLeaderboardRun } from "@sandbox-benchmarks/results";
 import { type } from "arktype";
 
 /**
@@ -29,10 +28,12 @@ export async function loadLeaderboardInput(
 	cohortReview?: string,
 ): Promise<LeaderboardDataset> {
 	const input: unknown = await Bun.file(path).json();
-	if (!Array.isArray(input)) return parseRun(input);
+	if (!Array.isArray(input)) return parseActiveLeaderboardRun(input);
 	const manifest = datasetManifestSchema.assert(input);
 	const runs = await Promise.all(
-		manifest.map(async (entry) => parseRun(await Bun.file(resolve(dirname(path), entry)).json())),
+		manifest.map(async (entry) =>
+			parseActiveLeaderboardRun(await Bun.file(resolve(dirname(path), entry)).json()),
+		),
 	);
 	return combineLeaderboardDatasets(runs, { cohortReview });
 }

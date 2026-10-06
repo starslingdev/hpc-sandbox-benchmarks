@@ -27,12 +27,13 @@ import {
 	leaderboardMetricFigures,
 	metricFigureModelOf,
 	POOLED_BOARD_HEADING,
+	parseActiveLeaderboardRun,
 	REPO_URL,
 	renderLeaderboardFigureHtml,
 	renderLeaderboardMarkdown,
 	SYNTHETIC_DIMENSIONS,
 } from "@sandbox-benchmarks/results";
-import type { MetricDef, Run } from "@sandbox-benchmarks/schema";
+import type { MetricDef, parseRun, Run } from "@sandbox-benchmarks/schema";
 import {
 	canSeparate,
 	DEFAULT_ALPHA,
@@ -41,7 +42,6 @@ import {
 	getProvider,
 	kolmogorovSmirnov,
 	mannWhitneyU,
-	parseRun,
 } from "@sandbox-benchmarks/schema";
 import { findRepoRoot } from "./lib/workspace.ts";
 
@@ -463,7 +463,7 @@ function readCommittedRun(): CommittedRun {
 	const runId = runIdOf(committed);
 	const source = runFile(runId);
 	try {
-		const run = parseRun(JSON.parse(readFileSync(source, "utf8")));
+		const run = parseActiveLeaderboardRun(JSON.parse(readFileSync(source, "utf8")));
 		return { committed, runId, run, figures: leaderboardFigures(benchmarkDataOf(run)) };
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {

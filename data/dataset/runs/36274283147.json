@@ -9395,6 +9395,17 @@
       "uncatalogued": []
     },
     {
+      "providerId": "runloop",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
       "providerId": "tama",
       "costEvidence": [],
       "artifactEvidence": [],
