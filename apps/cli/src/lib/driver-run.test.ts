@@ -93,6 +93,7 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 			"blaxel",
 			"boat",
 			"brezel",
+			"createos",
 			"daytona-container",
 			"daytona-vm",
 			"e2b",

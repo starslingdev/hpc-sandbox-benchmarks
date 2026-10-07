@@ -17,6 +17,7 @@
     "@sandbox-benchmarks/blaxel": "workspace:*",
     "@sandbox-benchmarks/boat": "workspace:*",
     "@sandbox-benchmarks/brezel": "workspace:*",
+    "@sandbox-benchmarks/createos": "workspace:*",
     "@sandbox-benchmarks/daytona": "workspace:*",
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/e2b": "workspace:*",

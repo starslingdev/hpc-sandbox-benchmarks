@@ -1,0 +1,27 @@
+{
+  "name": "@sandbox-benchmarks/createos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CreateOS sandbox integration for driverkit.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nodeops-createos/sandbox": "catalog:computesdk",
+    "@sandbox-benchmarks/driver": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

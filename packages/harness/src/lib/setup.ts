@@ -67,7 +67,7 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 			label: "clone repo",
 			// Drop the token from the remote immediately so later steps can't leak it. Branch refs need
 			// the origin/ fallback: bare `checkout --detach <branch>` DWIMs a remote branch into -b mode.
-			script: `rm -rf ${DIR} && git clone "${CLONE_URL}" ${DIR} && cd ${DIR} && git remote set-url origin "${REPO_URL}" && (git checkout --detach "${ref}" 2>/dev/null || git checkout --detach "origin/${ref}") && git log -1 --oneline${sourceRevision ? ` && test "$(git rev-parse HEAD)" = "${sourceRevision}"` : ""}`,
+			script: `rm -rf ${DIR} && git clone "${CLONE_URL}" ${DIR} && cd ${DIR} && git remote set-url origin "${REPO_URL}" && (git checkout --detach "${ref}" 2>/dev/null || (git fetch origin "${ref}" && git checkout --detach FETCH_HEAD)) && git log -1 --oneline${sourceRevision ? ` && test "$(git rev-parse HEAD)" = "${sourceRevision}"` : ""}`,
 			timeoutMs: 5 * MIN,
 		},
 		{

@@ -144,6 +144,8 @@ jobs:
           BREZEL_API_URL: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
           BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
+          CREATEOS_API_KEY: ${{ contains(fromJSON(inputs.providers), 'createos') && secrets.CREATEOS_API_KEY || '' }}
+          CREATEOS_SANDBOX_BASE_URL: ${{ contains(fromJSON(inputs.providers), 'createos') && (env.CREATEOS_SANDBOX_BASE_URL || vars.CREATEOS_SANDBOX_BASE_URL || secrets.CREATEOS_SANDBOX_BASE_URL || 'https://api.sb.createos.sh') || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}

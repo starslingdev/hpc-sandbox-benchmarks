@@ -24,6 +24,7 @@ on:
           - 'boat'
           - 'freestyle'
           - 'brezel'
+          - 'createos'
           # <<< end generated: provider-options
       suite:
         description: Suite to run

@@ -44,6 +44,7 @@ const envSchema = type({
 	// VERCEL_PROJECT_ID) that `vercel pull` consumes; vercelVcrImageRefs rejects those forms.
 	"VERCEL_TEAM_SLUG?": "string >= 1",
 	"VERCEL_PROJECT_NAME?": "string >= 1",
+	"CREATEOS_SANDBOX_BASE_URL?": "string >= 1",
 });
 
 /**
@@ -75,6 +76,7 @@ export const ENV_KEYS = [
 	"VERCEL_CANDIDATE_IMAGE",
 	"VERCEL_TEAM_SLUG",
 	"VERCEL_PROJECT_NAME",
+	"CREATEOS_SANDBOX_BASE_URL",
 ] as const;
 
 // 2. Startup gatekeeper — validate the environment once, fail fast with a clear message. Only the
