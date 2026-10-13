@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUITES } from "@sandbox-benchmarks/schema";
@@ -9,10 +17,69 @@ it("emits a syntactically valid observed-specs script using the shared isolation
 	const syntax = Bun.spawnSync(["bash", "-n", "-c", OBSERVED_SPECS_SCRIPT]);
 	expect(syntax.exitCode, syntax.stderr.toString()).toBe(0);
 	expect(OBSERVED_SPECS_SCRIPT).toContain('source "$PWD/lib/probe/isolation/main.sh"');
+	expect(OBSERVED_SPECS_SCRIPT).toContain(
+		'user=$(id -un 2>/dev/null) || user=$(printf "uid-%s" "$(id -u)")',
+	);
+});
+
+it("records one fallback user value when id -un prints an unmapped uid and fails", () => {
+	const capture = OBSERVED_SPECS_SCRIPT.split("\n").find((line) =>
+		line.startsWith("user=$(id -un"),
+	);
+	expect(capture).toBeDefined();
+	const run = Bun.spawnSync([
+		"bash",
+		"-c",
+		`id() { if [ "$1" = -un ]; then printf '1000\\n'; return 1; fi; printf '1000\\n'; }; ${capture}; printf '%s' "$user"`,
+	]);
+	expect(run.exitCode).toBe(0);
+	expect(run.stdout.toString()).toBe("uid-1000");
 });
 
 describe("setupSteps", () => {
 	const labels = setupSteps(SUITES["cpu-node"]).map((step) => step.label);
+
+	it("normal setup gives an unmapped uid a writable baked node profile", () => {
+		const home = mkdtempSync(join(tmpdir(), "pts-node-profile-"));
+		try {
+			const step = setupSteps(SUITES["cpu-node"]).find(
+				(entry) => entry.label === "prepare writable PTS node-web-tooling profile",
+			);
+			expect(step).toBeDefined();
+			const source = join(home, "baked", "node-web-tooling-1.0.1");
+			const dest = join(home, ".phoronix-test-suite/installed-tests/pts/node-web-tooling-1.0.1");
+			mkdirSync(source, { recursive: true });
+			mkdirSync(join(home, ".phoronix-test-suite/installed-tests/pts"), { recursive: true });
+			writeFileSync(join(source, "pts-install.json"), "{}");
+			chmodSync(source, 0o555);
+			symlinkSync(source, dest);
+			const script = (step?.script ?? "").replace(
+				"/var/lib/phoronix-test-suite/installed-tests/pts/node-web-tooling-1.0.1",
+				source,
+			);
+			const run = Bun.spawnSync(
+				[
+					"bash",
+					"-c",
+					`id() { if [ "$1" = -u ]; then printf "1000\\n"; else return 1; fi; }; ${script}`,
+				],
+				{ env: { ...process.env, HOME: home } },
+			);
+			expect(run.exitCode, run.stderr.toString()).toBe(0);
+			expect(readFileSync(join(dest, "pts-install.json"), "utf8")).toBe("{}");
+			const lock = Bun.spawnSync([
+				"bash",
+				"-c",
+				'test ! -L "$1" && : > "$1/run_lock"',
+				"bash",
+				dest,
+			]);
+			expect(lock.exitCode, lock.stderr.toString()).toBe(0);
+		} finally {
+			chmodSync(join(home, "baked", "node-web-tooling-1.0.1"), 0o755);
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
 
 	it("clones the repo and brings the toolchain up (node + PTS for cpu-node)", () => {
 		expect(labels).toEqual([
@@ -23,6 +90,8 @@ describe("setupSteps", () => {
 			"setup node 22 + pnpm 10",
 			"ensure PTS build deps + fresh apt index",
 			"setup phoronix-test-suite",
+			"prepare writable PTS code for unmapped uid",
+			"prepare writable PTS node-web-tooling profile",
 		]);
 	});
 

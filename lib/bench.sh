@@ -255,16 +255,18 @@ bench_cmd() {
 # --- Phoronix Test Suite (PTS) helpers ---
 
 # The toolchain bakes profiles as root under /var/lib, but some providers inject
-# an unprivileged runtime user. Keep the installed profiles SHARED via the one path PTS 10.8.4 gives
-# its own env override, and leave that user's mutable state on PTS's own per-user default:
+# an unprivileged runtime user. PTS 10.8.4 accepts its install-root override only when that root
+# is writable. Named users can use the baked tree where it is writable; an unmapped uid gets a
+# writable HOME root with links to the baked profiles and absolute config paths.
 #
 #   - Without PTS_TEST_INSTALL_ROOT_PATH an unprivileged run falls back to the config's
 #     ~/.phoronix-test-suite/installed-tests/ and reports ZERO installed tests, even though it can read
 #     the baked tree perfectly well. Set here as a fallback in case an image importer strips the Docker
 #     ENV, and because the published v7 image predates that ENV entirely.
-#   - PTS_USER_PATH_OVERRIDE is UNSET rather than repointed for a non-root user: PTS's default already
-#     IS $HOME/.phoronix-test-suite and PTS creates it itself, so there is no mkdir here to fail under
-#     `set -e` when HOME is unset or unwritable. Pointing that user at the baked root is what breaks —
+#   - PTS_USER_PATH_OVERRIDE is UNSET for a named non-root user. For an injected uid with no passwd
+#     entry, PTS's posix_getpwuid() lookup misses HOME and chooses /.phoronix-test-suite, so create
+#     and select the writable HOME path explicitly. Its `~` config paths need the same correction.
+#     Pointing that user at the baked root breaks —
 #     root's core.pt2so is mode 0600, and PTS expands its non-daemon ResultsDirectory through HOME
 #     regardless of the override, so the shared setting both warns on every invocation and leaves the
 #     composite finder below searching a tree PTS never writes.
@@ -279,6 +281,20 @@ if [ -d /var/lib/phoronix-test-suite ]; then
 	export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/
 	if [ "$(id -u)" -eq 0 ]; then
 		export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
+	elif ! id -un >/dev/null 2>&1; then
+		if [ -z "${HOME:-}" ] || [ ! -w "$HOME" ]; then
+			echo "PTS needs a writable HOME for an unmapped uid" >&2
+			exit 1
+		fi
+		mkdir -p "$HOME/.phoronix-test-suite/installed-tests/pts" "$HOME/.phoronix-test-suite/test-results"
+		for profile in /var/lib/phoronix-test-suite/installed-tests/pts/*; do
+			[ -d "$profile" ] || continue
+			link="$HOME/.phoronix-test-suite/installed-tests/pts/$(basename "$profile")"
+			[ -e "$link" ] || ln -s "$profile" "$link"
+		done
+		export PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"
+		export PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"
+		export PATH="$HOME/.local/pts/bin:$PATH"
 	else
 		unset PTS_USER_PATH_OVERRIDE
 	fi
@@ -315,9 +331,8 @@ pts_user_dir() {
 	echo "$_pts_user_dir_cached"
 }
 
-# Where PTS keeps INSTALLED tests. Distinct from pts_user_dir since the non-root split: the baked
-# installed tree stays shared under /var/lib via PTS_TEST_INSTALL_ROOT_PATH while an unprivileged
-# user's mutable state lives under its own HOME. Anything that inspects or removes an INSTALL must
+# Where PTS keeps INSTALLED tests. An unmapped uid has a writable HOME root of links to baked
+# profiles; other users may use the baked root directly. Anything that inspects or removes an INSTALL must
 # resolve it through here — deriving it from pts_user_dir silently targets the wrong tree for every
 # non-root provider, so the removal no-ops and PTS keeps reporting the stale install as present.
 pts_install_root() {
@@ -581,6 +596,20 @@ _configure_pts_batch() {
 	# failure this check exists to prevent. A missing config means batch-setup wrote nothing at all.
 	cfg="$(pts_config_file)"
 	[ -f "$cfg" ] || return 1
+	# PTS 10.8.4 expands ~ with posix_getpwuid(), which has no home for an injected uid.
+	# Keep every PTS data path absolute so a successful run can actually save composite.xml.
+	if ! id -un >/dev/null 2>&1; then
+		python3 - "$cfg" "$HOME" <<'PY' || return 1
+from pathlib import Path
+import sys
+
+path, home = Path(sys.argv[1]), sys.argv[2]
+source = path.read_text()
+updated = source.replace("~/.phoronix-test-suite/", f"{home}/.phoronix-test-suite/")
+path.write_text(updated)
+PY
+		grep -qF "<ResultsDirectory>${HOME}/.phoronix-test-suite/test-results/</ResultsDirectory>" "$cfg" || return 1
+	fi
 	grep -q "<RunAllTestCombinations>${want}</RunAllTestCombinations>" "$cfg"
 }
 

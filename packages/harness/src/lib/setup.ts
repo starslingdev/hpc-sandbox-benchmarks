@@ -9,7 +9,7 @@
  *   BENCH_REPO_TOKEN  Token for cloning a private repo; stripped from the remote right after clone.
  */
 import type { Suite } from "@sandbox-benchmarks/schema";
-import { PTS_APT_DEPS } from "@sandbox-benchmarks/schema";
+import { PTS_APT_DEPS, SUITES } from "@sandbox-benchmarks/schema";
 import { MIN } from "./execute.ts";
 
 export const REPO_URL =
@@ -171,6 +171,62 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 			timeoutMs: 10 * MIN,
 			retries: 2,
 		});
+		steps.push({
+			label: "prepare writable PTS code for unmapped uid",
+			script: [
+				"set -euo pipefail",
+				'if [ "$(id -u)" -ne 0 ] && ! id -un >/dev/null 2>&1; then',
+				'  dest="$HOME/.local/pts"',
+				'  if [ ! -x "$dest/bin/phoronix-test-suite" ]; then',
+				'    [ ! -e "$dest" ] || { echo "Incomplete writable PTS installation" >&2; exit 1; }',
+				'    mkdir -p "$HOME/.local"',
+				'    tmp=$(mktemp -d "$HOME/.local/pts.XXXXXX")',
+				"    trap 'rm -rf \"$tmp\"' EXIT",
+				'    mkdir -p "$tmp/bin" "$tmp/share"',
+				'    cp -R /usr/share/phoronix-test-suite "$tmp/share/"',
+				'    python3 - /usr/bin/phoronix-test-suite "$tmp/bin/phoronix-test-suite" "$dest/share/phoronix-test-suite/" <<\'PY\'',
+				"from pathlib import Path",
+				"import sys",
+				"source = Path(sys.argv[1]).read_text()",
+				"old = \"export PTS_DIR='/usr/share/phoronix-test-suite/'\"",
+				"if source.count(old) != 1:",
+				"    raise SystemExit('Refusing writable PTS launcher: package layout changed')",
+				'Path(sys.argv[2]).write_text(source.replace(old, "export PTS_DIR=\'" + sys.argv[3] + "\'"))',
+				"PY",
+				'    chmod 755 "$tmp/bin/phoronix-test-suite"',
+				'    mv "$tmp" "$dest"',
+				"    trap - EXIT",
+				"  fi",
+				'  test -w "$dest/share/phoronix-test-suite/pts-core/objects"',
+				'  "$dest/bin/phoronix-test-suite" version',
+				"fi",
+			].join("\n"),
+			timeoutMs: 3 * MIN,
+		});
+		if (suite === SUITES["cpu-node"]) {
+			steps.push({
+				label: "prepare writable PTS node-web-tooling profile",
+				script: [
+					"set -euo pipefail",
+					'if [ "$(id -u)" -ne 0 ] && ! id -un >/dev/null 2>&1; then',
+					"  source=/var/lib/phoronix-test-suite/installed-tests/pts/node-web-tooling-1.0.1",
+					'  dest="$HOME/.phoronix-test-suite/installed-tests/pts/node-web-tooling-1.0.1"',
+					'  [ -d "$source" ] || { echo "Baked PTS profile missing" >&2; exit 1; }',
+					'  if [ -L "$dest" ]; then',
+					'    [ "$(readlink "$dest")" = "$source" ] || { echo "Unexpected PTS profile link" >&2; exit 1; }',
+					'    tmp=$(mktemp -d "$dest.XXXXXX")',
+					"    trap 'rm -rf \"$tmp\"' EXIT",
+					'    cp -R "$source"/. "$tmp"/',
+					'    chmod -R u+rwX "$tmp"',
+					'    rm "$dest" && mv "$tmp" "$dest"',
+					"    trap - EXIT",
+					"  fi",
+					'  [ -d "$dest" ] && [ ! -L "$dest" ] && [ -w "$dest" ] || { echo "PTS profile is not writable" >&2; exit 1; }',
+					"fi",
+				].join("\n"),
+				timeoutMs: 5 * MIN,
+			});
+		}
 	}
 
 	return steps;
@@ -215,7 +271,7 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"isolation_collect",
 	"isolation_classify",
 	"set -e",
-	"user=$(id -un)",
+	'user=$(id -un 2>/dev/null) || user=$(printf "uid-%s" "$(id -u)")',
 	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
 	"{",
 	`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,

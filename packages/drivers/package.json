@@ -27,6 +27,7 @@
     "@sandbox-benchmarks/novita": "workspace:*",
     "@sandbox-benchmarks/runcloud": "workspace:*",
     "@sandbox-benchmarks/tama": "workspace:*",
+    "@sandbox-benchmarks/tangle": "workspace:*",
     "@sandbox-benchmarks/vercel": "workspace:*"
   },
   "devDependencies": {

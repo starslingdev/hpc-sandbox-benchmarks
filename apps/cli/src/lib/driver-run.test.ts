@@ -104,6 +104,7 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 			"novita",
 			"runcloud",
 			"tama",
+			"tangle",
 			"vercel",
 		]);
 		expect([...driverIds, ...adapterIds].sort()).toEqual(PROVIDERS.map((meta) => meta.id).sort());

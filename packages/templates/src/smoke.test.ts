@@ -39,13 +39,13 @@ const INHERITED_OVERRIDE = "/inherited-from-image-env/";
  *    on `[ -d /var/lib/phoronix-test-suite ]`, which is false on every dev machine and CI runner, so
  *    without this rewrite BOTH branches would be skipped and the test would prove nothing. Only the
  *    path is relocated; the shell logic under test is byte-for-byte the shipped one.
- *  - `PTS_USER_PATH_OVERRIDE` is seeded in the child env. Dropping an override the image ENV already
- *    exported is the entire job of the non-root branch, and it is invisible unless something set it.
+ *  - `PTS_USER_PATH_OVERRIDE` is seeded in the child env so the named and unmapped uid branches
+ *    prove they replace an inherited image setting appropriately.
  */
 async function runPtsCheck(
 	installTests: string,
 	installedProfiles: string[],
-	{ uid = 0 }: { uid?: number } = {},
+	{ uid = 0, unmapped = false }: { uid?: number; unmapped?: boolean } = {},
 ): Promise<{
 	exitCode: number;
 	stdout: string;
@@ -57,20 +57,22 @@ async function runPtsCheck(
 	const output = installedProfiles.map((profile) => `'${profile}'`).join(" ");
 	const root = await mkdtemp(join(tmpdir(), "pts-smoke-"));
 	try {
+		const home = join(root, "home");
+		await mkdir(home);
 		const cmd = check.cmd.replaceAll("/var/lib/phoronix-test-suite", root);
 		// The stub records the resolved PTS env to a side file, leaving stdout exactly what the real
 		// command emits. `${VAR-}` (no colon) distinguishes unset from set-but-empty — the difference
 		// between "the override was dropped" and "it was exported as an empty string".
 		const probePath = join(root, "resolved-env");
 		const script =
-			`id() { printf '${uid}\\n'; }; ` +
+			`id() { if [ "$1" = -un ]; then ${unmapped ? "return 1" : "printf 'tester\\n'"}; else printf '${uid}\\n'; fi; }; ` +
 			`phoronix-test-suite() { printf 'override=%s\\ninstall_root=%s\\n' ` +
 			`"\${PTS_USER_PATH_OVERRIDE-<unset>}" "\${PTS_TEST_INSTALL_ROOT_PATH-<unset>}" ` +
 			`>${JSON.stringify(probePath)}; printf '%s\\n' ${output}; }; ${cmd}`;
 		const proc = Bun.spawn(["bash", "-c", script], {
 			stdout: "pipe",
 			stderr: "pipe",
-			env: { ...process.env, PTS_USER_PATH_OVERRIDE: INHERITED_OVERRIDE },
+			env: { ...process.env, HOME: home, PTS_USER_PATH_OVERRIDE: INHERITED_OVERRIDE },
 		});
 		const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
 		const probeFile = Bun.file(probePath);
@@ -146,12 +148,14 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(result.installRoot).toBe("<root>/installed-tests/");
 	});
 
-	// No mkdir on either branch: the probe runs under `set -euo pipefail` in smokeBashScript(), so a
-	// write that fails when HOME is unset or unwritable would abort the whole smoke run rather than
-	// report one failed check. PTS creates its own state dir, so there is nothing to pre-create.
-	it("never writes to the filesystem while selecting PTS state", () => {
-		const pts = smokeChecks.find((check) => check.name === "pts-installed-tests");
-		expect(pts?.cmd).not.toContain("mkdir");
+	it("uses the writable HOME state path for an unmapped uid", async () => {
+		const result = await runPtsCheck("fio-2.1.0", ["pts/fio-2.1.0"], {
+			uid: 1000,
+			unmapped: true,
+		});
+		expect(result.exitCode).toBe(0);
+		expect(result.userPathOverride).toBe("<root>/home/.phoronix-test-suite/");
+		expect(result.installRoot).toBe("<root>/home/.phoronix-test-suite/installed-tests/");
 	});
 
 	for (const uid of [0, 1000]) {
