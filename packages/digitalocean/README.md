@@ -46,9 +46,20 @@ any MicroVM it doesn't own (paused ones included) blocks a run. Before a live ro
 `benchmark-account-journal-digitalocean` branch, as described in
 [account admission before live rollout](../../docs/benchmark-execution-rollout.md#account-admission-before-live-rollout).
 
-MicroVMs run only in MKC1 and only `linux/amd64` images (public preview). The team's limits
-(`GET /v2/microvms/options`) are 32 GiB of memory, 400 GiB of disk and 200 MicroVMs. An 8/16
-MicroVM has a 320 GB (≈298 GiB) disk, so only one fits at a time. Keep `digitalocean` at
-`{"sandboxes": 1}` in `BENCH_ACCOUNT_CAPACITY` (that's also the default when it is absent). Never
-express the team's limits through the `vcpus` or `memoryGb` axes: the planner divides those by the
-4/8 target, not the 8/16 actually allocated.
+MicroVMs run only in MKC1 and only `linux/amd64` images (public preview).
+
+The limit that's actually enforced is **100 running vCPUs per account**, which allows 12 concurrent
+8/16 MicroVMs. `GET /v2/microvms/options` doesn't report it. The memory and disk limits that
+endpoint does report (32 GiB and 400 GiB on 2026-10-15) were not enforced: a smoke test ran
+12 × 8/16 at once, and the 13th create was refused with `400 FAILED_PRECONDITION total running vCPU
+limit reached for this account (limit: 100)`.
+
+The next constraint is exec's documented team-wide rate (60 per minute, 32 at once). Steady polling
+of a detached step costs about 6 execs per minute per sandbox, so about 10 concurrent sandboxes
+reach it.
+
+Set capacity with `{"sandboxes": N}` in `BENCH_ACCOUNT_CAPACITY`:
+- N is at most 12. Start at 8 or fewer until the real exec rate is measured.
+- Leave 8 vCPU of headroom if a toolchain release may validate DigitalOcean during a run.
+- Never express the team's limits through the `vcpus` or `memoryGb` axes. The planner divides those
+  by the 4/8 target, not the 8/16 actually allocated, so `vcpus: 100` would admit 25.
