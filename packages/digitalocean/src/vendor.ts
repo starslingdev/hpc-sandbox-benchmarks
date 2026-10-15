@@ -24,15 +24,15 @@ const IDLE_TIMEOUT = "4h";
 /** Groups the benchmark's MicroVMs in the console; ownership is the name. */
 const TAG = "sandbox-benchmarks";
 /** The bound on one control request; reads are also bounded by the kit's control timeout. */
-const CONTROL_TIMEOUT_MS = 30_000;
+export const CONTROL_TIMEOUT_MS = 30_000;
 /**
  * Exec documents a 60s limit, but a command still running at ~41-45s never answers: the gateway
  * holds the request ~125s and returns 524 (measured 2026-10-14). Bounded past the real limit.
  */
-const EXEC_TIMEOUT_MS = 60_000;
-/** Exec is limited team-wide (60/min, 32 concurrent); a 429 is waited out, not failed. */
+export const EXEC_TIMEOUT_MS = 60_000;
+/** Exec is limited team-wide (60/min, 32 concurrent): a 429 backs off 4+8+12+16+20s, a full window. */
 const EXEC_RATE_LIMIT_ATTEMPTS = 6;
-const EXEC_RATE_LIMIT_BACKOFF_MS = 2_000;
+const EXEC_RATE_LIMIT_BACKOFF_MS = 4_000;
 
 export const DIGITALOCEAN_MICROVM_ID = type("string.uuid");
 
@@ -102,9 +102,16 @@ class DigitalOceanError extends Error {
 }
 const status = httpStatus(DigitalOceanError, (error) => error.status);
 const classifiers = httpClassifiers(status);
-/** A DELETE sent while the MicroVM is still `creating` is refused until it is running or failed. */
-const stillProvisioning = (error: unknown) =>
-	error instanceof DigitalOceanError && error.code === "FAILED_PRECONDITION";
+/**
+ * Asked again rather than failed: a DELETE refused while the MicroVM is still `creating`, and a
+ * request that reached no HTTP status (a dropped connection or the request's own bound; a caller's
+ * abort is neither). A teardown that gave up on these would leak a MicroVM.
+ */
+const transient = (error: unknown) =>
+	status(error) === undefined
+		? error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError")
+		: classifiers.transient(error) ||
+			(error instanceof DigitalOceanError && error.code === "FAILED_PRECONDITION");
 
 /**
  * A paused MicroVM still holds its memory, disk and processes (and counts against the team's
@@ -216,8 +223,7 @@ export function digitalOceanVendor(
 			find: (marker, cursor, { signal }) =>
 				listPage(`&name=${encodeURIComponent(marker)}`, cursor, signal),
 			...classifiers,
-			// A teardown that lands mid-provisioning is asked again until the MicroVM can be deleted.
-			transient: (error) => classifiers.transient(error) || stillProvisioning(error),
+			transient,
 		},
 		data: {
 			attach: ({ raw }) => raw,

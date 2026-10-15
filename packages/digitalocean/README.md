@@ -26,7 +26,8 @@ are parsed with arktype.
   answers; the gateway returns HTTP 524 after roughly 125 s. Any step budgeted at 30 s or more is
   therefore detached and polled over short execs. Output over 4 MiB is reported as truncated, and
   the adapter fails rather than return partial output. A 429 from the team-wide exec rate limit
-  (60 per minute, 32 at once) is waited out.
+  (60 per minute, 32 at once) is retried with backoff for about a minute, one full window, and
+  then fails.
 - **Files:** there is no file API. The kit's exec-backed fallback serves files.
 - **Teardown:** a DELETE is refused (`400 FAILED_PRECONDITION`) while a MicroVM is still
   provisioning, so it is retried for longer than the readiness budget. Removal is confirmed by a
@@ -37,9 +38,17 @@ are parsed with arktype.
 - **Ownership:** each MicroVM is named by its `benchmark-<uuid>` marker, which is unique per region
   and listable by exact name, and tagged `sandbox-benchmarks`.
 
-## Limits (public preview)
+## Account and capacity
 
-MicroVMs run only in MKC1 and only `linux/amd64` images. Our team's limits (from
-`GET /v2/microvms/options`) are 32 GiB of memory, 400 GiB of disk and 200 MicroVMs. The disk limit
-fits one 8/16 MicroVM (320 GB) at a time, so `BENCH_ACCOUNT_CAPACITY` should hold `digitalocean`
-to one sandbox until DigitalOcean raises it.
+The DigitalOcean team must hold only benchmark MicroVMs. Admission inventories the whole team, and
+any MicroVM it doesn't own (paused ones included) blocks a run. Before a live rollout, add
+`DIGITAL_OCEAN_TOKEN` to the `privileged` environment and create the protected
+`benchmark-account-journal-digitalocean` branch, as described in
+[account admission before live rollout](../../docs/benchmark-execution-rollout.md#account-admission-before-live-rollout).
+
+MicroVMs run only in MKC1 and only `linux/amd64` images (public preview). The team's limits
+(`GET /v2/microvms/options`) are 32 GiB of memory, 400 GiB of disk and 200 MicroVMs. An 8/16
+MicroVM has a 320 GB (≈298 GiB) disk, so only one fits at a time. Keep `digitalocean` at
+`{"sandboxes": 1}` in `BENCH_ACCOUNT_CAPACITY` (that's also the default when it is absent). Never
+express the team's limits through the `vcpus` or `memoryGb` axes: the planner divides those by the
+4/8 target, not the 8/16 actually allocated.

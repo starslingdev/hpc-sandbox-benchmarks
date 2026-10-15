@@ -3,11 +3,14 @@
 // `vendorDriver`.
 
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { DIGITALOCEAN_PROVENANCE } from "./provenance.ts";
 import {
+	CONTROL_TIMEOUT_MS,
 	coveringSize,
 	DIGITALOCEAN_MICROVM_ID,
 	digitalOceanVendor,
+	EXEC_TIMEOUT_MS,
 	OFFERED_SIZES,
 } from "./vendor.ts";
 
@@ -21,12 +24,12 @@ const DELETE_TIMEOUT_MS = READY_TIMEOUT_MS + 3 * 60_000;
 export default defineVendorDriver("digitalocean", {
 	provenance: DIGITALOCEAN_PROVENANCE,
 	sandboxId: DIGITALOCEAN_MICROVM_ID,
-	// CPU and memory map onto the fixed pairs (`prepare` proves the reported size); every pair's disk
-	// is at least the smallest one's and has no create-time knob, so it is proven after boot.
+	// CPU and memory map onto the fixed pairs (`prepare` proves the reported size). Disk has no
+	// create-time knob; every pair's (50-400 GB) clears the target's, and it is proven after boot.
 	coverage: coverage({
 		vcpus: "mapped",
 		memoryGb: "mapped",
-		diskGb: { capacityAtLeast: 50 },
+		diskGb: { capacityAtLeast: TARGET_SPEC.diskGb },
 	}),
 	unsupported: ({ spec }) =>
 		coveringSize(spec)
@@ -35,7 +38,11 @@ export default defineVendorDriver("digitalocean", {
 	diskProof: {},
 	// No file API and exec dies past ~41s: long steps detach and are polled over short execs.
 	execution: { syncCapMs: 30_000, durable: "shell-detach" },
-	createBudget: { owner: "harness", timeoutMs: READY_TIMEOUT_MS + DELETE_TIMEOUT_MS },
+	// Every bound one create can spend: the POST, readiness, the exec-backed disk proof, and teardown.
+	createBudget: {
+		owner: "harness",
+		timeoutMs: CONTROL_TIMEOUT_MS + READY_TIMEOUT_MS + 2 * EXEC_TIMEOUT_MS + DELETE_TIMEOUT_MS,
+	},
 	timing: {
 		pollMs: 2_000,
 		readyTimeoutMs: READY_TIMEOUT_MS,

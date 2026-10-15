@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import type { VendorTiming } from "@sandbox-benchmarks/driver/vendor";
 import { restStub, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import { getProvider, hourlyCostAtTargetSpec } from "@sandbox-benchmarks/schema/providers";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import digitalocean from "./index.ts";
 import { coveringSize, digitalOceanPhase, digitalOceanVendor } from "./vendor.ts";
@@ -135,6 +136,19 @@ test("a request maps to the smallest offered pair covering both axes", () => {
 	expect(coveringSize({ vcpus: 2, memoryGb: 4 })).toEqual({ cpu: 2, memory: 4096 });
 	expect(coveringSize({ vcpus: 1, memoryGb: 8 })).toEqual({ cpu: 8, memory: 16384 });
 	expect(coveringSize({ vcpus: 32, memoryGb: 64 })).toBeUndefined();
+});
+
+test("the target runs on the 8/16 size, and is priced as exactly that size", () => {
+	// The registry's linear price rule is only right for targets this mapping serves with 8/16.
+	expect(coveringSize(TARGET_SPEC)).toEqual({ cpu: 8, memory: 16384 });
+	expect(hourlyCostAtTargetSpec(getProvider("digitalocean"))).toBeCloseTo(8 * 0.022 + 16 * 0.0085);
+});
+
+test("a request that reached no HTTP status is transient, so a teardown asks again", () => {
+	const { transient } = vendorOver(doServer()).control;
+	expect(transient?.(new TypeError("connection reset"))).toBe(true);
+	expect(transient?.(new DOMException("bound expired", "TimeoutError"))).toBe(true);
+	expect(transient?.(new DOMException("caller cancelled", "AbortError"))).toBe(false);
 });
 
 test("paused MicroVMs keep their resources and resume on exec, so they read as ready", () => {

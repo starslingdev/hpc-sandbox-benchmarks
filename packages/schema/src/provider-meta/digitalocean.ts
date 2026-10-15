@@ -11,9 +11,9 @@ export default defineProviderMeta("digitalocean", {
 	inputs: ["DIGITAL_OCEAN_TOKEN"],
 	isolation: {
 		class: "microVM",
-		technology: "microVM (container image in its own kernel)",
+		technology: "Firecracker microVM (one container image per VM)",
 		notes:
-			"Each MicroVM runs one OCI image in a Firecracker VM with its own guest kernel (6.1 observed); commands run inside the workload container (containerd-runc) as root, so the isolation probe reads `container` unless machineVmm is read first. The guest sees its own allocation: nproc and MemTotal match the size.",
+			"Each MicroVM runs one OCI image in a Firecracker VM with its own guest kernel (6.1 observed); commands run inside the workload container (containerd-runc) as root, so the isolation probe reads `container` unless machine_vmm is read first. The guest sees its own allocation: nproc and MemTotal match the size.",
 	},
 	pricing: {
 		model: "published",
@@ -24,7 +24,8 @@ export default defineProviderMeta("digitalocean", {
 				billingBasis: "provisioned",
 				vendorUnit: "8 vCPU / 16 GiB size",
 				usdPerUnitHour: 0.312,
-				// Sizes are fixed pairs; the 4 vCPU / 8 GiB target is served by one 8 vCPU / 16 GiB MicroVM.
+				// Sizes are fixed pairs, so this linear rule holds only for targets served by the 8/16 size
+				// (the 4 vCPU / 8 GiB target is); packages/digitalocean's tests pin that mapping.
 				quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 0.25 },
 				notes: "8 x $0.022 per vCPU-hour + 16 x $0.0085 per GiB-hour.",
 			},
