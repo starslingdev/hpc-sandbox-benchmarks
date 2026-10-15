@@ -69,6 +69,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"brezel",
 			"daytona-container",
 			"daytona-vm",
+			"digitalocean",
 			"e2b",
 			"freestyle",
 			"microsandbox-cloud",

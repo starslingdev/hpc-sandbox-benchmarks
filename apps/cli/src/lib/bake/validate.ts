@@ -92,6 +92,8 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 		case "namespace":
 		// No template/snapshot system — points create() at the candidate image directly, same as modal.
 		case "runcloud":
+		// MicroVMs boot `source.oci_ref` directly; there is no template to bake.
+		case "digitalocean":
 		// The native SDK boots an arbitrary OCI image directly; there is no template to bake.
 		case "tama":
 			// `tama new --image` pulls an arbitrary OCI ref at create time, so the candidate boots the same

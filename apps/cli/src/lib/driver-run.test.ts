@@ -95,6 +95,7 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 			"brezel",
 			"daytona-container",
 			"daytona-vm",
+			"digitalocean",
 			"e2b",
 			"freestyle",
 			"microsandbox-cloud",

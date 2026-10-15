@@ -134,6 +134,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/digitalocean": {
+      "name": "@sandbox-benchmarks/digitalocean",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/driver": {
       "name": "@sandbox-benchmarks/driver",
       "version": "0.0.0",
@@ -155,6 +169,7 @@
         "@sandbox-benchmarks/boat": "workspace:*",
         "@sandbox-benchmarks/brezel": "workspace:*",
         "@sandbox-benchmarks/daytona": "workspace:*",
+        "@sandbox-benchmarks/digitalocean": "workspace:*",
         "@sandbox-benchmarks/driver": "workspace:*",
         "@sandbox-benchmarks/e2b": "workspace:*",
         "@sandbox-benchmarks/freestyle": "workspace:*",
@@ -984,6 +999,8 @@
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
 
     "@sandbox-benchmarks/daytona": ["@sandbox-benchmarks/daytona@workspace:packages/daytona"],
+
+    "@sandbox-benchmarks/digitalocean": ["@sandbox-benchmarks/digitalocean@workspace:packages/digitalocean"],
 
     "@sandbox-benchmarks/driver": ["@sandbox-benchmarks/driver@workspace:packages/driver"],
 
