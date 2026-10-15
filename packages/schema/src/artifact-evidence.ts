@@ -17,6 +17,7 @@ import { resolvedArtifactSchema } from "./driver-schemas.ts";
 import { bakedArtifactName, isBakedProviderId } from "./provider-artifacts.ts";
 import type { ProviderId } from "./provider-ids.ts";
 import { REGISTRY } from "./provider-meta/index.ts";
+import { isProviderId } from "./provider-parsers.ts";
 import {
 	TOOLCHAIN_IMAGE_NAME,
 	TOOLCHAIN_IMAGE_REPOSITORY,
@@ -163,6 +164,8 @@ export const providerArtifactEvidenceSchema = type({
 	.onUndeclaredKey("reject")
 	.narrow((evidence, ctx) => {
 		const { providerId } = evidence.cell;
+		// A retired provider's registry declaration is gone; its committed evidence is a historical record.
+		if (!isProviderId(providerId)) return true;
 		const { requested } = evidence.provenance;
 		const declaredKind = REGISTRY[providerId].artifact.kind;
 		// Runs recorded before the Blaxel/Freestyle baked-image migrations booted a stock image. Keep their

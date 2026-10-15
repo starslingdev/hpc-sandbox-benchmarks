@@ -249,3 +249,19 @@ describe("provider artifact evidence", () => {
 		).toThrow();
 	});
 });
+
+describe("retired providers", () => {
+	const retired = (providerId: string) => ({
+		cell: { ...CELL, providerId },
+		sandboxId: "isandbox",
+		provenance: { source: "request-fallback", requested: BAKED },
+	});
+
+	it("keeps a committed Run's evidence for a retired provider parseable", () => {
+		expect(parseEvidence(retired("runloop")).cell.providerId).toBe("runloop");
+	});
+
+	it("still rejects a provider id that was never registered", () => {
+		expect(() => parseEvidence(retired("not-a-provider"))).toThrow();
+	});
+});

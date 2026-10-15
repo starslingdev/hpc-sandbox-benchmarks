@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "./canonical-json.ts";
 import { runIdSchema } from "./identifiers.ts";
-import { providerIdSchema } from "./provider-parsers.ts";
+import { recordedProviderIdSchema } from "./provider-parsers.ts";
 import { suiteNameSchema } from "./suites.ts";
 
 const boundedString = (maximum: number) =>
@@ -21,7 +21,7 @@ const finiteNonNegativeNumber = type("number >= 0").narrow(
 /** Identity of one benchmark sandbox cell. */
 export const providerCostCellSchema = type({
 	runId: runIdSchema,
-	providerId: providerIdSchema,
+	providerId: recordedProviderIdSchema,
 	suite: suiteNameSchema,
 	"replicateIndex?": "number.integer >= 0",
 }).onUndeclaredKey("reject");
