@@ -535,6 +535,8 @@ jobs:
           BREZEL_API_URL: ${{ matrix.provider == 'brezel' && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ matrix.provider == 'brezel' && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
           BREZEL_ENVIRONMENT_REVISION: ${{ matrix.provider == 'brezel' && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
+          CREATEOS_API_KEY: ${{ matrix.provider == 'createos' && secrets.CREATEOS_API_KEY || '' }}
+          CREATEOS_SANDBOX_BASE_URL: ${{ matrix.provider == 'createos' && (env.CREATEOS_SANDBOX_BASE_URL || vars.CREATEOS_SANDBOX_BASE_URL || secrets.CREATEOS_SANDBOX_BASE_URL || 'https://api.sb.createos.sh') || '' }}
           # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
@@ -732,6 +734,8 @@ jobs:
           BREZEL_API_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_API_URL || vars.BREZEL_API_URL || secrets.BREZEL_API_URL) || '' }}
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
           BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
+          CREATEOS_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'createos') && secrets.CREATEOS_API_KEY || '' }}
+          CREATEOS_SANDBOX_BASE_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'createos') && (env.CREATEOS_SANDBOX_BASE_URL || vars.CREATEOS_SANDBOX_BASE_URL || secrets.CREATEOS_SANDBOX_BASE_URL || 'https://api.sb.createos.sh') || '' }}
           # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |

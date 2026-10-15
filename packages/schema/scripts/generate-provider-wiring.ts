@@ -516,6 +516,11 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 		["BOAT", REGISTRY.boat.sdkPackage, catalogVersion(catalog, REGISTRY.boat.sdkPackage)],
 		["FREESTYLE", "freestyle", catalogVersion(catalog, "freestyle")],
 		["BREZEL", REGISTRY.brezel.sdkPackage, catalogVersion(catalog, REGISTRY.brezel.sdkPackage)],
+		[
+			"CREATEOS",
+			REGISTRY.createos.sdkPackage,
+			catalogVersion(catalog, REGISTRY.createos.sdkPackage),
+		],
 	] as const;
 	const packages = new Set(
 		driverFleetProjection(root).moduleIds.map((id) => driverModuleLocation(id).directory),
