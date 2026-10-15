@@ -44,7 +44,8 @@ export default defineVendorDriver("digitalocean", {
 		timeoutMs: CONTROL_TIMEOUT_MS + READY_TIMEOUT_MS + 2 * EXEC_TIMEOUT_MS + DELETE_TIMEOUT_MS,
 	},
 	timing: {
-		pollMs: 2_000,
+		// 8 sandboxes polling every 2 s alone spent ~240 of the ~250 requests/min the account allows.
+		pollMs: 5_000,
 		readyTimeoutMs: READY_TIMEOUT_MS,
 		removeRetryMs: 5_000,
 		deleteTimeoutMs: DELETE_TIMEOUT_MS,

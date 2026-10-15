@@ -25,9 +25,10 @@ are parsed with arktype.
 - **Exec:** the documented limit is 60 s, but a command still running at about 41–45 s never
   answers; the gateway returns HTTP 524 after roughly 125 s. Any step budgeted at 30 s or more is
   therefore detached and polled over short execs. Output over 4 MiB is reported as truncated, and
-  the adapter fails rather than return partial output. A 429 from the team-wide exec rate limit
-  (60 per minute, 32 at once) is retried with backoff for about a minute, one full window, and
-  then fails.
+  the adapter fails rather than return partial output.
+- **Rate limit:** every request (create, GET, DELETE and exec) is paced process-wide to 200 per
+  minute. A 429 pauses all requests for its `retry-after` and is retried up to 8 times; each one
+  logs `[digitalocean] rate_limited …`, so a run's 429 count is a grep of its logs.
 - **Files:** there is no file API. The kit's exec-backed fallback serves files.
 - **Teardown:** a DELETE is refused (`400 FAILED_PRECONDITION`) while a MicroVM is still
   provisioning, so it is retried for longer than the readiness budget. Removal is confirmed by a
@@ -54,12 +55,16 @@ endpoint does report (32 GiB and 400 GiB on 2026-10-15) were not enforced: a smo
 12 × 8/16 at once, and the 13th create was refused with `400 FAILED_PRECONDITION total running vCPU
 limit reached for this account (limit: 100)`.
 
-The next constraint is exec's documented team-wide rate (60 per minute, 32 at once). Steady polling
-of a detached step costs about 6 execs per minute per sandbox, so about 10 concurrent sandboxes
-reach it.
+The next constraint is the account-wide API rate, not exec's documented 60 per minute. Measured on
+2026-10-15 from one MicroVM: 90 execs in 6 s (10 at once) all answered 200. Continuing at 20 at once,
+the 429s began after about 250 requests in the minute, counting creates and GETs. They carried
+`retry-after: 24`, and a DELETE in the same window was refused with 429 too. So the budget is about
+250 requests per minute, shared by every endpoint and every caller of the token. Rejected requests
+still count against it. With 5 s readiness polls and detached-step polling, 8 sandboxes stay well
+under the adapter's pacing.
 
 Set capacity with `{"sandboxes": N}` in `BENCH_ACCOUNT_CAPACITY`:
-- N is at most 12. Start at 8 or fewer until the real exec rate is measured.
+- N is at most 12. Start at 8 or fewer; the shared request budget, not exec, bounds it next.
 - Leave 8 vCPU of headroom if a toolchain release may validate DigitalOcean during a run.
 - Never express the team's limits through the `vcpus` or `memoryGb` axes. The planner divides those
   by the 4/8 target, not the 8/16 actually allocated, so `vcpus: 100` would admit 25.

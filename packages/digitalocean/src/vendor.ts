@@ -30,9 +30,26 @@ export const CONTROL_TIMEOUT_MS = 30_000;
  * holds the request ~125s and returns 524 (measured 2026-10-14). Bounded past the real limit.
  */
 export const EXEC_TIMEOUT_MS = 60_000;
-/** Exec is limited team-wide (60/min, 32 concurrent): a 429 backs off 4+8+12+16+20s, a full window. */
-const EXEC_RATE_LIMIT_ATTEMPTS = 6;
-const EXEC_RATE_LIMIT_BACKOFF_MS = 4_000;
+/**
+ * The limit actually enforced is the account-wide API rate (~250 requests/min across every
+ * endpoint: GET, DELETE and exec alike), not the documented 60 exec/min: 90 execs in 6 s all
+ * answered 200, and the 429 that followed ~250 requests in a minute carried `retry-after` and
+ * refused DELETE too (measured 2026-10-15). Rejected requests count, so blind retries feed the
+ * storm. Every request in the process is therefore paced below the rate, and a 429 pauses all of
+ * them for its `retry-after` before being asked again.
+ */
+const REQUESTS_PER_MINUTE = 200;
+const REQUEST_SPACING_MS = 60_000 / REQUESTS_PER_MINUTE;
+const RATE_LIMIT_ATTEMPTS = 8;
+const DEFAULT_RETRY_AFTER_S = 30;
+/** Shared by every adapter in the process: one CI job drives all of its batch's sandboxes. */
+const pacing = { next: 0, pausedUntil: 0 };
+function slot(): number {
+	const now = Date.now();
+	const at = Math.max(now, pacing.next, pacing.pausedUntil);
+	pacing.next = at + REQUEST_SPACING_MS;
+	return at - now;
+}
 
 export const DIGITALOCEAN_MICROVM_ID = type("string.uuid");
 
@@ -95,6 +112,7 @@ class DigitalOceanError extends Error {
 		readonly status: number,
 		readonly code: string | undefined,
 		message: string,
+		readonly retryAfterS?: number,
 	) {
 		super(`DigitalOcean MicroVMs ${status}${code ? ` ${code}` : ""}: ${message}`);
 		this.name = "DigitalOceanError";
@@ -151,7 +169,28 @@ export function digitalOceanVendor(
 	transport: typeof globalThis.fetch,
 	delay: (ms: number, signal?: AbortSignal) => Promise<void> = abortableDelay,
 ): Vendor<MicroVm, MicroVm> {
-	const request = (
+	const request = async (
+		method: string,
+		path: string,
+		options: { body?: unknown; signal?: AbortSignal; timeoutMs: number },
+	): Promise<unknown> => {
+		for (let attempt = 1; ; attempt++) {
+			await delay(slot(), options.signal);
+			try {
+				return await attemptRequest(method, path, options);
+			} catch (error) {
+				if (!(error instanceof DigitalOceanError) || error.status !== 429) throw error;
+				const waitS = error.retryAfterS ?? DEFAULT_RETRY_AFTER_S;
+				// The fallback's stamp: CI logs count these to prove the pacing holds.
+				console.warn(
+					`[digitalocean] rate_limited method=${method} attempt=${attempt}/${RATE_LIMIT_ATTEMPTS} retry_after_s=${waitS}`,
+				);
+				if (attempt >= RATE_LIMIT_ATTEMPTS) throw error;
+				pacing.pausedUntil = Math.max(pacing.pausedUntil, Date.now() + waitS * 1000);
+			}
+		}
+	};
+	const attemptRequest = (
 		method: string,
 		path: string,
 		{ body, signal, timeoutMs }: { body?: unknown; signal?: AbortSignal; timeoutMs: number },
@@ -176,10 +215,12 @@ export function digitalOceanVendor(
 			if (response.ok) return parsed;
 			const error = errorBody(parsed);
 			const { code, message } = error instanceof type.errors ? {} : error;
+			const retryAfter = Number(response.headers.get("retry-after"));
 			throw new DigitalOceanError(
 				response.status,
 				code,
 				message ?? (text.slice(0, 200) || response.statusText),
+				Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
 			);
 		});
 	const control = (method: string, path: string, signal: AbortSignal, body?: unknown) =>
@@ -238,30 +279,43 @@ export function digitalOceanVendor(
 						};
 			},
 			exec: async (native, command, options) => {
-				for (let attempt = 1; ; attempt++) {
-					try {
-						const result = execResult.assert(
-							await request("POST", `/${native.id}/exec`, {
-								body: { argv: ["/bin/bash", "-lc", command] },
-								...(options?.signal && { signal: options.signal }),
-								timeoutMs: EXEC_TIMEOUT_MS,
-							}),
+				let result: typeof execResult.infer;
+				try {
+					result = execResult.assert(
+						await request("POST", `/${native.id}/exec`, {
+							body: { argv: ["/bin/bash", "-lc", command] },
+							...(options?.signal && { signal: options.signal }),
+							timeoutMs: EXEC_TIMEOUT_MS,
+						}),
+					);
+				} catch (error) {
+					// A stopped workload is the vendor's call: stamp what the control plane reports.
+					if (error instanceof DigitalOceanError && /not running/.test(error.message))
+						console.warn(
+							`[digitalocean] workload_not_running id=${native.id} ${await request(
+								"GET",
+								`/${native.id}`,
+								{ timeoutMs: CONTROL_TIMEOUT_MS },
+							).then(
+								(raw) => {
+									const row = one(raw);
+									return row instanceof type.errors
+										? "state=unparsed"
+										: `state=${row.microvm.state} failure_reason=${row.microvm.failure_reason ?? ""}`;
+								},
+								(cause: unknown) => `state=unknown (${String(cause)})`,
+							)}`,
 						);
-						// The vendor port has no truncation field, so partial output must not pass as success.
-						if (result.truncated)
-							throw new Error(
-								"DigitalOcean exec output exceeded its 4 MiB limit and was truncated",
-							);
-						return {
-							...(result.exit_code !== undefined && { exitCode: result.exit_code }),
-							stdout: result.stdout ?? "",
-							stderr: result.stderr ?? "",
-						};
-					} catch (error) {
-						if (status(error) !== 429 || attempt >= EXEC_RATE_LIMIT_ATTEMPTS) throw error;
-						await delay(EXEC_RATE_LIMIT_BACKOFF_MS * attempt, options?.signal);
-					}
+					throw error;
 				}
+				// The vendor port has no truncation field, so partial output must not pass as success.
+				if (result.truncated)
+					throw new Error("DigitalOcean exec output exceeded its 4 MiB limit and was truncated");
+				return {
+					...(result.exit_code !== undefined && { exitCode: result.exit_code }),
+					stdout: result.stdout ?? "",
+					stderr: result.stderr ?? "",
+				};
 			},
 		},
 	};
