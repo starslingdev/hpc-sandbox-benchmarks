@@ -254,7 +254,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload release plan
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-plan-${{ github.run_id }}
           path: release-plan.json
@@ -335,7 +335,7 @@ jobs:
           bun apps/cli/src/bin/build-candidate.ts build-metadata.json
       - name: Upload build metadata
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-metadata-${{ github.run_id }}
           path: build-metadata.json
@@ -565,7 +565,7 @@ jobs:
         run: docker logout vcr.vercel.com || true
       - name: Upload bake report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bake-${{ matrix.provider }}-${{ github.run_id }}
           path: bake-${{ matrix.provider }}.json
@@ -749,7 +749,7 @@ jobs:
         run: docker logout vcr.vercel.com || true
       - name: Upload promote payload
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: promote-payload-${{ github.run_id }}
           path: promote-payload.json
