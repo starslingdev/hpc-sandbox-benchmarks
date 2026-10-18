@@ -14,10 +14,12 @@ import {
 	NETWORK_DNS_TARGETS,
 	NETWORK_DOWNLOAD_FILE,
 	NETWORK_DOWNLOAD_TARGET,
+	NETWORK_HTTPS_PHASES,
 	NETWORK_LATENCY_FILE,
 	NETWORK_LATENCY_TARGETS,
 	NETWORK_PROBE_METRIC_IDS,
 	networkDnsColdFile,
+	networkHttpsPhaseMetricId,
 } from "@sandbox-benchmarks/schema";
 import type { ArkErrors } from "arktype";
 import { type } from "arktype";
@@ -36,18 +38,59 @@ export type NetworkProbeContribution = typeof contributionSchema.infer;
 /** curl's seconds to milliseconds at three decimals — curl-phases.jq's `ms`, so both agree exactly. */
 const secondsToMs = (seconds: number): number => Math.round(seconds * 1_000_000) / 1000;
 
-/**
- * The `%{json}` write-out fields the latency probe needs. `exitcode` is absent on curls older than
- * 7.75, so absent/null reads as 0 — the same rule as `responded` in lib/jq/curl-phases.jq, which gates
- * the task's own statistics. The pipe yields the sample, or null for a recorded non-response (kept by
- * the task as evidence, never published as a latency: its time_total is the timeout).
- */
-const latencySample = type({
+/** `exitcode` is absent on curls older than 7.75, so absent/null reads as 0. */
+const latencyTimers = type({
 	"exitcode?": "number.integer | null",
 	response_code: "number.integer >= 0",
 	time_total: reading,
-}).pipe((record) =>
-	(record.exitcode ?? 0) === 0 && record.response_code > 0 ? secondsToMs(record.time_total) : null,
+	"time_namelookup?": reading,
+	"time_connect?": reading,
+	"time_appconnect?": reading,
+	"time_pretransfer?": reading,
+	"time_starttransfer?": reading,
+});
+
+type LatencyTimers = typeof latencyTimers.infer;
+
+type CurlPhaseReading = {
+	total: number;
+	dns: number | null;
+	tcp: number | null;
+	tls: number | null;
+	pretransfer: number | null;
+	server: number | null;
+	body: number | null;
+};
+
+function gapMs(later: number, earlier: number): number | null {
+	const ms = secondsToMs(later - earlier);
+	return ms >= 0 ? ms : null;
+}
+
+function measuredGap(later: number | undefined, earlier: number | undefined): number | null {
+	if (later === undefined || earlier === undefined) return null;
+	return gapMs(later, earlier);
+}
+
+function curlPhaseReading(record: LatencyTimers): CurlPhaseReading {
+	const appconnect = record.time_appconnect;
+	const connected = appconnect !== undefined && appconnect > 0 ? appconnect : record.time_connect;
+	return {
+		total: secondsToMs(record.time_total),
+		dns: record.time_namelookup === undefined ? null : secondsToMs(record.time_namelookup),
+		tcp: measuredGap(record.time_connect, record.time_namelookup),
+		tls:
+			appconnect !== undefined && appconnect > 0
+				? measuredGap(appconnect, record.time_connect)
+				: null,
+		pretransfer: measuredGap(record.time_pretransfer, connected),
+		server: measuredGap(record.time_starttransfer, record.time_pretransfer),
+		body: measuredGap(record.time_total, record.time_starttransfer),
+	};
+}
+
+const latencySample = latencyTimers.pipe((record) =>
+	(record.exitcode ?? 0) === 0 && record.response_code > 0 ? curlPhaseReading(record) : null,
 );
 
 const latencyArtifact = type({
@@ -59,7 +102,17 @@ const latencyArtifact = type({
 				.filter((endpoint) => endpoint.url === target.url)
 				.flatMap((endpoint) => endpoint.curl_records)
 				.filter((sample) => sample !== null);
-			return samples.length > 0 ? [{ metricId: target.id, samples }] : [];
+			if (samples.length === 0) return [];
+			const phases = NETWORK_HTTPS_PHASES.flatMap((phase) => {
+				const values = samples.flatMap((sample) => {
+					const value = sample[phase.phase];
+					return value === null ? [] : [value];
+				});
+				return values.length > 0
+					? [{ metricId: networkHttpsPhaseMetricId(target.id, phase.phase), samples: values }]
+					: [];
+			});
+			return [{ metricId: target.id, samples: samples.map((sample) => sample.total) }, ...phases];
 		}),
 	)
 	.to(contributionsSchema);

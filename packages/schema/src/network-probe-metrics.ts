@@ -43,6 +43,29 @@ export const networkLatencyTargetSchema = type({
 }).onUndeclaredKey("reject");
 export type NetworkLatencyTarget = typeof networkLatencyTargetSchema.infer;
 
+export const NETWORK_HTTPS_PHASES = [
+	{ phase: "dns", label: "DNS", detail: "DNS lookup, curl time_namelookup" },
+	{ phase: "tcp", label: "TCP", detail: "TCP handshake after DNS" },
+	{
+		phase: "tls",
+		label: "TLS",
+		detail: "TLS handshake after TCP, omitted when curl has no appconnect milestone",
+	},
+	{
+		phase: "pretransfer",
+		label: "pre-transfer",
+		detail: "Client setup after the connection is ready and before the request is on the wire",
+	},
+	{ phase: "server", label: "server", detail: "Time to first byte after the request is sent" },
+	{ phase: "body", label: "body", detail: "Body transfer after the first byte" },
+] as const;
+export type NetworkHttpsPhase = (typeof NETWORK_HTTPS_PHASES)[number]["phase"];
+
+/** `network_https_<host>_total_ms` → `network_https_<host>_<phase>_ms`. */
+export function networkHttpsPhaseMetricId(totalMetricId: string, phase: NetworkHttpsPhase): string {
+	return `${totalMetricId.slice(0, -"_total_ms".length)}_${phase}_ms`;
+}
+
 /** One cold-DNS target: the dns task resolves a fresh random name under `domain` for this Metric. */
 export const networkDnsTargetSchema = type({
 	id: /^network_dns_cold_[a-z0-9_]+_ms$/,
@@ -147,19 +170,13 @@ export const NETWORK_DOWNLOAD_TARGET: NetworkDownloadTarget = networkDownloadTar
 	label: "Node 22 download",
 });
 
-export const NETWORK_PROBE_METRIC_IDS: readonly string[] = [
-	...NETWORK_LATENCY_TARGETS.map((target) => target.id),
-	...NETWORK_DNS_TARGETS.map((target) => target.id),
-	NETWORK_DOWNLOAD_TARGET.id,
-];
-
 /** Every probe Metric is a non-headline network Metric; only the unit, direction and prose vary. */
 const probeMetric = (
 	def: Pick<MetricDef, "id" | "unit" | "direction" | "label" | "description">,
 ): MetricDef => metricDefSchema.assert({ ...def, dimension: "network", headline: false });
 
 export const networkProbeMetrics: readonly MetricDef[] = [
-	...NETWORK_LATENCY_TARGETS.map((target) =>
+	...NETWORK_LATENCY_TARGETS.flatMap((target) => [
 		probeMetric({
 			id: target.id,
 			unit: "ms",
@@ -167,7 +184,16 @@ export const networkProbeMetrics: readonly MetricDef[] = [
 			label: target.label,
 			description: `HTTPS total time to ${target.url}. This is ${WEATHER}.`,
 		}),
-	),
+		...NETWORK_HTTPS_PHASES.map((phase) =>
+			probeMetric({
+				id: networkHttpsPhaseMetricId(target.id, phase.phase),
+				unit: "ms",
+				direction: "LIB",
+				label: `${target.label} ${phase.label}`,
+				description: `${phase.detail} for ${target.url}. Same responding samples as the HTTPS total. This is ${WEATHER}.`,
+			}),
+		),
+	]),
 	...NETWORK_DNS_TARGETS.map((target) =>
 		probeMetric({
 			id: target.id,
@@ -195,3 +221,7 @@ export const networkProbeMetrics: readonly MetricDef[] = [
 		].join(" "),
 	}),
 ];
+
+export const NETWORK_PROBE_METRIC_IDS: readonly string[] = networkProbeMetrics.map(
+	(metric) => metric.id,
+);
