@@ -272,6 +272,7 @@ describe("provider wiring projections", () => {
 			"freestyle",
 			"brezel",
 			"digitalocean",
+			"createos",
 		]);
 		expect([...PROVIDER_IDS].filter((id) => fleet.waivers[id] !== undefined)).toEqual([]);
 
