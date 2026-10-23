@@ -38,6 +38,7 @@ const envSchema = type({
 	"BOAT_BASE_URL?": "string >= 1",
 	"MSB_API_URL?": "string >= 1",
 	"MSB_API_KEY?": "string >= 1",
+	"CREATEOS_SANDBOX_BASE_URL?": "string >= 1",
 	"VERCEL_CANDIDATE_IMAGE?": "string >= 1",
 	// The two human-readable halves of the VCR namespace. Overrides, not credentials — a fork or a
 	// renamed team sets them as plain CI variables. NOT the `team_*`/`prj_*` API IDs (VERCEL_ORG_ID /
@@ -72,6 +73,7 @@ export const ENV_KEYS = [
 	"BOAT_BASE_URL",
 	"MSB_API_URL",
 	"MSB_API_KEY",
+	"CREATEOS_SANDBOX_BASE_URL",
 	"VERCEL_CANDIDATE_IMAGE",
 	"VERCEL_TEAM_SLUG",
 	"VERCEL_PROJECT_NAME",

@@ -24,6 +24,7 @@ export interface DriverModuleMap {
 	brezel: typeof import("@sandbox-benchmarks/brezel").default;
 	digitalocean: typeof import("@sandbox-benchmarks/digitalocean").default;
 	baseten: typeof import("@sandbox-benchmarks/baseten").default;
+	createos: typeof import("@sandbox-benchmarks/createos").default;
 }
 
 type Assert<Condition extends true> = Condition;
@@ -60,6 +61,7 @@ export const DRIVERS: {
 	brezel: () => import("@sandbox-benchmarks/brezel").then((module) => module.default),
 	digitalocean: () => import("@sandbox-benchmarks/digitalocean").then((module) => module.default),
 	baseten: () => import("@sandbox-benchmarks/baseten").then((module) => module.default),
+	createos: () => import("@sandbox-benchmarks/createos").then((module) => module.default),
 });
 
 export const loadDriverModule = <P extends DriverProviderId>(id: P): Promise<DriverModuleMap[P]> =>

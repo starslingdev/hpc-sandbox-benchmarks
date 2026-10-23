@@ -5,6 +5,7 @@ import baseten from "./baseten.ts";
 import blaxel from "./blaxel.ts";
 import boat from "./boat.ts";
 import brezel from "./brezel.ts";
+import createos from "./createos.ts";
 import daytona_container from "./daytona-container.ts";
 import daytona_vm from "./daytona-vm.ts";
 import digitalocean from "./digitalocean.ts";
@@ -37,6 +38,7 @@ const MODULES = {
 	brezel: brezel,
 	digitalocean: digitalocean,
 	baseten: baseten,
+	createos: createos,
 } as const satisfies { [P in ProviderId]: ProviderMetaModule<P> };
 
 export const REGISTRY = {
@@ -57,6 +59,7 @@ export const REGISTRY = {
 	brezel: MODULES.brezel.meta,
 	digitalocean: MODULES.digitalocean.meta,
 	baseten: MODULES.baseten.meta,
+	createos: MODULES.createos.meta,
 } as const satisfies Record<ProviderId, ProviderMetaSource>;
 
 type IdsWithArtifact<K extends ProviderArtifact["kind"]> = {
