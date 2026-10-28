@@ -58,8 +58,9 @@ export const RELEASE_REQUIRED_PROVIDERS: readonly ProviderId[] = [
  * and, on a `build: full` dispatch, an hour of rebuild. Refusing in the plan turns that into a
  * fail-fast with an explanation.
  *
- * Keyed by provider so the reason travels with the refusal. Boat still boots a stock vendor image,
- * so its bake/promote publishes nothing even though an unscoped release can validate it best-effort.
+ * Keyed by provider so the reason travels with the refusal. Boat and Munito boot a stock vendor
+ * image, so their bake/promote publishes nothing even though an unscoped release can validate them
+ * best-effort.
  */
 const STOCK_IMAGE_UNSCOPABLE =
 	"it boots the vendor's stock image rather than the toolchain and has no artifact to publish; " +
@@ -67,6 +68,7 @@ const STOCK_IMAGE_UNSCOPABLE =
 
 export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, string>>> = {
 	boat: STOCK_IMAGE_UNSCOPABLE,
+	munito: STOCK_IMAGE_UNSCOPABLE,
 	brezel:
 		"it boots an externally prepared environment revision that this repository cannot build or publish; credentialed validation alone cannot produce a scoped backfill",
 };

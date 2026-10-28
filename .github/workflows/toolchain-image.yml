@@ -537,6 +537,8 @@ jobs:
           BREZEL_ENVIRONMENT_REVISION: ${{ matrix.provider == 'brezel' && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           DIGITAL_OCEAN_TOKEN: ${{ matrix.provider == 'digitalocean' && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ matrix.provider == 'baseten' && secrets.BASETEN_API_KEY || '' }}
+          MUNITO_API_KEY: ${{ matrix.provider == 'munito' && secrets.MUNITO_API_KEY || '' }}
+          MUNITO_SANDBOXES_URL: ${{ matrix.provider == 'munito' && (env.MUNITO_SANDBOXES_URL || vars.MUNITO_SANDBOXES_URL || secrets.MUNITO_SANDBOXES_URL) || '' }}
           # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
@@ -736,6 +738,8 @@ jobs:
           BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'baseten') && secrets.BASETEN_API_KEY || '' }}
+          MUNITO_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'munito') && secrets.MUNITO_API_KEY || '' }}
+          MUNITO_SANDBOXES_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'munito') && (env.MUNITO_SANDBOXES_URL || vars.MUNITO_SANDBOXES_URL || secrets.MUNITO_SANDBOXES_URL) || '' }}
           # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |

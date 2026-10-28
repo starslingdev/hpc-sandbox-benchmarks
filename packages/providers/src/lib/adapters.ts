@@ -34,6 +34,7 @@ export const MIGRATED_DRIVER_IDS = [
 	"brezel",
 	"digitalocean",
 	"baseten",
+	"munito",
 ] as const satisfies readonly ProviderId[];
 
 /** A schema id served by a registered DriverModule. Derived from the list, so the two cannot drift. */

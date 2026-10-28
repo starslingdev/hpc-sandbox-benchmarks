@@ -24,6 +24,7 @@
     "@sandbox-benchmarks/freestyle": "workspace:*",
     "@sandbox-benchmarks/microsandbox-cloud": "workspace:*",
     "@sandbox-benchmarks/modal": "workspace:*",
+    "@sandbox-benchmarks/munito": "workspace:*",
     "@sandbox-benchmarks/namespace": "workspace:*",
     "@sandbox-benchmarks/novita": "workspace:*",
     "@sandbox-benchmarks/runcloud": "workspace:*",

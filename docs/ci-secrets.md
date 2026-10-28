@@ -240,6 +240,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BREZEL_API_KEY` | Brezel provider runtime and validation |
    | `DIGITAL_OCEAN_TOKEN` | DigitalOcean MicroVMs provider runtime and validation |
    | `BASETEN_API_KEY` | Baseten Sandboxes provider runtime and validation |
+   | `MUNITO_API_KEY` | Munito Sandboxes provider runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 
    For Boat, a key created with the `ci` preset is insufficient: that preset omits
@@ -306,6 +307,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BREZEL_API_URL` | Brezel | — |
    | `BREZEL_PROJECT_ID` | Brezel | — |
    | `BREZEL_ENVIRONMENT_REVISION` | Brezel | — |
+   | `MUNITO_SANDBOXES_URL` | Munito Sandboxes | — |
    <!-- <<< end generated: provider-variables -->
 
    Optional values with a declared provider default use it when unset. The two Vercel namespace

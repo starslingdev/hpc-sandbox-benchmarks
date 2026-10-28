@@ -26,6 +26,7 @@ on:
           - 'brezel'
           - 'digitalocean'
           - 'baseten'
+          - 'munito'
           # <<< end generated: provider-options
       suite:
         description: Suite to run
