@@ -77,6 +77,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"microsandbox-cloud",
 			"modal-gvisor",
 			"modal-vm",
+			"munito",
 			"namespace",
 			"novita",
 			"runcloud",
