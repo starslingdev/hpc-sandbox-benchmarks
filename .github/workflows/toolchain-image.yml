@@ -538,6 +538,8 @@ jobs:
           DIGITAL_OCEAN_TOKEN: ${{ matrix.provider == 'digitalocean' && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ matrix.provider == 'baseten' && secrets.BASETEN_API_KEY || '' }}
           CREATEOS_API_KEY: ${{ matrix.provider == 'createos' && secrets.CREATEOS_API_KEY || '' }}
+          MUNITO_API_KEY: ${{ matrix.provider == 'munito' && secrets.MUNITO_API_KEY || '' }}
+          MUNITO_SANDBOXES_URL: ${{ matrix.provider == 'munito' && (env.MUNITO_SANDBOXES_URL || vars.MUNITO_SANDBOXES_URL || secrets.MUNITO_SANDBOXES_URL) || '' }}
           # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
@@ -738,6 +740,8 @@ jobs:
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'baseten') && secrets.BASETEN_API_KEY || '' }}
           CREATEOS_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'createos') && secrets.CREATEOS_API_KEY || '' }}
+          MUNITO_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'munito') && secrets.MUNITO_API_KEY || '' }}
+          MUNITO_SANDBOXES_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'munito') && (env.MUNITO_SANDBOXES_URL || vars.MUNITO_SANDBOXES_URL || secrets.MUNITO_SANDBOXES_URL) || '' }}
           # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |

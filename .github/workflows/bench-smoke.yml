@@ -27,6 +27,7 @@ on:
           - 'digitalocean'
           - 'baseten'
           - 'createos'
+          - 'munito'
           # <<< end generated: provider-options
       suite:
         description: Suite to run

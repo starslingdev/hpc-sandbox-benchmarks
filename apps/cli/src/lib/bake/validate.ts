@@ -82,6 +82,7 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 		case "boat":
 		case "brezel":
 		case "createos":
+		case "munito":
 			// Stock or externally prepared image — no candidate artifact to point at.
 			return { artifact: { kind: "none" }, createOptions: {} };
 		case "freestyle":
