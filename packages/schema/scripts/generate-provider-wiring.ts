@@ -524,6 +524,8 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 			REGISTRY.createos.sdkPackage,
 			catalogVersion(catalog, REGISTRY.createos.sdkPackage),
 		],
+		// No client library exists; the adapter targets the documented `/sandboxes/v1` REST API.
+		["MUNITO", REGISTRY.munito.sdkPackage, "v1"],
 	] as const;
 	const packages = new Set(
 		driverFleetProjection(root).moduleIds.map((id) => driverModuleLocation(id).directory),

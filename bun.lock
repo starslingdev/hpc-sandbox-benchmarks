@@ -206,6 +206,7 @@
         "@sandbox-benchmarks/freestyle": "workspace:*",
         "@sandbox-benchmarks/microsandbox-cloud": "workspace:*",
         "@sandbox-benchmarks/modal": "workspace:*",
+        "@sandbox-benchmarks/munito": "workspace:*",
         "@sandbox-benchmarks/namespace": "workspace:*",
         "@sandbox-benchmarks/novita": "workspace:*",
         "@sandbox-benchmarks/runcloud": "workspace:*",
@@ -305,6 +306,20 @@
       },
       "devDependencies": {
         "@bufbuild/protoc-gen-es": "2.14.1",
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/munito": {
+      "name": "@sandbox-benchmarks/munito",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
         "@repo/tsconfig": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -1062,6 +1077,8 @@
     "@sandbox-benchmarks/microsandbox-cloud": ["@sandbox-benchmarks/microsandbox-cloud@workspace:packages/microsandbox-cloud"],
 
     "@sandbox-benchmarks/modal": ["@sandbox-benchmarks/modal@workspace:packages/modal"],
+
+    "@sandbox-benchmarks/munito": ["@sandbox-benchmarks/munito@workspace:packages/munito"],
 
     "@sandbox-benchmarks/namespace": ["@sandbox-benchmarks/namespace@workspace:packages/namespace"],
 
