@@ -208,13 +208,17 @@ describe("Modal benchmark resource configuration", () => {
 		const getTaskId = spyOn(client.cpClient, "sandboxGetTaskId").mockResolvedValue({
 			taskId: "ta-prepared",
 		});
+		const createSecret = spyOn(client.cpClient, "secretGetOrCreate").mockResolvedValue({
+			secretId: "st-environment",
+			metadata: undefined,
+		});
 		try {
 			await modalAllocate(
 				provider,
 				IMAGE,
 				() => client,
 			)(
-				{ request: request({ env: undefined }), marker: "benchmark-replicate" },
+				{ request: request(), marker: "benchmark-replicate" },
 				{ signal: AbortSignal.timeout(1000) },
 			);
 			const allocate = provider === "modal-vm" ? create : experimentalCreate;
@@ -233,12 +237,21 @@ describe("Modal benchmark resource configuration", () => {
 					experimentalOptionsV2: {},
 				},
 			});
+			const environment =
+				provider === "modal-vm"
+					? createSecret.mock.calls[0]?.[0].envDict
+					: experimentalCreate.mock.calls[0]?.[0].secretSources?.[0]?.env?.contents;
+			expect(environment).toEqual({
+				REALWORLD_TASK_MEM_MAX_BYTES: "7516192768",
+				BENCHMARK_MODE: "true",
+			});
 		} finally {
 			fromName.mockRestore();
 			fromRegistry.mockRestore();
 			create.mockRestore();
 			experimentalCreate.mockRestore();
 			getTaskId.mockRestore();
+			createSecret.mockRestore();
 		}
 	});
 });

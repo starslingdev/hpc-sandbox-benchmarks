@@ -45,6 +45,9 @@ export function modalAllocate(
 	return ({ request: { spec, env }, marker }: CreateAttempt, { signal }: Op) =>
 		runner.run({ signal }, async (client) => {
 			const app = await client.apps.fromName(MODAL_APP_NAME, { createIfMissing: true });
+			const memoryBytes = spec.memoryGb * 1024 ** 3;
+			const taskMemoryBytes =
+				memoryBytes >= 2 * 1024 ** 3 ? memoryBytes - 1024 ** 3 : memoryBytes / 2;
 			const params = {
 				name: marker,
 				timeoutMs: LEAK_EXPIRY_MS,
@@ -54,7 +57,8 @@ export function modalAllocate(
 				memoryMiB: 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB: spec.memoryGb * 1024,
-				...(env !== undefined && { env }),
+				// VM MemTotal grows with demand; size the runner's guard from the configured ceiling.
+				env: { REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)), ...env },
 			};
 			const registry = client.images.fromRegistry(image);
 			if (provider === "modal-gvisor") {
