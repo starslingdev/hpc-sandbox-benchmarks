@@ -22,13 +22,8 @@ function fixture(running?: "v1" | "v2", anchored = true) {
 		sandboxes: {
 			list: async function* (params: { appId: string }) {
 				expect(params.appId).toBe("ap-original");
-				calls.push("v1");
-				if (running === "v1") yield { detach() {} };
-			},
-			experimentalList: async function* (params: { appId: string }) {
-				expect(params.appId).toBe("ap-original");
-				calls.push("v2");
-				if (running === "v2") yield { detach() {} };
+				calls.push("list");
+				if (running) yield { detach() {} };
 			},
 		},
 	} as unknown as ModalClient;
@@ -45,7 +40,7 @@ test("requires an original-history anchor and two empty observations of both gen
 		anchorSandboxId: "sb-original",
 		inventoryPasses: 2,
 	});
-	expect(f.calls).toEqual(["v1", "v2", "v1", "v2"]);
+	expect(f.calls).toEqual(["list", "list"]);
 });
 
 test("a running allocation in either generation refuses App clearance", async () => {

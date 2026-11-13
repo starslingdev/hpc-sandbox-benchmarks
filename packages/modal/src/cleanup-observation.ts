@@ -41,16 +41,11 @@ export async function observeModalCleanupApp(
 	if (!anchored)
 		throw new Error("Modal App history does not contain the original run's anchor sandbox");
 	for (let pass = 0; pass < 2; pass++) {
-		for (const generation of [
-			client.sandboxes.list({ appId: app.appId }),
-			client.sandboxes.experimentalList({ appId: app.appId }),
-		]) {
-			for await (const sandbox of generation) {
-				sandbox.detach();
-				throw new Error(
-					"Modal benchmark App still has a running allocation; identity-based cleanup required",
-				);
-			}
+		for await (const sandbox of client.sandboxes.list({ appId: app.appId })) {
+			sandbox.detach();
+			throw new Error(
+				"Modal benchmark App still has a running allocation; identity-based cleanup required",
+			);
 		}
 	}
 	return {

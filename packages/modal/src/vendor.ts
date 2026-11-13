@@ -3,11 +3,11 @@
 // driver kit (`@sandbox-benchmarks/driver/vendor`).
 //
 // Four Modal facts shape it. Every create lands in the benchmark App, the ownership boundary
-// (ADR-0016), under the attempt's marker as its sandbox name; each isolation generation (V1 for
-// modal-vm and GPU allocations, V2 for modal-gvisor) owns only its own sandboxes there. A read by id
+// (ADR-0016), under the attempt's marker as its sandbox name. VM and gVisor benchmarks use
+// separate Apps on V2; GPU allocations use the SDK's V1 GPU path. A read by id
 // carries no name, so the adapter reports the name its own create, listing or lookup learned. The
 // SDK's create returns a running sandbox and its waited terminate an exited one, so both responses
-// are evidence. And Modal 0.9 ignores its client timeouts, so every RPC runs inside a control runner
+// are evidence. The SDK ignores its client timeouts, so every RPC runs inside a control runner
 // that injects the operation's deadline where the SDK's middleware chain consumes it.
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -22,6 +22,7 @@ import type { ClientMiddleware } from "nice-grpc";
 import { ClientError, Status } from "nice-grpc";
 
 export const MODAL_APP_NAME = "sandbox-benchmarks";
+export const MODAL_VM_APP_NAME = "sandbox-benchmarks-vm";
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 /**
  * Waited teardown must fit under the harness destroy ceiling (60s) without racing it.
@@ -149,15 +150,9 @@ export interface ModalControlPlane {
 	};
 	readonly sandboxes: {
 		fromId(id: string): Promise<ModalControlSandbox>;
-		fromName(appName: string, name: string): Promise<ModalControlSandbox>;
-		experimentalFromName(appName: string, name: string): Promise<ModalControlSandbox>;
-		/** Running V1 sandboxes in the environment, or only those under `appId`. */
+		fromName(appName: string, name: string, backend: ModalBackend): Promise<ModalControlSandbox>;
+		/** Running sandboxes from the current API, including GPU allocations. */
 		list: ModalListPage;
-		/** Running V2 sandboxes under one App; Modal cannot enumerate V2 environment-wide. */
-		experimentalList: (params: {
-			readonly appId: string;
-			readonly beforeTimestamp?: number;
-		}) => Promise<readonly ModalSandboxInfo[]>;
 	};
 }
 
@@ -184,45 +179,24 @@ export function modalControlPlane(client: ModalClient): ModalControlPlane {
 		},
 		sandboxes: {
 			fromId: (id) => client.sandboxes.fromId(id),
-			// The SDK's own listing requests: running sandboxes only, untagged.
+			// Raw listing rows retain the names and App IDs needed to prove ownership.
 			list: async ({ appId, beforeTimestamp }) =>
 				(
-					await client.cpClient.sandboxList({
-						...(appId !== undefined && { appId }),
-						...(beforeTimestamp !== undefined && { beforeTimestamp }),
-						environmentName,
-						includeFinished: false,
-						tags: [],
-					})
-				).sandboxes,
-			experimentalList: async ({ appId, beforeTimestamp }) =>
-				(
 					await client.cpClient.sandboxListV2({
-						appId,
+						...(appId !== undefined ? { appId } : { environmentName }),
 						...(beforeTimestamp !== undefined && { beforeTimestamp }),
 						includeFinished: false,
 						tags: [],
 					})
 				).sandboxes,
-			fromName: async (appName, name) => {
-				const response = await client.cpClient.sandboxGetFromName({
-					appName,
-					sandboxName: name,
-					environmentName,
-				});
-				return new Sandbox(client, MODAL_V1_SANDBOX_ID.assert(response.sandboxId), {
-					isV2: false,
-				});
-			},
-			experimentalFromName: async (appName, name) => {
-				const response = await client.cpClient.sandboxGetFromNameV2({
-					appName,
-					sandboxName: name,
-					environmentName,
-				});
-				return new Sandbox(client, MODAL_V2_SANDBOX_ID.assert(response.sandboxId), {
-					isV2: true,
-				});
+			fromName: async (appName, name, backend) => {
+				const request = { appName, sandboxName: name, environmentName };
+				// GPU allocation uses V1 internally in the current SDK.
+				const response =
+					backend === "v1"
+						? await client.cpClient.sandboxGetFromName(request)
+						: await client.cpClient.sandboxGetFromNameV2(request);
+				return new Sandbox(client, MODAL_CONTROL_SANDBOX_ID.assert(response.sandboxId));
 			},
 		},
 	};
@@ -237,7 +211,7 @@ interface ModalControlRunner<Control = ModalControlPlane> {
 }
 
 /**
- * Modal 0.9 declares client timeout/retry constructor fields but does not apply them at runtime.
+ * The SDK declares client timeout/retry constructor fields but does not apply them at runtime.
  * Inject the transaction signal where the SDK's middleware chain actually consumes it. nice-grpc
  * invokes the last-attached custom middleware first, so these options reach Modal's timeout and
  * retry middleware on every control-plane RPC. The outer timer spans multi-RPC loops such as
@@ -257,9 +231,7 @@ export function createModalControlRunner<Control>(
 			...options,
 			signal,
 			timeoutMs,
-			// Modal 0.9's retry middleware drops `signal` entirely when retries is zero, so one
-			// bounded retry is what keeps cancellation attached to the real gRPC transport; the
-			// operation-wide controller remains the hard ceiling across both attempts.
+			// Allow one retry within the operation's shared cancellation deadline.
 			//
 			// Retrying a non-idempotent SandboxExec is safe here: that middleware stamps one
 			// x-idempotency-key per call and replays it on every attempt, so a response lost after
@@ -454,35 +426,28 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 			},
 			// Only a sandbox RPC's NOT_FOUND is absence.
 			absent: isModalNotFound,
-			// Two pages: the App's own generation (owned by name), then everything outside the App
-			// (foreign). The second carries the App's id, so the sibling generation in the App, which
-			// the other variant owns, is in neither.
+			// The configured App and backend own matching markers; other Apps are foreign.
 			page: (cursor, { signal }) =>
 				inventoryRunner.run({ signal }, async (control) => {
 					if (cursor === undefined) {
 						const app = await control.apps.fromName(appName);
 						const appId = app?.appId ?? "";
 						const own = app
-							? await drain((beforeTimestamp) =>
-									backend === "v2"
-										? control.sandboxes.experimentalList({ appId, beforeTimestamp })
-										: control.sandboxes.list({ appId, beforeTimestamp }),
-								)
+							? await drain((beforeTimestamp) => control.sandboxes.list({ appId, beforeTimestamp }))
 							: [];
-						return { records: own.map((row) => record(listed(row))), next: `outside:${appId}` };
+						const grammar = backend === "v2" ? MODAL_V2_SANDBOX_ID : MODAL_V1_SANDBOX_ID;
+						return {
+							records: own
+								.filter((row) => grammar.allows(row.id))
+								.map((row) => record(listed(row))),
+							next: `outside:${appId}`,
+						};
 					}
 					const appId = cursor.slice("outside:".length);
+					// The current listing API covers both backends across the environment.
 					const outside = (
 						await drain((beforeTimestamp) => control.sandboxes.list({ beforeTimestamp }))
 					).filter((row) => row.appId !== appId);
-					for (const other of await control.apps.list()) {
-						if (other.appId === appId) continue;
-						outside.push(
-							...(await drain((beforeTimestamp) =>
-								control.sandboxes.experimentalList({ appId: other.appId, beforeTimestamp }),
-							)),
-						);
-					}
 					return {
 						records: outside.map((row) => ({
 							id: listed(row).id,
@@ -491,13 +456,11 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 						})),
 					};
 				}),
-			// Both generations' name endpoints, this module's own first: a create can land in either.
+			// Recover creates through the same backend that allocated them.
 			find: (marker, _cursor, { signal }) => {
 				const lookups = [
-					(control: ModalControlPlane) => control.sandboxes.experimentalFromName(appName, marker),
-					(control: ModalControlPlane) => control.sandboxes.fromName(appName, marker),
+					(control: ModalControlPlane) => control.sandboxes.fromName(appName, marker, backend),
 				];
-				if (backend === "v1") lookups.reverse();
 				let active: ModalControlSandbox | undefined;
 				return destroyRunner.run(
 					{ signal },
@@ -538,7 +501,7 @@ export function modalVendor<Native extends { readonly sandboxId: string }>(
 							sandbox = await control.sandboxes.fromId(sandboxId);
 							return sandbox;
 						},
-						// Modal 0.9 rejects a defined timeoutMs <= 0: omission leaves the duration open.
+						// The SDK rejects a defined timeoutMs <= 0: omission leaves the duration open.
 						(started) => started.exec(["sh", "-c", command], { stdout: "pipe", stderr: "pipe" }),
 					);
 				} catch (caught) {
