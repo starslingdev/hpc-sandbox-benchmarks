@@ -54,7 +54,6 @@ export function modalAllocate(
 				// Reserve CPU for the workload and let Modal provide burst capacity above it.
 				cpu: spec.vcpus,
 				// The SDK requires a request alongside a limit; use Modal's 128 MiB default.
-				memoryMiB: 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB: spec.memoryGb * 1024,
 				// VM MemTotal grows with demand; size the runner's guard from the configured ceiling.
