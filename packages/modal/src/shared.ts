@@ -48,9 +48,9 @@ export function modalAllocate(
 			const params = {
 				name: marker,
 				timeoutMs: LEAK_EXPIRY_MS,
-				// Modal's docs describe physical cores, but live behavior contradicts that reading:
-				// cpu=1 exposes nproc=1 and delivered 264 MB hashed/worker/8s versus 512 at cpu=2
-				// (2026-07-10). `cpu` is the guest-schedulable vCPU count, so pass it unhalved.
+				// Pin both request and burst ceiling for the fixed-size comparison. Modal documents
+				// physical-core units; nproc alone does not establish the host's SMT topology.
+				// See docs/evidence/modal-cpu-burst-2026-11-11.md for the effect of a higher ceiling.
 				cpu: spec.vcpus,
 				cpuLimit: spec.vcpus,
 				// `memoryMiB` alone is a reservation: a live guest exposed 464 GiB of host RAM,
