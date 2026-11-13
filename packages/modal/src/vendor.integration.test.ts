@@ -3,15 +3,17 @@
 // module. Kit behaviour (convergence, deadlines, the inventory partition, recovery mechanics) is
 // tested once in the driver package.
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import type { CreateAttempt } from "@sandbox-benchmarks/driver/vendor";
 import { DISK_PROBE } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import { App, Image, ModalClient } from "modal";
 import { ClientError, Status } from "nice-grpc";
 import { removedOnceUnlisted } from "./allocation.ts";
 import modalGvisor from "./gvisor.ts";
+import { modalAllocate } from "./shared.ts";
 import type { ModalBackend, ModalControlPlane, ModalControlSandbox } from "./vendor.ts";
 import { MODAL_APP_NAME, modalVendor } from "./vendor.ts";
 import modalVm from "./vm.ts";
@@ -180,6 +182,66 @@ function driverOver(
 
 vendorContract("modal-vm adapter", modalVm, () => modalAccount().vendor("v1"));
 vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor("v2"));
+
+describe("Modal benchmark resource configuration", () => {
+	it.each([
+		"modal-gvisor",
+		"modal-vm",
+	] as const)("%s permits CPU bursting and uses the default memory request", async (provider) => {
+		const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
+		const app = new App("ap-prepared", MODAL_APP_NAME);
+		const image = new Image(client, "im-prepared", "");
+		const fromName = spyOn(client.apps, "fromName").mockResolvedValue(app);
+		const fromRegistry = spyOn(client.images, "fromRegistry").mockReturnValue(image);
+		const create = spyOn(client.cpClient, "sandboxCreate").mockResolvedValue({
+			sandboxId: `sb-${"A".repeat(22)}`,
+			metadata: undefined,
+		});
+		const experimentalCreate = spyOn(client.cpClient, "sandboxCreateV2").mockResolvedValue({
+			sandboxId: `sb-0${"0".repeat(25)}`,
+			taskId: "ta-prepared",
+			tunnels: [],
+			metadata: undefined,
+			commandRouterAccess: undefined,
+			sandboxToken: "",
+		});
+		const getTaskId = spyOn(client.cpClient, "sandboxGetTaskId").mockResolvedValue({
+			taskId: "ta-prepared",
+		});
+		try {
+			await modalAllocate(
+				provider,
+				IMAGE,
+				() => client,
+			)(
+				{ request: request({ env: undefined }), marker: "benchmark-replicate" },
+				{ signal: AbortSignal.timeout(1000) },
+			);
+			const allocate = provider === "modal-vm" ? create : experimentalCreate;
+			expect(allocate).toHaveBeenCalledTimes(1);
+			expect(allocate.mock.calls[0]?.[0]).toMatchObject({
+				appId: "ap-prepared",
+				definition: {
+					imageId: "im-prepared",
+					resources: {
+						milliCpu: 4000,
+						milliCpuMax: 0,
+						memoryMb: 128,
+						memoryMbMax: 8192,
+					},
+					runtime: provider === "modal-vm" ? "vm" : "gvisor",
+					experimentalOptionsV2: {},
+				},
+			});
+		} finally {
+			fromName.mockRestore();
+			fromRegistry.mockRestore();
+			create.mockRestore();
+			experimentalCreate.mockRestore();
+			getTaskId.mockRestore();
+		}
+	});
+});
 
 describe("Modal end to end through each variant's module", () => {
 	it("GPU teardown waits for the terminated sandbox to disappear from the environment listing", async () => {

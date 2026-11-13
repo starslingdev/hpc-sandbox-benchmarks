@@ -39,7 +39,7 @@ export function modalAllocate(
 	image: string,
 	createClient: (
 		middleware: ClientMiddleware,
-	) => Pick<ModalClient, "apps" | "images" | "sandboxes">,
+	) => Pick<ModalClient, "apps" | "images" | "sandboxes" | "profile">,
 ) {
 	const runner = createModalControlRunner(createClient, 300_000);
 	return ({ request: { spec, env }, marker }: CreateAttempt, { signal }: Op) =>
@@ -48,25 +48,21 @@ export function modalAllocate(
 			const params = {
 				name: marker,
 				timeoutMs: LEAK_EXPIRY_MS,
-				// Pin both request and burst ceiling for the fixed-size comparison. Modal documents
-				// physical-core units; nproc alone does not establish the host's SMT topology.
-				// See docs/evidence/modal-cpu-burst-2026-11-11.md for the effect of a higher ceiling.
+				// Reserve CPU for the workload and let Modal provide burst capacity above it.
 				cpu: spec.vcpus,
-				cpuLimit: spec.vcpus,
-				// `memoryMiB` alone is a reservation: a live guest exposed 464 GiB of host RAM,
-				// causing PTS STREAM sizing never to converge. The limit makes /proc match spec.
-				memoryMiB: spec.memoryGb * 1024,
+				// The SDK requires a request alongside a limit; use Modal's 128 MiB default.
+				memoryMiB: 128,
+				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB: spec.memoryGb * 1024,
 				...(env !== undefined && { env }),
 			};
 			const registry = client.images.fromRegistry(image);
-			return provider === "modal-gvisor"
-				? client.sandboxes.experimentalCreate(app, registry, params)
-				: // The stable service plus vm_runtime is the VM config validated in #221.
-					client.sandboxes.create(app, registry, {
-						...params,
-						experimentalOptions: { vm_runtime: true },
-					});
+			if (provider === "modal-gvisor") {
+				return client.sandboxes.experimentalCreate(app, registry, { ...params, runtime: "gvisor" });
+			}
+			// Keep VM allocations in the V1 inventory generation owned by this driver.
+			client.profile.sandboxV2 = false;
+			return client.sandboxes.create(app, registry, { ...params, runtime: "vm" });
 		});
 }
 

@@ -96,10 +96,12 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 				// Reattach the already-built image through this transaction's client so its RPCs share
 				// cancellation. App and volume handles are resolved inputs, not guest-owned resources.
 				const prepared = await sdk.images.fromId(imageId);
+				// Prepared allocations use the V1 identity and inventory contract.
+				sdk.profile.sandboxV2 = false;
 				const created = await sdk.sandboxes.create(app, prepared, { ...params, name: marker });
 				// Allocation middleware belongs only to the create transaction. Native SDK work
 				// uses the caller-owned client; driver operations attach their own deadlines.
-				return new Sandbox(client, created.sandboxId, { isV2: false });
+				return new Sandbox(client, created.sandboxId);
 			}),
 	});
 	const listRunner = createModalControlRunner(

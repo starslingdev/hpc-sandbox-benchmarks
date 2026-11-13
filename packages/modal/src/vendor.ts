@@ -7,7 +7,7 @@
 // modal-vm and GPU allocations, V2 for modal-gvisor) owns only its own sandboxes there. A read by id
 // carries no name, so the adapter reports the name its own create, listing or lookup learned. The
 // SDK's create returns a running sandbox and its waited terminate an exited one, so both responses
-// are evidence. And Modal 0.9 ignores its client timeouts, so every RPC runs inside a control runner
+// are evidence. The SDK ignores its client timeouts, so every RPC runs inside a control runner
 // that injects the operation's deadline where the SDK's middleware chain consumes it.
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -210,9 +210,7 @@ export function modalControlPlane(client: ModalClient): ModalControlPlane {
 					sandboxName: name,
 					environmentName,
 				});
-				return new Sandbox(client, MODAL_V1_SANDBOX_ID.assert(response.sandboxId), {
-					isV2: false,
-				});
+				return new Sandbox(client, MODAL_V1_SANDBOX_ID.assert(response.sandboxId));
 			},
 			experimentalFromName: async (appName, name) => {
 				const response = await client.cpClient.sandboxGetFromNameV2({
@@ -220,9 +218,7 @@ export function modalControlPlane(client: ModalClient): ModalControlPlane {
 					sandboxName: name,
 					environmentName,
 				});
-				return new Sandbox(client, MODAL_V2_SANDBOX_ID.assert(response.sandboxId), {
-					isV2: true,
-				});
+				return new Sandbox(client, MODAL_V2_SANDBOX_ID.assert(response.sandboxId));
 			},
 		},
 	};
@@ -237,7 +233,7 @@ interface ModalControlRunner<Control = ModalControlPlane> {
 }
 
 /**
- * Modal 0.9 declares client timeout/retry constructor fields but does not apply them at runtime.
+ * The SDK declares client timeout/retry constructor fields but does not apply them at runtime.
  * Inject the transaction signal where the SDK's middleware chain actually consumes it. nice-grpc
  * invokes the last-attached custom middleware first, so these options reach Modal's timeout and
  * retry middleware on every control-plane RPC. The outer timer spans multi-RPC loops such as

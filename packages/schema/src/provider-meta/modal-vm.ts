@@ -14,13 +14,13 @@ export default defineProviderMeta("modal-vm", {
 		class: "microVM",
 		technology: "microVM (VM runtime)",
 		notes:
-			"Modal's experimental VM runtime — a gVisor-free KVM microVM, selected per-create via experimentalOptions {vm_runtime:true} (no separate image; same pushed toolchain image as modal-gvisor).",
+			"Modal's VM runtime — a gVisor-free KVM microVM, selected per-create via runtime: vm with CPU and memory bursting (same pushed toolchain image as modal-gvisor).",
 	},
 	pricing: modalPricing,
 	maturity: {
 		status: "beta",
 		notes:
-			"Isolation variant sharing Modal credentials/pricing with modal-gvisor; adds experimentalOptions {vm_runtime:true} at create. Now carries committed runs and is in the default matrix set.",
+			"Isolation variant sharing Modal credentials/pricing with modal-gvisor; selects runtime: vm at create. Carries committed runs and is in the default matrix set.",
 	},
 	specPinning: "settable",
 	transport: modalTransport,

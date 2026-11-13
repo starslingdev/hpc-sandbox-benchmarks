@@ -14,7 +14,7 @@ export default defineProviderMeta("modal-gvisor", {
 		class: "userspace",
 		technology: "gVisor container",
 		notes:
-			"Modal's default sandbox runtime. scalableSandboxes enabled in the harness; nproc tracks the requested cpu 1:1.",
+			"Modal's default sandbox runtime. scalableSandboxes enabled in the harness; CPU can burst beyond the request.",
 	},
 	pricing: modalPricing,
 	maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },

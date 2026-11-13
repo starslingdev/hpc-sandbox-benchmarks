@@ -14,4 +14,3 @@
 
 - [PTS catalog and analysis design](./pts-catalog-and-analysis-design.md) — early design notes (historical; prefer ADRs + methodology for current truth)
 - [Evidence: Daytona exec transport](./evidence/daytona-exec-transport.md) — research notes on Daytona exec limits
-- [Evidence: Modal CPU bursting](./evidence/modal-cpu-burst-2026-11-11.md) — Better Auth timings and measured compute costs for four-core requests with four- and eight-core limits
