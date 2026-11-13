@@ -1,5 +1,5 @@
 // The Modal DriverModules: the kit's driver over Modal's adapter, bound to the real SDK here and
-// nowhere else. Each isolation variant is the same module over its own sandbox generation.
+// nowhere else. Each isolation variant uses V2 in its own benchmark App.
 // Tests lower the same module over a stub control plane through `vendorDriver`.
 
 import type { CreateAttempt, Op } from "@sandbox-benchmarks/driver/vendor";
@@ -13,6 +13,7 @@ import {
 	MODAL_APP_NAME,
 	MODAL_DESTROY_TIMEOUT_MS,
 	MODAL_INVENTORY_TIMEOUT_MS,
+	MODAL_VM_APP_NAME,
 	modalControlPlane,
 	modalSandboxId,
 	modalVendor,
@@ -39,12 +40,12 @@ export function modalAllocate(
 	image: string,
 	createClient: (
 		middleware: ClientMiddleware,
-	) => Pick<ModalClient, "apps" | "images" | "sandboxes" | "profile">,
+	) => Pick<ModalClient, "apps" | "images" | "sandboxes">,
 ) {
 	const runner = createModalControlRunner(createClient, 300_000);
 	return ({ request: { spec, env }, marker }: CreateAttempt, { signal }: Op) =>
 		runner.run({ signal }, async (client) => {
-			const app = await client.apps.fromName(MODAL_APP_NAME, { createIfMissing: true });
+			const app = await client.apps.fromName(modalAppName(provider), { createIfMissing: true });
 			const memoryBytes = spec.memoryGb * 1024 ** 3;
 			const taskMemoryBytes =
 				memoryBytes >= 2 * 1024 ** 3 ? memoryBytes - 1024 ** 3 : memoryBytes / 2;
@@ -54,24 +55,27 @@ export function modalAllocate(
 				// Reserve CPU for the workload and let Modal provide burst capacity above it.
 				cpu: spec.vcpus,
 				// The SDK requires a request alongside a limit; use Modal's 128 MiB default.
+				memoryMiB: 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB: spec.memoryGb * 1024,
 				// VM MemTotal grows with demand; size the runner's guard from the configured ceiling.
 				env: { REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)), ...env },
 			};
 			const registry = client.images.fromRegistry(image);
-			if (provider === "modal-gvisor") {
-				return client.sandboxes.experimentalCreate(app, registry, { ...params, runtime: "gvisor" });
-			}
-			// Keep VM allocations in the V1 inventory generation owned by this driver.
-			client.profile.sandboxV2 = false;
-			return client.sandboxes.create(app, registry, { ...params, runtime: "vm" });
+			return client.sandboxes.create(app, registry, {
+				...params,
+				runtime: provider === "modal-vm" ? "vm" : "gvisor",
+			});
 		});
 }
 
-/** One provider literal selects both identity and backend; invalid cross-pairs are unrepresentable. */
+function modalAppName(provider: ModalProviderId) {
+	return provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME;
+}
+
+/** Separate Apps keep each runtime's inventory and cleanup ownership disjoint. */
 export function defineModalDriver<P extends ModalProviderId>(provider: P) {
-	const backend = provider === "modal-gvisor" ? "v2" : "v1";
+	const backend = "v2";
 	return defineVendorDriver(provider, {
 		provenance: MODAL_PROVENANCE,
 		sandboxId: modalSandboxId(backend),
@@ -83,7 +87,7 @@ export function defineModalDriver<P extends ModalProviderId>(provider: P) {
 		costEvidence: modalCostEvidence,
 		markerKey: "name",
 		recovery: { provesAbsence: false },
-		// One listing page drains a whole generation, and the whole listing shares the same minute;
+		// One listing page drains the App, and the whole listing shares the same minute;
 		// a delete waits for the sandbox to exit.
 		timing: {
 			controlTimeoutMs: MODAL_INVENTORY_TIMEOUT_MS,
@@ -99,7 +103,7 @@ export function defineModalDriver<P extends ModalProviderId>(provider: P) {
 				});
 			return modalVendor({
 				backend,
-				appName: MODAL_APP_NAME,
+				appName: modalAppName(provider),
 				control: (middleware) => modalControlPlane(client(middleware)),
 				allocate: modalAllocate(provider, resolvedArtifact.ref, client),
 			});
