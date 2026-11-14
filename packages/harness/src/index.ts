@@ -121,6 +121,7 @@ export {
 	withOwnedSandbox,
 	withOwnedShutdownOperation,
 } from "./lib/sandbox-owner.ts";
+export { HOST_VCPUS_PROBE } from "./lib/setup.ts";
 
 /**
  * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from

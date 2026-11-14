@@ -176,6 +176,9 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 	return steps;
 }
 
+/** Schedulable CPUs: GNU nproc honours OMP_* hints, which Modal sets to the CPU request, not the limit. */
+export const HOST_VCPUS_PROBE = "env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc";
+
 /**
  * Captures the sandbox's actual specs into benchmark-results/observed-specs.json before the suite
  * runs, so the normalizer reads it with the other results. nproc / /proc/meminfo see the HOST on
@@ -184,7 +187,7 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
  */
 export const OBSERVED_SPECS_SCRIPT = [
 	`cd ${DIR} && mkdir -p benchmark-results`,
-	"host_vcpus=$(nproc)",
+	`host_vcpus=$(${HOST_VCPUS_PROBE})`,
 	`host_memory_gb=$(awk '/^MemTotal:/ { printf "%.2f", $2 / 1048576 }' /proc/meminfo)`,
 	'vcpus=$host_vcpus; memory_gb=$host_memory_gb; limited=""',
 	"if [ -f /sys/fs/cgroup/cpu.max ]; then",
