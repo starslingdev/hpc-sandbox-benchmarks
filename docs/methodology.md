@@ -85,6 +85,9 @@ order and the emphasis are editorial, and they follow this document's argument:
 - **Everything else stays expanded.** `lifecycle` and `control-plane` are harness-measured timings of
   the provider's own API — a spawn a user waits on, not a synthetic load — and `economics` is the
   provider's published price. None is a microbenchmark, so none is hidden.
+- **Measured cost follows `economics`, as its own section.** It is the provider's bill for what each
+  sandbox used, not a published price, so it is never ranked in the same table — see
+  [Measured cost on the board](#measured-cost-on-the-board).
 
 The header links each identifier to its primary source: the run id to the `bench-matrix` workflow run
 that produced the measurements, the commit to the tree they were measured against, and the dataset link
@@ -228,6 +231,37 @@ after terminate; the hook waits for it to settle and otherwise records `missing`
 figure. run.cloud records `not_sandbox_scoped`:
 its public usage API is organization-wide cumulative usage and is not called or delta-attributed to
 one sandbox.
+
+### Measured cost on the board
+
+The leaderboard renders `costEvidence` in a **Measured cost** section after `economics`, derived from
+the Run alone (`packages/results/src/lib/measured-cost.ts`); nothing about it is stored as a Metric.
+
+- **What the figure is.** One observed record is one sandbox's whole bill as the provider reported it
+  after teardown. For Modal that is CPU and memory, burst above the request included: a sandbox kept
+  busy on more cores than it requested is billed for them, which is exactly what the catalog
+  reservation price cannot show. The `Source` column says whether the provider reported the amount or
+  it was calculated from provider-reported usage.
+- **How it is scoped.** Every Modal benchmark sandbox carries a `sandbox-benchmarks-marker=<marker>`
+  tag, and the stats query filters on that tag, so the figure covers that sandbox and nothing else on
+  the shared account.
+- **How it is summarised.** Per provider and suite: the median across measured sandboxes (one
+  sandbox, one figure, like every other board value), the lowest and highest bill, and how many of
+  the suite's sandboxes were measured. The realworld suites run their pipeline once per sandbox, so
+  their figure is the measured cost of one pipeline run. A total — per suite, and across the
+  provider's whole Run — is `providerCostTotal` over the expected cells, so it is printed only when
+  every one of them has an observed record.
+- **Which sandboxes are expected.** Every cell with a cost record, plus every cell the Run attributes
+  measurements to through `artifactEvidence`. A sandbox that ran and left no cost record is counted
+  as `no_cost_record`, so it cannot disappear from the denominator.
+- **When it is absent.** A `missing` record (unsupported API, not sandbox-scoped, a provider API error
+  such as a throttled stats query, an invalid response, or unconfirmed teardown) or no record at all
+  makes that sandbox **unmeasured**: it is listed by reason and never enters a median or a total as
+  zero. Providers without a cost hook record nothing and do not appear in the section; their only
+  cost figures are the catalog economics above it.
+- **Why it is not ranked.** Only providers with a sandbox-scoped billing API can appear, and a usage
+  bill and a reservation price answer different questions. Putting Modal's bill in the `economics`
+  table would rank it against catalog prices that assume an idle-or-full reservation.
 
 Run v6 separately retains `artifactEvidence` for every benchmark sandbox cell. The host writes the
 requested provider artifact before probing the sandbox. Canonical release refs are upgraded to

@@ -58,6 +58,8 @@ import type {
 	PooledDataset,
 } from "./leaderboard-datasets.ts";
 import { combineLeaderboardDatasets } from "./leaderboard-datasets.ts";
+import type { MeasuredCostProvider, MeasuredCostSuite } from "./measured-cost.ts";
+import { buildMeasuredCost } from "./measured-cost.ts";
 import { MEMORY_TOLERANCE } from "./specs.ts";
 
 /**
@@ -373,6 +375,12 @@ interface LeaderboardFields {
 	 * never-dispatched providers).
 	 */
 	absentProviders: AbsentProvider[];
+	/**
+	 * Provider-reported billed cost per sandbox, from the Run's `costEvidence`. Its own section, never
+	 * an `economics` row: catalog economics price the reservation, this is the bill for actual use.
+	 * Empty when no provider recorded cost evidence.
+	 */
+	measuredCost: MeasuredCostProvider[];
 }
 
 /**
@@ -864,6 +872,7 @@ export function buildLeaderboard(
 				: [],
 		),
 		coverageGaps: coverageGapsOf(run),
+		measuredCost: buildMeasuredCost(run.providers),
 	};
 	// One arm or the other, never a spread that could produce neither: a board with pooling notes
 	// and no sources to attribute them to is now unconstructable rather than merely unintended.
@@ -1244,6 +1253,113 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
  * The mechanism is the same `<details>` the synthetic dimensions already use, so the document has
  * one collapse idiom rather than two.
  */
+/** The sentence a reader gets for an evidence source, so the table never prints a raw enum. */
+const MEASURED_COST_SOURCE: Record<MeasuredCostSuite["sources"][number], string> = {
+	provider_reported: "provider-reported",
+	calculated_from_provider_usage: "calculated from provider usage",
+};
+
+/** An amount with its currency, so a non-USD bill can never read as dollars. */
+function formatMoney(amount: number, currency: string): string {
+	return `${formatValue(amount)} ${currency}`;
+}
+
+/** `3 × \`provider_api_error\`, 1 × \`no_cost_record\`` — every unmeasured sandbox, by reason. */
+function formatUnmeasured(unmeasured: MeasuredCostSuite["unmeasured"]): string {
+	return unmeasured.length === 0
+		? "—"
+		: unmeasured.map(({ reason, count }) => `${count} × \`${reason}\``).join(", ");
+}
+
+/** The coverage cell: measured sandboxes against the sandboxes the Run holds evidence for. */
+function formatMeasuredCoverage(measured: number, expected: number): string {
+	return `${measured} of ${expected}`;
+}
+
+/**
+ * The measured-cost section: provider-reported billed cost, kept apart from the catalog economics.
+ *
+ * A summary table in the open (one row per provider: coverage and the exact total, or why there is
+ * none) and the per-suite medians one triangle down. Not ranked: the figures are bills for different
+ * amounts of work across suites, and the providers that report them are too few to rank — the
+ * point is the number, and whether it is complete.
+ */
+function measuredCostSection(
+	providers: readonly MeasuredCostProvider[],
+	target: TargetSpec,
+): string[] {
+	if (providers.length === 0) return [];
+	const lines: string[] = [
+		"## Measured cost",
+		"",
+		"**Billed by the provider, not priced from a catalog.** Each figure is what the provider's own",
+		"billing API reported for one benchmark sandbox after teardown — every resource it billed, CPU",
+		"burst above the request included — scoped to that sandbox alone. The `economics` section prices",
+		`the requested ${target.vcpus} vCPU · ${target.memoryGb} GiB reservation from published rates; these are bills for what`,
+		"each sandbox actually used, so the two are never ranked together. A sandbox without an observed",
+		"record is **unmeasured**, never zero, and a total is printed only when every sandbox in its scope",
+		"was measured.",
+		"",
+		"| Provider | Measured sandboxes | Total billed | Unmeasured |",
+		"| --- | ---: | ---: | --- |",
+		...providers.map((provider) => {
+			const total =
+				provider.total !== null && provider.currency !== null
+					? formatMoney(provider.total, provider.currency)
+					: "unmeasured";
+			return `| ${provider.displayName} | ${formatMeasuredCoverage(provider.observed, provider.expected)} | ${total} | ${formatUnmeasured(provider.unmeasured)} |`;
+		}),
+		"",
+	];
+	// Per-suite figures only for providers that measured something: a provider with no observed
+	// sandbox has nothing to show per suite, and its summary row already says why.
+	const measured = providers.filter((provider) => provider.observed > 0);
+	if (measured.length === 0) return lines;
+	lines.push(
+		"<details>",
+		"<summary>Measured cost per suite: median per sandbox (one realworld sandbox = one pipeline run)</summary>",
+		"",
+		"Each value is the median across the suite's measured sandboxes, and the range is their lowest and",
+		"highest bill. A realworld sandbox runs its pipeline once, so its figure is the billed cost of one",
+		"pipeline run. Where fewer sandboxes were measured than ran, the median rests on the measured ones",
+		"only — read it beside the coverage column — and the suite total stays unmeasured.",
+		"",
+		"| Provider | Suite | Median per sandbox | Range | Measured sandboxes | Suite total | Unmeasured | Source |",
+		"| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
+	);
+	for (const provider of measured) {
+		for (const suite of provider.suites) {
+			const currency = provider.currency;
+			const median =
+				suite.median !== null && currency !== null
+					? formatMoney(suite.median, currency)
+					: suite.amounts.length > 0
+						? "mixed currencies"
+						: "unmeasured";
+			const low = suite.amounts[0];
+			const high = suite.amounts.at(-1);
+			const range =
+				currency !== null && low !== undefined && high !== undefined && suite.amounts.length > 1
+					? `${formatValue(low)} – ${formatValue(high)}`
+					: "—";
+			const total =
+				suite.total !== null && currency !== null
+					? formatMoney(suite.total, currency)
+					: "unmeasured";
+			const name = suite.perPipelineRun ? `${suite.suite} _(per pipeline run)_` : suite.suite;
+			const source =
+				suite.sources.length === 0
+					? "—"
+					: suite.sources.map((source) => MEASURED_COST_SOURCE[source]).join(", ");
+			lines.push(
+				`| ${provider.displayName} | ${name} | ${median} | ${range} | ${formatMeasuredCoverage(suite.amounts.length, suite.expected)} | ${total} | ${formatUnmeasured(suite.unmeasured)} | ${source} |`,
+			);
+		}
+	}
+	lines.push("", "</details>", "");
+	return lines;
+}
+
 export function renderLeaderboardMarkdown(
 	board: Leaderboard,
 	figures: readonly LeaderboardFigure[],
@@ -1447,6 +1563,8 @@ export function renderLeaderboardMarkdown(
 		}
 		if (collapsed) lines.push("</details>", "");
 	}
+
+	lines.push(...measuredCostSection(board.measuredCost, board.targetSpec));
 
 	// Coverage gaps: summary first; full table + legends inside <details> so unfinished providers
 	// don't bury the rankings.
