@@ -1,10 +1,10 @@
 # @sandbox-benchmarks/tangle
 
-Owns the Tangle Sandbox driver implementation, SDK dependencies, and behavioral tests.
-The fleet loader selects this package lazily; shared session mechanics live in
-`@sandbox-benchmarks/driver`. SDK versions are pinned in the root catalog.
+Opt-in Tangle Sandbox driver using `@tangle-network/sandbox`. Set `TANGLE_API_KEY`.
 
-The driver boots the shared toolchain image (`artifact: image`) through the SDK's `environment`
-field, as an isolated, agent-free, ephemeral sandbox at the target shape.
+Boots the shared toolchain image as an isolated, agent-free, ephemeral sandbox at the target shape.
+The runtime's uid has no passwd entry and `/usr/share` is read-only, so a provider-local preflight
+gives PTS writable state and code under `$HOME`.
 
-Run `bun run --filter @sandbox-benchmarks/tangle test` or `typecheck` from the repo root.
+Run `bun test packages/tangle` for the adapter checks. Use
+`bun apps/cli/src/bin/driver-check.ts --provider tangle` for live conformance.

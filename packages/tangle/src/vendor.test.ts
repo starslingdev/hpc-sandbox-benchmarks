@@ -1,60 +1,45 @@
 import { expect, test } from "bun:test";
-import type { DriverContext } from "@sandbox-benchmarks/driver";
 import type { SandboxInstance } from "@tangle-network/sandbox";
 import { SandboxError } from "@tangle-network/sandbox";
-import type { TangleClient } from "./vendor.ts";
-import { tangleVendor } from "./vendor.ts";
+import { TANGLE_PTS_PREFLIGHT, tangleVendor } from "./vendor.ts";
 
-test("only an SDK-confirmed refusal can discard ambiguous create custody", () => {
-	const vendor = tangleVendor(
-		{} as TangleClient,
-		{
-			resolvedArtifact: { kind: "image", ref: "image" },
-		} as Pick<DriverContext<"tangle">, "resolvedArtifact">,
-	);
-	expect(
-		vendor.control.refused?.(new SandboxError("unauthorized", { status: 401 })),
-	).toBeUndefined();
-	expect(
-		vendor.control.refused?.(
-			new SandboxError("quota", { status: 429, createFailureDisposition: "not-admitted" }),
-		),
-	).toEqual({ retryable: true });
+const vendor = tangleVendor({} as Parameters<typeof tangleVendor>[0], {
+	resolvedArtifact: { kind: "image", ref: "image" },
 });
 
-test("Tangle commands use the baked toolchain before the runtime's Nix PATH", async () => {
+test("a non-retryable 4xx refuses, while a bare 429 stays ambiguous unless the SDK labels it", () => {
+	const refused = (error: SandboxError) => vendor.control.refused?.(error);
+	expect(refused(new SandboxError("over limit", { status: 400 }))).toEqual({ retryable: false });
+	expect(refused(new SandboxError("busy", { status: 429 }))).toBeUndefined();
+	expect(
+		refused(new SandboxError("quota", { status: 429, createFailureDisposition: "not-admitted" })),
+	).toEqual({ retryable: true });
+	expect(refused(new SandboxError("conflict", { status: 409 }))).toBeUndefined();
+});
+
+test("every command and the preflight run behind the image toolchain and HOME PTS state", async () => {
 	const commands: string[] = [];
 	const sandbox = {
+		resources: { cpuCores: 4, memoryMB: 8192 },
 		exec: async (command: string) => {
 			commands.push(command);
-			return { exitCode: 0, stdout: "ok", stderr: "" };
+			return { exitCode: 0, stdout: "", stderr: "" };
 		},
 		process: {
 			spawn: async (command: string) => {
 				commands.push(command);
-				return { pid: 123 };
+				return { pid: 7 };
 			},
 		},
 	} as unknown as SandboxInstance;
-	const vendor = tangleVendor(
-		{} as TangleClient,
-		{
-			resolvedArtifact: {
-				kind: "image",
-				ref: "ghcr.io/starslingdev/sandbox-benchmarks-toolchain:v8",
-			},
-		} as Pick<DriverContext<"tangle">, "resolvedArtifact">,
-	);
-
-	await vendor.data.exec(sandbox, "node -e 'process.stdout.write(process.versions.node)'");
-	if (!vendor.data.launch) throw new Error("Tangle durable launch is required");
-	await vendor.data.launch(sandbox, "mise run benchmark:cpu:node");
-
-	for (const command of commands) {
-		expect(command).toStartWith(
-			"export PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH; ",
-		);
-	}
-	expect(commands[0]).toEndWith("node -e 'process.stdout.write(process.versions.node)'");
-	expect(commands[1]).toEndWith("mise run benchmark:cpu:node");
+	const spec = { vcpus: 4, memoryGb: 8, diskGb: 40 };
+	const op = { signal: new AbortController().signal };
+	expect(await vendor.data.prepare?.({ native: sandbox } as never, { spec } as never, op)).toEqual({
+		status: "honored",
+	});
+	await vendor.data.exec(sandbox, "true");
+	await vendor.data.launch?.(sandbox, "mise run x");
+	expect(commands[0]).toEndWith(TANGLE_PTS_PREFLIGHT);
+	for (const command of commands)
+		expect(command).toStartWith('export PATH="$HOME/.local/pts/bin:/usr/local/share/mise/shims:');
 });
