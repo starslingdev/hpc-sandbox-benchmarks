@@ -9,6 +9,7 @@ import type {
 	SdkProvenance,
 } from "@sandbox-benchmarks/schema";
 import type { ProviderId } from "@sandbox-benchmarks/schema/provider-ids";
+import type { EnvOf } from "./define.ts";
 import { DriverError } from "./errors.ts";
 import type { CreateBudget, DriverOperationOptions, GpuSpec, SandboxSession } from "./port.ts";
 
@@ -116,7 +117,27 @@ export interface ProviderCostEvidenceCapability<P extends ProviderId = ProviderI
 	readonly sdk: SdkProvenance;
 	readonly captureAfterTeardown: (
 		input: CostEvidenceCaptureInput<P>,
+		/** The provider's parsed driver env: a usage API's credentials, never ambient process.env. */
+		env: EnvOf<P>,
 	) => Promise<ProviderCostEvidence>;
+}
+
+/** The hook with its env applied: what the harness calls. An unbound hook does not fit this type. */
+export interface BoundCostEvidenceCapability {
+	readonly sdk: SdkProvenance;
+	readonly captureAfterTeardown: (input: CostEvidenceCaptureInput) => Promise<ProviderCostEvidence>;
+}
+
+/** Provider-erased: the harness passes the bound module's own id as `providerId`. */
+export function bindCostEvidence<P extends ProviderId>(
+	capability: ProviderCostEvidenceCapability<P>,
+	env: EnvOf<P>,
+): BoundCostEvidenceCapability {
+	return {
+		sdk: capability.sdk,
+		captureAfterTeardown: (input) =>
+			capability.captureAfterTeardown(input as CostEvidenceCaptureInput<P>, env),
+	};
 }
 
 /** Policy every joined provider module must declare beside its driver factory. */
