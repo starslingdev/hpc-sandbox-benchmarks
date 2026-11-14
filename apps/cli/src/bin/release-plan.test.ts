@@ -81,6 +81,7 @@ describe("buildReleasePlan matrix", () => {
 			"freestyle",
 			"brezel",
 			"digitalocean",
+			"baseten",
 		]);
 	});
 

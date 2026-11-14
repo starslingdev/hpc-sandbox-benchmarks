@@ -11,6 +11,7 @@ const refs: CandidateRefs = {
 	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
 	blaxelImageCandidate: "tc-v1-candidate",
+	basetenImageCandidate: "tc-v1-baseten-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	vercelImageCandidate: "sandbox-benchmarks-toolchain-vercel:v1-candidate",
 	daytonaVmTarget: "us-west-2",
@@ -65,6 +66,16 @@ describe("candidateCreateOptions", () => {
 		});
 		expect(candidateCreateOptions("blaxel", refs)).toEqual({
 			image: `${refs.blaxelImageCandidate}:latest`,
+		});
+	});
+
+	it("points Baseten at its versioned candidate team image", () => {
+		expect(candidateResolvedArtifact("baseten", refs)).toEqual({
+			kind: "baked",
+			ref: refs.basetenImageCandidate,
+		});
+		expect(candidateCreateOptions("baseten", refs)).toEqual({
+			image: `${refs.basetenImageCandidate}:latest`,
 		});
 	});
 

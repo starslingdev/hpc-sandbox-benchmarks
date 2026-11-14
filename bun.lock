@@ -75,6 +75,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/baseten": {
+      "name": "@sandbox-benchmarks/baseten",
+      "version": "0.0.0",
+      "dependencies": {
+        "@basetenlabs/sandbox": "catalog:computesdk",
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/blaxel": {
       "name": "@sandbox-benchmarks/blaxel",
       "version": "0.0.0",
@@ -165,6 +179,7 @@
       "name": "@sandbox-benchmarks/drivers",
       "version": "0.0.0",
       "dependencies": {
+        "@sandbox-benchmarks/baseten": "workspace:*",
         "@sandbox-benchmarks/blaxel": "workspace:*",
         "@sandbox-benchmarks/boat": "workspace:*",
         "@sandbox-benchmarks/brezel": "workspace:*",
@@ -453,6 +468,7 @@
   },
   "catalogs": {
     "computesdk": {
+      "@basetenlabs/sandbox": "0.5.0",
       "@blaxel/core": "0.3.5",
       "@boatdev/sdk": "1.0.0",
       "@bufbuild/protobuf": "2.14.1",
@@ -563,6 +579,10 @@
     "@azure/storage-blob": ["@azure/storage-blob@12.33.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.9.0", "@azure/core-client": "^1.9.3", "@azure/core-http-compat": "^2.2.0", "@azure/core-lro": "^2.2.0", "@azure/core-paging": "^1.6.2", "@azure/core-rest-pipeline": "^1.19.1", "@azure/core-tracing": "^1.2.0", "@azure/core-util": "^1.11.0", "@azure/core-xml": "^1.4.5", "@azure/logger": "^1.1.4", "@azure/storage-common": "^12.4.1", "events": "^3.0.0", "tslib": "^2.8.1" } }, "sha512-2SX8oP8PyblUcAFZSg39c8Ls+tFjavM6sBeV+qpw33mRzRhI/5hrFJmJ/x0H9xx5l6ECPvgSP8uPxqTeVbHNIA=="],
 
     "@azure/storage-common": ["@azure/storage-common@12.5.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.9.0", "@azure/core-http-compat": "^2.4.0", "@azure/core-rest-pipeline": "^1.24.0", "@azure/core-tracing": "^1.2.0", "@azure/core-util": "^1.11.0", "@azure/logger": "^1.1.4", "events": "^3.3.0", "tslib": "^2.8.1" } }, "sha512-bttzuhQiCIwrkzjPDA+AtAR7dg19L/CC6ztcqJ5LfvWpXuys9mHp0UQ0udYnoUvv9SCT9KTR5kqFvFr0e6k0lQ=="],
+
+    "@basetenlabs/client": ["@basetenlabs/client@0.5.0", "", {}, "sha512-5Ubj1fWD8GxCXfymSjF50tBQ9sZj/G+0r2JVpMZk148+oW+hlnWGHPnaRAIWVvvBh4vhFaNQeYOMpmuUT3xQmw=="],
+
+    "@basetenlabs/sandbox": ["@basetenlabs/sandbox@0.5.0", "", { "dependencies": { "@basetenlabs/client": "0.5.0" } }, "sha512-GOtEBCcj/a3dEOd8GKN6cPebvLB5N2UTjTUYnWjKToz6qPcaMLvgva1o2d2jNZX8yZlsRkd1aRUWBVI52gtUTg=="],
 
     "@biomejs/biome": ["@biomejs/biome@2.4.16", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.16", "@biomejs/cli-darwin-x64": "2.4.16", "@biomejs/cli-linux-arm64": "2.4.16", "@biomejs/cli-linux-arm64-musl": "2.4.16", "@biomejs/cli-linux-x64": "2.4.16", "@biomejs/cli-linux-x64-musl": "2.4.16", "@biomejs/cli-win32-arm64": "2.4.16", "@biomejs/cli-win32-x64": "2.4.16" }, "bin": { "biome": "bin/biome" } }, "sha512-x9ajFh1zChVybCiM3TN6OD4phAqLgtPZjFrZF+aTMYCPjwBO+k529TX7PPsAqtGNLeV4UgzwQnowEgS7bGmzcA=="],
 
@@ -991,6 +1011,8 @@
     "@rollup/pluginutils": ["@rollup/pluginutils@5.4.0", "", { "dependencies": { "@types/estree": "^1.0.0", "estree-walker": "^2.0.2", "picomatch": "^4.0.2" }, "peerDependencies": { "rollup": "^1.20.0||^2.0.0||^3.0.0||^4.0.0" }, "optionalPeers": ["rollup"] }, "sha512-MfPp06CjRLfXQ3wY0R8vJDYBy/MvVcc9OulEfR0B8Iv9ko+GCNaRZ+EpJYFl27LhKsZK0o420sYCRHCjfCgeUg=="],
 
     "@run-cloud/sdk": ["@run-cloud/sdk@0.9.0", "", { "dependencies": { "ws": "^8.21.0" } }, "sha512-wBVUs3wZJzbcJBnNMxpJevn9TchWvzE+Z8iHjHfFDSyjGOLyR8cIj6eW/rDRsupXr6KzpKOmFDG4vPkemM9uYA=="],
+
+    "@sandbox-benchmarks/baseten": ["@sandbox-benchmarks/baseten@workspace:packages/baseten"],
 
     "@sandbox-benchmarks/blaxel": ["@sandbox-benchmarks/blaxel@workspace:packages/blaxel"],
 

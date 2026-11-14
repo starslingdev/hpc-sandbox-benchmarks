@@ -17,6 +17,8 @@ export interface CandidateRefs {
 	novitaTemplateCandidate: string;
 	/** Candidate sandbox image in the Blaxel workspace registry. */
 	blaxelImageCandidate: string;
+	/** Candidate sandbox image in the Baseten team's image registry. */
+	basetenImageCandidate: string;
 	toolchainImageCandidate: string;
 	/** Candidate image mirrored into the linked project's Vercel Container Registry. */
 	vercelImageCandidate: string;
@@ -71,6 +73,11 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 			return {
 				artifact: { kind: "baked", ref: refs.blaxelImageCandidate },
 				createOptions: { image: `${refs.blaxelImageCandidate}:latest` },
+			};
+		case "baseten":
+			return {
+				artifact: { kind: "baked", ref: refs.basetenImageCandidate },
+				createOptions: { image: `${refs.basetenImageCandidate}:latest` },
 			};
 		case "boat":
 		case "brezel":
