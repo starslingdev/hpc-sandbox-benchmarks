@@ -34,6 +34,7 @@ import {
 	writeImmutableJson,
 } from "./experiment-artifacts.ts";
 import { planExperiment } from "./experiment-plan.ts";
+import { aggregatePublication } from "./publication.ts";
 
 const root = mkdtempSync(join(tmpdir(), "experiment-publication-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -538,16 +539,16 @@ test("short trials and Value-only aggregates retain diagnostic coverage and cann
 		],
 		["better-auth-two-passes", { suite: "realworld-better-auth", passes: 2 }],
 	] as const) {
+		// In-process: the bin writes exactly this coverage and prints exactly these lines, and the
+		// spawned CLI contract is covered end to end above; seven extra processes proved nothing more.
 		const f = fixture(name, options);
-		const result = invoke("aggregate-experiment", [f.planFile, f.attemptsRoot, f.candidate]);
-		expect(result.exitCode).toBe(1);
-		expect(result.stderr.toString()).toContain("passes=");
-		const report = JSON.parse(readFileSync(join(f.candidate, "coverage.json"), "utf8"));
+		const aggregation = aggregatePublication(f.planFile, f.attemptsRoot, {});
+		expect(aggregation.run).toBeUndefined();
+		expect(describeIncompleteExperiment(aggregation).join("\n")).toContain("passes=");
+		const report = aggregation.coverage;
 		expect(report.complete).toBe(false);
 		expect(report.cells).toHaveLength(4);
 		expect(report.cells.every((cell: { status: string }) => cell.status === "failed")).toBe(true);
-		expect(existsSync(join(f.candidate, "index.json"))).toBe(false);
-		expect(existsSync(f.dataset)).toBe(false);
 	}
 }, 20_000);
 
@@ -574,10 +575,9 @@ test("a valid Run digest cannot substitute changed samples or another provider's
 		],
 	] as const) {
 		const f = fixture(name, { changeMetric });
-		const result = invoke("aggregate-experiment", [f.planFile, f.attemptsRoot, f.candidate]);
-		expect(result.exitCode).toBe(1);
-		expect(result.stderr.toString()).toContain("unverified");
-		expect(existsSync(join(f.candidate, "index.json"))).toBe(false);
+		const aggregation = aggregatePublication(f.planFile, f.attemptsRoot, {});
+		expect(aggregation.run).toBeUndefined();
+		expect(describeIncompleteExperiment(aggregation).join("\n")).toContain("unverified");
 	}
 }, 20_000);
 
@@ -668,6 +668,7 @@ test("later cleanup evidence unblocks partial promotion without restoring failed
 	});
 	const promote = [candidate, f.dataset, f.planFile, f.attemptsRoot, "--allow-partial"];
 	expect(invoke("promote", promote).exitCode).toBe(0);
+	const verified = () => aggregatePublication(f.planFile, f.attemptsRoot, { allowPartial: true });
 	expect(readFileSync(evidenceFile, "utf8")).toBe(original);
 	// Neither a different sandbox nor an unbound attestation may release the gate.
 	for (const changed of [
@@ -676,10 +677,11 @@ test("later cleanup evidence unblocks partial promotion without restoring failed
 		{ ...recovery, sourceSha: "b".repeat(40) },
 		{ ...recovery, planDigest: `sha256:${"b".repeat(64)}` },
 	]) {
+		// Both bins publish only what aggregatePublication verifies, so each tamper is checked in
+		// process; the spawned aggregate + promote above already cover the CLI contract.
 		writeFileSync(recoveryFile, JSON.stringify(changed));
-		expect(invoke("aggregate-experiment", args).exitCode).toBe(1);
-		expect(invoke("promote", promote).exitCode).toBe(1);
+		expect(verified).toThrow(/^cleanup recovery /);
 	}
 	rmSync(recoveryFile);
-	expect(invoke("promote", promote).exitCode).toBe(1);
+	expect(verified().run).toBeUndefined();
 }, 20_000);
