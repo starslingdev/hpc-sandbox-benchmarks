@@ -29,18 +29,14 @@ const PREFIX =
 	'PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/" PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"; ';
 
 /**
- * Idempotent: an install root of links to the baked profiles (node-web-tooling writes into its own
- * directory, so it is copied), and a PTS code copy whose launcher points at itself.
+ * Idempotent: a writable copy of the baked installs (several profiles rebuild or write in their
+ * own directory), and a PTS code copy whose launcher points at itself.
  */
 export const TANGLE_PTS_PREFLIGHT = [
 	"set -eu",
-	'installed="$HOME/.phoronix-test-suite/installed-tests/pts"',
-	'mkdir -p "$installed"',
-	"for profile in /var/lib/phoronix-test-suite/installed-tests/pts/*; do",
-	'  link="$installed/$(basename "$profile")"',
-	'  [ -e "$link" ] && continue',
-	'  case "$link" in *node-web-tooling-*) cp -R "$profile" "$link" ;; *) ln -s "$profile" "$link" ;; esac',
-	"done",
+	'state="$HOME/.phoronix-test-suite"',
+	'mkdir -p "$state"',
+	'[ -d "$state/installed-tests" ] || cp -R /var/lib/phoronix-test-suite/installed-tests "$state/"',
 	'pts="$HOME/.local/pts"',
 	'if [ ! -x "$pts/bin/phoronix-test-suite" ]; then',
 	'  rm -rf "$pts" && mkdir -p "$pts/bin" "$pts/share"',
