@@ -58,8 +58,13 @@ export function modalAllocate(
 				memoryLimitMiB: spec.memoryGb * 1024,
 				// VM MemTotal grows with demand; size the runner's guard from the configured ceiling.
 				env: { REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)), ...env },
-				// The cost hook isolates this sandbox's billed usage by filtering stats on this tag.
-				tags: { [MODAL_MARKER_TAG]: marker },
+				// Pin CPU placement to Modal's low-variance instance pool
+				// (https://modal.com/docs/guide/performance-sensitive-sandboxes). GPU creates
+				// must not set this; Modal documents the option as CPU-only.
+				experimentalOptions: { performance_sensitive: true },
+				// The cost hook isolates this sandbox's billed usage by filtering stats on the
+				// marker tag. perf_sensitive is a console/inventory label only.
+				tags: { [MODAL_MARKER_TAG]: marker, perf_sensitive: "true" },
 			};
 			const registry = client.images.fromRegistry(image);
 			return client.sandboxes.create(app, registry, {
