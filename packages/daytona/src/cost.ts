@@ -180,7 +180,10 @@ async function captureV2(
 			...base,
 			kind: "missing",
 			reason: "provider_api_error",
-			detail: "The sandbox's usage history did not reach teardown before the capture deadline.",
+			// Observed 2026-11-14: an org can create v2 sandboxes before their usage is metered.
+			detail: history.available
+				? "The sandbox's usage history did not reach teardown before the capture deadline."
+				: "Daytona reported usage history as unavailable (`available: false`) for this sandbox.",
 			responseJson,
 		};
 	}
