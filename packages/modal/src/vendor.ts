@@ -23,6 +23,13 @@ import { ClientError, Status } from "nice-grpc";
 
 export const MODAL_APP_NAME = "sandbox-benchmarks";
 export const MODAL_VM_APP_NAME = "sandbox-benchmarks-vm";
+
+export type ModalProviderId = "modal-gvisor" | "modal-vm";
+
+/** Separate Apps keep each runtime's inventory, cleanup and billing ownership disjoint. */
+export function modalAppName(provider: ModalProviderId): string {
+	return provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME;
+}
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 /**
  * Waited teardown must fit under the harness destroy ceiling (60s) without racing it.

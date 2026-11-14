@@ -12,6 +12,7 @@ import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/
 import { App, Image, ModalClient } from "modal";
 import { ClientError, Status } from "nice-grpc";
 import { removedOnceUnlisted } from "./allocation.ts";
+import { MODAL_MARKER_TAG } from "./cost.ts";
 import modalGvisor from "./gvisor.ts";
 import { modalAllocate } from "./shared.ts";
 import type { ModalBackend, ModalControlPlane, ModalControlSandbox } from "./vendor.ts";
@@ -231,6 +232,10 @@ describe("Modal benchmark resource configuration", () => {
 				{ createIfMissing: true },
 			);
 			expect(allocate).toHaveBeenCalledTimes(1);
+			// The cost hook isolates this sandbox's billed usage by its marker tag.
+			expect(allocate.mock.calls[0]?.[0]?.tags).toEqual([
+				{ tagName: MODAL_MARKER_TAG, tagValue: "benchmark-replicate" },
+			]);
 			expect(allocate.mock.calls[0]?.[0]).toMatchObject({
 				appId: "ap-prepared",
 				definition: {

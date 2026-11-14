@@ -15,7 +15,8 @@
     "./cleanup-observation": "./src/cleanup-observation.ts"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "generate:proto": "mise exec aqua:bufbuild/buf@1.75.0 -- buf generate && biome check --write src/gen"
   },
   "dependencies": {
     "@bufbuild/protobuf": "catalog:computesdk",
