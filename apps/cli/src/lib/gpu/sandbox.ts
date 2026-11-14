@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { SandboxSession } from "@sandbox-benchmarks/driver";
 import { readTextFile, writeTextFile } from "@sandbox-benchmarks/driver";
 import type { SandboxWork } from "@sandbox-benchmarks/harness";
-import { withSandboxWork } from "@sandbox-benchmarks/harness";
+import { HOST_VCPUS_PROBE, withSandboxWork } from "@sandbox-benchmarks/harness";
 import type {
 	ModalGpuAllocationRequest,
 	ModalGpuHandle,
@@ -160,7 +160,7 @@ export async function observeGpuSandbox(sandbox: GpuSandbox) {
 	const system = await sandbox.runner.run(
 		"capture software metadata",
 		[
-			"printf 'visible_cpus=%s\\n' \"$(nproc)\"",
+			`printf 'visible_cpus=%s\\n' "$(${HOST_VCPUS_PROBE})"`,
 			"printf 'memory_bytes='; if [ -r /sys/fs/cgroup/memory.max ] && [ \"$(cat /sys/fs/cgroup/memory.max)\" != max ]; then cat /sys/fs/cgroup/memory.max; else awk '/MemTotal:/ { print $2 * 1024 }' /proc/meminfo; fi",
 			"printf 'pts_version=%s\\n' \"$(phoronix-test-suite version | sed -n 's/^Phoronix Test Suite v//p')\"",
 			`${GPU_BENCHMARK.paths.vllmEnvironment}/bin/python - <<'PY'`,
