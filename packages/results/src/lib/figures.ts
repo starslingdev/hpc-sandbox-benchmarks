@@ -242,19 +242,18 @@ export function metricFigureModelOf(
  */
 function measuredCostFigures(board: Leaderboard, validated: ReadonlySet<string>): MetricFigure[] {
 	const providers = board.measuredCost.filter((provider) => validated.has(provider.providerId));
-	const suites = [
-		...new Set(
-			providers.flatMap((provider) =>
-				provider.suites.filter((suite) => suite.perPipelineRun).map((suite) => suite.suite),
-			),
+	const suiteIds = new Set(
+		providers.flatMap((provider) =>
+			provider.suites.filter((suite) => suite.perPipelineRun).map((suite) => suite.suite),
 		),
-	];
-	return suites.flatMap((suiteId): MetricFigure[] => {
+	);
+	return [...suiteIds].flatMap((suiteId): MetricFigure[] => {
 		const entries = providers.flatMap((provider) => {
 			const suite = provider.suites.find((candidate) => candidate.suite === suiteId);
 			return suite ? [{ provider, suite }] : [];
 		});
-		const measured = entries
+		// A median exists only for a provider with observed bills in one currency (see `tally`).
+		const charted = entries
 			.flatMap(({ provider, suite }) =>
 				suite.median !== null && provider.currency !== null
 					? [{ provider, suite, median: suite.median, currency: provider.currency }]
@@ -264,8 +263,9 @@ function measuredCostFigures(board: Leaderboard, validated: ReadonlySet<string>)
 				(a, b) =>
 					a.median - b.median || a.provider.providerId.localeCompare(b.provider.providerId, "en"),
 			);
-		const currencies = new Set(measured.map(({ currency }) => currency));
+		const currencies = new Set(charted.map(({ currency }) => currency));
 		const [currency] = currencies;
+		// Bars in two currencies on one axis would be a lie; the table still shows each.
 		if (currency === undefined || currencies.size !== 1) return [];
 		const firstTask = SUITES[suiteId].metrics[0];
 		const suiteName =
@@ -280,7 +280,7 @@ function measuredCostFigures(board: Leaderboard, validated: ReadonlySet<string>)
 				headline: false,
 				derived: false,
 				measured: true,
-				rows: measured.map(({ provider, suite, median }, index) => ({
+				rows: charted.map(({ provider, suite, median }, index) => ({
 					provider: provider.providerId,
 					value: median,
 					lo: suite.amounts[0] ?? median,
@@ -294,9 +294,12 @@ function measuredCostFigures(board: Leaderboard, validated: ReadonlySet<string>)
 					.map(({ provider, suite }) => ({
 						provider: provider.providerId,
 						outcome: "unmeasured",
-						reason: `No observed bill for any of ${suite.expected} sandboxes: ${suite.unmeasured
-							.map(({ reason, count }) => `${count} × ${reason}`)
-							.join(", ")}.`,
+						reason:
+							suite.amounts.length > 0
+								? `Bills in more than one currency across ${suite.expected} sandboxes.`
+								: `No observed bill for any of ${suite.expected} sandboxes: ${suite.unmeasured
+										.map(({ reason, count }) => `${count} × ${reason}`)
+										.join(", ")}.`,
 					})),
 			},
 		];
