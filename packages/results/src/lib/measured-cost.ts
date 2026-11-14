@@ -42,42 +42,40 @@ import {
 /** Why a cell has no measured figure: the provider hook's recorded reason, or no record at all. */
 export type UnmeasuredReason = MissingProviderCostEvidence["reason"] | "no_cost_record";
 
+/** Coverage and figures over one set of expected sandboxes — a suite, or a provider's whole Run. */
+export interface MeasuredCostTally {
+	/** Sandboxes the Run holds evidence for — the coverage denominator. */
+	expected: number;
+	/** Observed per-sandbox amounts, ascending; its length is the measured count. */
+	amounts: number[];
+	/** Median of {@link amounts}, or null when none was observed or currencies disagree. */
+	median: number | null;
+	/** Exact total, or null unless every expected sandbox has an observed record. */
+	total: number | null;
+	/** Unmeasured sandboxes, counted by reason, most common first. */
+	unmeasured: { reason: UnmeasuredReason; count: number }[];
+	/** Evidence sources behind {@link amounts}, sorted. */
+	sources: ObservedProviderCostEvidence["source"][];
+}
+
 /** One suite's measured cost for one provider. */
-export interface MeasuredCostSuite {
+export interface MeasuredCostSuite extends MeasuredCostTally {
 	suite: SuiteName;
 	/**
 	 * True when one sandbox runs this suite's pipeline exactly once (the realworld suites, k = 1), so
 	 * the per-sandbox figure IS the measured cost of one pipeline run.
 	 */
 	perPipelineRun: boolean;
-	/** Sandboxes the Run holds evidence for in this suite — the coverage denominator. */
-	expected: number;
-	/** Observed per-sandbox amounts, ascending. Empty when nothing was measured. */
-	amounts: number[];
-	/** Median of {@link amounts}, or null when none was observed or currencies disagree. */
-	median: number | null;
-	/** Exact suite total, or null unless every expected sandbox has an observed record. */
-	total: number | null;
-	/** Unmeasured sandboxes, counted by reason, most common first. */
-	unmeasured: { reason: UnmeasuredReason; count: number }[];
-	/** Evidence sources behind {@link amounts}. */
-	sources: ObservedProviderCostEvidence["source"][];
 }
 
-/** One provider's measured cost across the suites it ran. */
-export interface MeasuredCostProvider {
+/** One provider's measured cost: the whole-Run tally, and one per suite it ran. */
+export interface MeasuredCostProvider extends MeasuredCostTally {
 	providerId: string;
 	displayName: string;
 	/** The one currency every observed record uses, or null when none was observed or they disagree. */
 	currency: string | null;
 	/** Realworld suites first, then registry order. */
 	suites: MeasuredCostSuite[];
-	expected: number;
-	observed: number;
-	/** Exact total across every expected cell, or null when any is unmeasured. */
-	total: number | null;
-	/** Unmeasured sandboxes across every suite, counted by reason, most common first. */
-	unmeasured: MeasuredCostSuite["unmeasured"];
 }
 
 /** Realworld pipelines lead, as they do on the rest of the board; the rest keep registry order. */
@@ -86,92 +84,84 @@ const SUITE_ORDER: readonly SuiteName[] = [
 	...SUITE_NAMES.filter((suite) => SUITES[suite].wave !== "realworld"),
 ];
 
-const sortedByCount = (counts: Map<UnmeasuredReason, number>) =>
-	[...counts.entries()]
-		.map(([reason, count]) => ({ reason, count }))
-		.sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, "en"));
-
 /**
- * The cells a provider must account for: every cell it has a cost record for, plus every cell the
- * Run attributes measurements to (`artifactEvidence`, one per booted sandbox). A sandbox that ran
- * and left no cost record is therefore unmeasured rather than invisible.
+ * Tally expected cells against the provider's records. `currency` is the provider's single
+ * currency; when it is null (none observed, or they disagree) no median or total is computed.
  */
-function expectedCellsOf(provider: ProviderRun): Map<string, ProviderCostCell> {
-	const cells = new Map<string, ProviderCostCell>();
-	for (const record of [...(provider.costEvidence ?? []), ...(provider.artifactEvidence ?? [])]) {
-		cells.set(providerCostCellKey(record), record.cell);
+function tally(
+	cells: readonly [string, ProviderCostCell][],
+	recordByCell: ReadonlyMap<string, ProviderCostEvidence>,
+	currency: string | null,
+): MeasuredCostTally {
+	const unmeasured = new Map<UnmeasuredReason, number>();
+	const records: ProviderCostEvidence[] = [];
+	const amounts: number[] = [];
+	const sources = new Set<ObservedProviderCostEvidence["source"]>();
+	for (const [key] of cells) {
+		const record = recordByCell.get(key);
+		if (record !== undefined) records.push(record);
+		if (record?.kind === "observed") {
+			amounts.push(record.amount);
+			sources.add(record.source);
+		} else {
+			const reason = record?.reason ?? "no_cost_record";
+			unmeasured.set(reason, (unmeasured.get(reason) ?? 0) + 1);
+		}
 	}
-	return cells;
+	amounts.sort((a, b) => a - b);
+	const priced = currency !== null && amounts.length > 0;
+	return {
+		expected: cells.length,
+		amounts,
+		median: priced ? percentileOf(amounts, 0.5) : null,
+		total: priced
+			? (providerCostTotal(
+					records,
+					cells.map(([, cell]) => cell),
+				)?.amount ?? null)
+			: null,
+		unmeasured: [...unmeasured.entries()]
+			.map(([reason, count]) => ({ reason, count }))
+			.sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, "en")),
+		sources: [...sources].sort(),
+	};
 }
 
 /** One provider's measured cost, or undefined when its Run row carries no cost evidence at all. */
 function measuredCostOf(provider: ProviderRun): MeasuredCostProvider | undefined {
 	const records = provider.costEvidence ?? [];
 	if (records.length === 0) return undefined;
-	const expectedCells = expectedCellsOf(provider);
-	const recordByCell = new Map(records.map((record) => [providerCostCellKey(record), record]));
-	const observed = records.filter(
-		(record): record is ObservedProviderCostEvidence => record.kind === "observed",
-	);
-	const currencies = new Set(observed.map((record) => record.currency));
-	const currency = currencies.size === 1 ? ([...currencies][0] ?? null) : null;
-
-	const suites = SUITE_ORDER.flatMap((suite): MeasuredCostSuite[] => {
-		const cells = [...expectedCells.entries()].filter(([, cell]) => cell.suite === suite);
-		if (cells.length === 0) return [];
-		const unmeasured = new Map<UnmeasuredReason, number>();
-		const suiteRecords: ProviderCostEvidence[] = [];
-		const amounts: number[] = [];
-		const sources = new Set<ObservedProviderCostEvidence["source"]>();
-		for (const [key] of cells) {
-			const record = recordByCell.get(key);
-			if (record === undefined) {
-				unmeasured.set("no_cost_record", (unmeasured.get("no_cost_record") ?? 0) + 1);
-				continue;
-			}
-			suiteRecords.push(record);
-			if (record.kind === "missing") {
-				unmeasured.set(record.reason, (unmeasured.get(record.reason) ?? 0) + 1);
-				continue;
-			}
-			amounts.push(record.amount);
-			sources.add(record.source);
-		}
-		amounts.sort((a, b) => a - b);
-		const exact = providerCostTotal(
-			suiteRecords,
-			cells.map(([, cell]) => cell),
-		);
-		return [
-			{
-				suite,
-				perPipelineRun: SUITES[suite].wave === "realworld" && SUITES[suite].ptsTimesToRun === 1,
-				expected: cells.length,
-				amounts,
-				median: amounts.length > 0 && currency !== null ? percentileOf(amounts, 0.5) : null,
-				total: currency !== null ? (exact?.amount ?? null) : null,
-				unmeasured: sortedByCount(unmeasured),
-				sources: [...sources].sort(),
-			},
-		];
-	});
-
-	const total = providerCostTotal(records, [...expectedCells.values()]);
-	const unmeasured = new Map<UnmeasuredReason, number>();
-	for (const suite of suites) {
-		for (const { reason, count } of suite.unmeasured) {
-			unmeasured.set(reason, (unmeasured.get(reason) ?? 0) + count);
-		}
+	// Every cell with a cost record, plus every cell the Run attributes measurements to
+	// (`artifactEvidence`, one per booted sandbox): a sandbox that ran and left no cost record is
+	// unmeasured rather than invisible.
+	const expected = new Map<string, ProviderCostCell>();
+	for (const record of [...records, ...(provider.artifactEvidence ?? [])]) {
+		expected.set(providerCostCellKey(record), record.cell);
 	}
+	const recordByCell = new Map(records.map((record) => [providerCostCellKey(record), record]));
+	const currencies = new Set(
+		records.flatMap((record) => (record.kind === "observed" ? [record.currency] : [])),
+	);
+	const currency = currencies.size === 1 ? ([...currencies][0] ?? null) : null;
+	const cells = [...expected.entries()];
 	return {
 		providerId: provider.providerId,
 		displayName: getProvider(provider.providerId)?.displayName ?? provider.providerId,
 		currency,
-		suites,
-		expected: expectedCells.size,
-		observed: observed.length,
-		total: currency !== null ? (total?.amount ?? null) : null,
-		unmeasured: sortedByCount(unmeasured),
+		...tally(cells, recordByCell, currency),
+		suites: SUITE_ORDER.flatMap((suite) => {
+			const suiteCells = cells.filter(([, cell]) => cell.suite === suite);
+			return suiteCells.length === 0
+				? []
+				: [
+						{
+							suite,
+							perPipelineRun:
+								SUITES[suite].wave === "realworld" && SUITES[suite].ptsTimesToRun === 1,
+							...tally(suiteCells, recordByCell, currency),
+						},
+					];
+		}),
 	};
 }
 

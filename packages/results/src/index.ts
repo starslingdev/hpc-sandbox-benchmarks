@@ -98,6 +98,7 @@ export {
 export type {
 	MeasuredCostProvider,
 	MeasuredCostSuite,
+	MeasuredCostTally,
 	UnmeasuredReason,
 } from "./lib/measured-cost.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";

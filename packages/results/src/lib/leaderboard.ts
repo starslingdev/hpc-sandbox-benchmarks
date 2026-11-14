@@ -58,7 +58,7 @@ import type {
 	PooledDataset,
 } from "./leaderboard-datasets.ts";
 import { combineLeaderboardDatasets } from "./leaderboard-datasets.ts";
-import type { MeasuredCostProvider, MeasuredCostSuite } from "./measured-cost.ts";
+import type { MeasuredCostProvider, MeasuredCostTally } from "./measured-cost.ts";
 import { buildMeasuredCost } from "./measured-cost.ts";
 import { MEMORY_TOLERANCE } from "./specs.ts";
 
@@ -1233,47 +1233,27 @@ function rosterSection(roster: readonly ProviderRosterEntry[]): string[] {
 	return lines;
 }
 
-/**
- * Render a {@link Leaderboard} as a Markdown document — the committed comparison surface.
- *
- * `figures` are the suite charts the caller has already rendered (see {@link LeaderboardFigure} on
- * why they are passed rather than derived). The `realworld` section leads with them and then
- * COLLAPSES its per-task tables behind a disclosure, which is a deliberate half-measure and worth
- * saying why:
- *
- *  - The three charts are what a reader actually wants from that section. Seventeen ranked tables —
- *    one per (repo, task) — is a way of having the information without conveying it: nothing on the
- *    page told you that a pipeline on the slowest environment costs 3.4× what it costs on the
- *    fastest, because that number was never in any of the tables.
- *  - Deleting the tables would take the numbers off the page entirely, and every number this
- *    document prints is auditable back to the Run it came from. A picture of a bar is not: the SVG
- *    is glyph outlines, so the figures are exactly the one part of this file a reader cannot check.
- *    The tables are the receipts for the charts, and they stay one click away for that reason.
- *
- * The mechanism is the same `<details>` the synthetic dimensions already use, so the document has
- * one collapse idiom rather than two.
- */
-/** The sentence a reader gets for an evidence source, so the table never prints a raw enum. */
-const MEASURED_COST_SOURCE: Record<MeasuredCostSuite["sources"][number], string> = {
+/** The phrase a reader gets for an evidence source, so the table never prints a raw enum. */
+const MEASURED_COST_SOURCE: Record<MeasuredCostTally["sources"][number], string> = {
 	provider_reported: "provider-reported",
 	calculated_from_provider_usage: "calculated from provider usage",
 };
 
-/** An amount with its currency, so a non-USD bill can never read as dollars. */
-function formatMoney(amount: number, currency: string): string {
-	return `${formatValue(amount)} ${currency}`;
-}
-
-/** `3 × \`provider_api_error\`, 1 × \`no_cost_record\`` — every unmeasured sandbox, by reason. */
-function formatUnmeasured(unmeasured: MeasuredCostSuite["unmeasured"]): string {
-	return unmeasured.length === 0
-		? "—"
-		: unmeasured.map(({ reason, count }) => `${count} × \`${reason}\``).join(", ");
-}
-
-/** The coverage cell: measured sandboxes against the sandboxes the Run holds evidence for. */
-function formatMeasuredCoverage(measured: number, expected: number): string {
-	return `${measured} of ${expected}`;
+/** The cells every measured-cost row shares: coverage, an amount with its currency, unmeasured. */
+function measuredCostCells(tally: MeasuredCostTally, currency: string | null) {
+	// An amount always carries its currency, so a non-USD bill can never read as dollars.
+	const money = (amount: number | null) =>
+		amount !== null && currency !== null ? `${formatValue(amount)} ${currency}` : "unmeasured";
+	return {
+		coverage: `${tally.amounts.length} of ${tally.expected}`,
+		median:
+			currency === null && tally.amounts.length > 0 ? "mixed currencies" : money(tally.median),
+		total: money(tally.total),
+		unmeasured:
+			tally.unmeasured.length === 0
+				? "—"
+				: tally.unmeasured.map(({ reason, count }) => `${count} × \`${reason}\``).join(", "),
+	};
 }
 
 /**
@@ -1303,17 +1283,14 @@ function measuredCostSection(
 		"| Provider | Measured sandboxes | Total billed | Unmeasured |",
 		"| --- | ---: | ---: | --- |",
 		...providers.map((provider) => {
-			const total =
-				provider.total !== null && provider.currency !== null
-					? formatMoney(provider.total, provider.currency)
-					: "unmeasured";
-			return `| ${provider.displayName} | ${formatMeasuredCoverage(provider.observed, provider.expected)} | ${total} | ${formatUnmeasured(provider.unmeasured)} |`;
+			const cells = measuredCostCells(provider, provider.currency);
+			return `| ${provider.displayName} | ${cells.coverage} | ${cells.total} | ${cells.unmeasured} |`;
 		}),
 		"",
 	];
 	// Per-suite figures only for providers that measured something: a provider with no observed
 	// sandbox has nothing to show per suite, and its summary row already says why.
-	const measured = providers.filter((provider) => provider.observed > 0);
+	const measured = providers.filter((provider) => provider.amounts.length > 0);
 	if (measured.length === 0) return lines;
 	lines.push(
 		"<details>",
@@ -1329,30 +1306,23 @@ function measuredCostSection(
 	);
 	for (const provider of measured) {
 		for (const suite of provider.suites) {
-			const currency = provider.currency;
-			const median =
-				suite.median !== null && currency !== null
-					? formatMoney(suite.median, currency)
-					: suite.amounts.length > 0
-						? "mixed currencies"
-						: "unmeasured";
+			const cells = measuredCostCells(suite, provider.currency);
 			const low = suite.amounts[0];
 			const high = suite.amounts.at(-1);
 			const range =
-				currency !== null && low !== undefined && high !== undefined && suite.amounts.length > 1
+				provider.currency !== null &&
+				low !== undefined &&
+				high !== undefined &&
+				suite.amounts.length > 1
 					? `${formatValue(low)} – ${formatValue(high)}`
 					: "—";
-			const total =
-				suite.total !== null && currency !== null
-					? formatMoney(suite.total, currency)
-					: "unmeasured";
 			const name = suite.perPipelineRun ? `${suite.suite} _(per pipeline run)_` : suite.suite;
 			const source =
 				suite.sources.length === 0
 					? "—"
 					: suite.sources.map((source) => MEASURED_COST_SOURCE[source]).join(", ");
 			lines.push(
-				`| ${provider.displayName} | ${name} | ${median} | ${range} | ${formatMeasuredCoverage(suite.amounts.length, suite.expected)} | ${total} | ${formatUnmeasured(suite.unmeasured)} | ${source} |`,
+				`| ${provider.displayName} | ${name} | ${cells.median} | ${range} | ${cells.coverage} | ${cells.total} | ${cells.unmeasured} | ${source} |`,
 			);
 		}
 	}
@@ -1360,6 +1330,26 @@ function measuredCostSection(
 	return lines;
 }
 
+/**
+ * Render a {@link Leaderboard} as a Markdown document — the committed comparison surface.
+ *
+ * `figures` are the suite charts the caller has already rendered (see {@link LeaderboardFigure} on
+ * why they are passed rather than derived). The `realworld` section leads with them and then
+ * COLLAPSES its per-task tables behind a disclosure, which is a deliberate half-measure and worth
+ * saying why:
+ *
+ *  - The three charts are what a reader actually wants from that section. Seventeen ranked tables —
+ *    one per (repo, task) — is a way of having the information without conveying it: nothing on the
+ *    page told you that a pipeline on the slowest environment costs 3.4× what it costs on the
+ *    fastest, because that number was never in any of the tables.
+ *  - Deleting the tables would take the numbers off the page entirely, and every number this
+ *    document prints is auditable back to the Run it came from. A picture of a bar is not: the SVG
+ *    is glyph outlines, so the figures are exactly the one part of this file a reader cannot check.
+ *    The tables are the receipts for the charts, and they stay one click away for that reason.
+ *
+ * The mechanism is the same `<details>` the synthetic dimensions already use, so the document has
+ * one collapse idiom rather than two.
+ */
 export function renderLeaderboardMarkdown(
 	board: Leaderboard,
 	figures: readonly LeaderboardFigure[],
