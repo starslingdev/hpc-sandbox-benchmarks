@@ -20,17 +20,27 @@ export const CONTROL_TIMEOUT_MS = 30_000;
 export const CREATE_TIMEOUT_MS = 15 * 60_000;
 
 /**
- * PTS resolves its default state through getpwuid (no entry here), so state lives in an override
- * under HOME (kept by PTS_STATE_SELECT_SH). The writable PTS copy comes first so its parser can be
- * patched; the image toolchain comes before the runtime's Nix PATH.
+ * PTS resolves its default state through getpwuid (no entry here) and the image filesystem is
+ * read-only, so state and installs live under HOME (PTS_STATE_SELECT_SH leaves them alone). The
+ * writable PTS copy comes first so its parser can be patched; the image toolchain precedes Nix.
  */
 const PREFIX =
-	'export PATH="$HOME/.local/pts/bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH" PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"; ';
+	'export PATH="$HOME/.local/pts/bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH" ' +
+	'PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/" PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"; ';
 
-/** Idempotent: PTS state under HOME, and a PTS code copy whose launcher points at itself. */
+/**
+ * Idempotent: an install root of links to the baked profiles (node-web-tooling writes into its own
+ * directory, so it is copied), and a PTS code copy whose launcher points at itself.
+ */
 export const TANGLE_PTS_PREFLIGHT = [
 	"set -eu",
-	'mkdir -p "$HOME/.phoronix-test-suite"',
+	'installed="$HOME/.phoronix-test-suite/installed-tests/pts"',
+	'mkdir -p "$installed"',
+	"for profile in /var/lib/phoronix-test-suite/installed-tests/pts/*; do",
+	'  link="$installed/$(basename "$profile")"',
+	'  [ -e "$link" ] && continue',
+	'  case "$link" in *node-web-tooling-*) cp -R "$profile" "$link" ;; *) ln -s "$profile" "$link" ;; esac',
+	"done",
 	'pts="$HOME/.local/pts"',
 	'if [ ! -x "$pts/bin/phoronix-test-suite" ]; then',
 	'  rm -rf "$pts" && mkdir -p "$pts/bin" "$pts/share"',

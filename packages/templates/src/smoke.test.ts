@@ -146,13 +146,14 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(result.installRoot).toBe("<root>/installed-tests/");
 	});
 
-	// A uid with no passwd entry (Tangle) needs its own HOME state: PTS resolves its default through
-	// getpwuid, so the provider sets an override inside HOME and the selector must keep it.
-	it("keeps an unprivileged user's override inside its own HOME", async () => {
+	// Tangle's uid has no passwd entry and its image filesystem is read-only, so its adapter relocates
+	// PTS state and installs into HOME; the selector must leave both alone.
+	it("leaves PTS state that a provider relocated into HOME alone", async () => {
 		const override = "/home/agent/.phoronix-test-suite/";
 		const result = await runPtsCheck("fio-2.1.0", ["pts/fio-2.1.0"], { uid: 1000, override });
 		expect(result.exitCode).toBe(0);
 		expect(result.userPathOverride).toBe(override);
+		expect(result.installRoot).toBeUndefined();
 	});
 
 	// No mkdir on either branch: the probe runs under `set -euo pipefail` in smokeBashScript(), so a
