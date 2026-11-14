@@ -23,6 +23,8 @@ export interface DriverModuleMap {
 	freestyle: typeof import("@sandbox-benchmarks/freestyle").default;
 	brezel: typeof import("@sandbox-benchmarks/brezel").default;
 	digitalocean: typeof import("@sandbox-benchmarks/digitalocean").default;
+	baseten: typeof import("@sandbox-benchmarks/baseten").default;
+	createos: typeof import("@sandbox-benchmarks/createos").default;
 	spawnbox: typeof import("@sandbox-benchmarks/spawnbox").default;
 }
 
@@ -59,6 +61,8 @@ export const DRIVERS: {
 	freestyle: () => import("@sandbox-benchmarks/freestyle").then((module) => module.default),
 	brezel: () => import("@sandbox-benchmarks/brezel").then((module) => module.default),
 	digitalocean: () => import("@sandbox-benchmarks/digitalocean").then((module) => module.default),
+	baseten: () => import("@sandbox-benchmarks/baseten").then((module) => module.default),
+	createos: () => import("@sandbox-benchmarks/createos").then((module) => module.default),
 	spawnbox: () => import("@sandbox-benchmarks/spawnbox").then((module) => module.default),
 });
 
@@ -73,6 +77,7 @@ export interface ArtifactBuilderMap {
 	blaxel: typeof import("@sandbox-benchmarks/blaxel/artifact").default;
 	novita: typeof import("@sandbox-benchmarks/novita/artifact").default;
 	freestyle: SnapshotArtifactBuilder<"freestyle">;
+	baseten: typeof import("@sandbox-benchmarks/baseten/artifact").default;
 }
 
 type BakedProviderId = {
@@ -105,6 +110,7 @@ export const ARTIFACT_BUILDERS: {
 		import("@sandbox-benchmarks/freestyle").then((module) =>
 			snapshotArtifactBuilder(module.default, module.snapshotBuild),
 		),
+	baseten: () => import("@sandbox-benchmarks/baseten/artifact").then((module) => module.default),
 });
 
 export const loadArtifactBuilder = <P extends ArtifactBuilderProviderId>(

@@ -69,6 +69,7 @@ export const RELEASE_UNSCOPABLE_PROVIDERS: Readonly<Partial<Record<ProviderId, s
 	boat: STOCK_IMAGE_UNSCOPABLE,
 	brezel:
 		"it boots an externally prepared environment revision that this repository cannot build or publish; credentialed validation alone cannot produce a scoped backfill",
+	createos: STOCK_IMAGE_UNSCOPABLE,
 	spawnbox:
 		"it boots a template the operator builds on their own host from the image; this repository cannot build or publish it, so credentialed validation alone cannot produce a scoped backfill",
 };

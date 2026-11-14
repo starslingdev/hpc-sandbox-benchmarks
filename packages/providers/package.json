@@ -9,8 +9,7 @@
     "./support": "./src/support.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
     "@blaxel/core": "catalog:computesdk",

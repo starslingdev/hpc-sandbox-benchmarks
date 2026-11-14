@@ -518,6 +518,12 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 		["BREZEL", REGISTRY.brezel.sdkPackage, catalogVersion(catalog, REGISTRY.brezel.sdkPackage)],
 		// No client library covers MicroVMs yet; the adapter targets the documented v2 REST API.
 		["DIGITALOCEAN", REGISTRY.digitalocean.sdkPackage, "v2"],
+		["BASETEN", REGISTRY.baseten.sdkPackage, catalogVersion(catalog, REGISTRY.baseten.sdkPackage)],
+		[
+			"CREATEOS",
+			REGISTRY.createos.sdkPackage,
+			catalogVersion(catalog, REGISTRY.createos.sdkPackage),
+		],
 		// No client library is published; the adapter targets the documented v1 HTTP API.
 		["SPAWNBOX", REGISTRY.spawnbox.sdkPackage, "v1"],
 	] as const;

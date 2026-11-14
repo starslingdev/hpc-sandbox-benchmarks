@@ -3,17 +3,20 @@
 // module. Kit behaviour (convergence, deadlines, the inventory partition, recovery mechanics) is
 // tested once in the driver package.
 
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import type { CreateAttempt } from "@sandbox-benchmarks/driver/vendor";
 import { DISK_PROBE } from "@sandbox-benchmarks/driver/vendor";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
+import { App, Image, ModalClient } from "modal";
 import { ClientError, Status } from "nice-grpc";
 import { removedOnceUnlisted } from "./allocation.ts";
+import { MODAL_MARKER_TAG } from "./cost.ts";
 import modalGvisor from "./gvisor.ts";
+import { modalAllocate } from "./shared.ts";
 import type { ModalBackend, ModalControlPlane, ModalControlSandbox } from "./vendor.ts";
-import { MODAL_APP_NAME, modalVendor } from "./vendor.ts";
+import { MODAL_APP_NAME, MODAL_VM_APP_NAME, modalVendor } from "./vendor.ts";
 import modalVm from "./vm.ts";
 
 const IMAGE = "registry.example/toolchain:version";
@@ -54,7 +57,10 @@ function modalAccount(
 	} = {},
 ) {
 	const apps = new Map<string, string>([["other-app", "ap-foreign"]]);
-	if (options.appExists ?? true) apps.set(MODAL_APP_NAME, "ap-bench");
+	if (options.appExists ?? true) {
+		apps.set(MODAL_APP_NAME, "ap-bench");
+		apps.set(MODAL_VM_APP_NAME, "ap-vm");
+	}
 	const rows = new Map<string, Row>();
 	const calls: string[] = [];
 	let lateName = "";
@@ -102,10 +108,12 @@ function modalAccount(
 		detach: () => {},
 	});
 	const running =
-		(v2: boolean, filter: (row: Row) => boolean) =>
+		(v2: boolean | undefined, filter: (row: Row) => boolean) =>
 		async ({ beforeTimestamp }: { readonly beforeTimestamp?: number }) =>
 			[...rows.values()]
-				.filter((row) => row.v2 === v2 && row.exitCode === null && filter(row))
+				.filter(
+					(row) => (v2 === undefined || row.v2 === v2) && row.exitCode === null && filter(row),
+				)
 				.filter((row) => beforeTimestamp === undefined || row.createdAt < beforeTimestamp)
 				.sort((a, b) => b.createdAt - a.createdAt)
 				.slice(0, 2);
@@ -131,17 +139,15 @@ function modalAccount(
 		},
 		sandboxes: {
 			fromId: async (id) => handle(id),
-			fromName: byName(false),
-			experimentalFromName: byName(true),
+			fromName: (appName, name, backend) => byName(backend === "v2")(appName, name),
 			list: (params) =>
-				running(false, (row) => !params.appId || row.appId === params.appId)(params),
-			experimentalList: (params) => running(true, (row) => row.appId === params.appId)(params),
+				running(undefined, (row) => !params.appId || row.appId === params.appId)(params),
 		},
 	};
-	const vendor = (backend: ModalBackend) =>
+	const vendor = (backend: ModalBackend, appName = MODAL_APP_NAME) =>
 		modalVendor({
 			backend,
-			appName: MODAL_APP_NAME,
+			appName,
 			control: () => control,
 			allocate: async ({ marker }: CreateAttempt) => {
 				calls.push(`create ${marker}`);
@@ -153,7 +159,7 @@ function modalAccount(
 						"response lost",
 					);
 				}
-				return { sandboxId: allocate(backend === "v2", marker) };
+				return { sandboxId: allocate(backend === "v2", marker, apps.get(appName)) };
 			},
 		});
 	return {
@@ -162,15 +168,15 @@ function modalAccount(
 		control,
 		allocate,
 		vendor,
-		reveal: (v2: boolean) => allocate(v2, lateName),
+		reveal: (appName: string) => allocate(true, lateName, apps.get(appName)),
 	};
 }
 
 /** Each variant's own module, lowered over a fake environment instead of the real SDK. */
 function driverOver(
 	account: ReturnType<typeof modalAccount>,
-	module = modalVm,
-	vendor = account.vendor(module === modalVm ? "v1" : "v2"),
+	module: typeof modalVm | typeof modalGvisor = modalVm,
+	vendor = account.vendor("v2", module === modalVm ? MODAL_VM_APP_NAME : MODAL_APP_NAME),
 ) {
 	return vendorDriver(module as typeof modalVm, context, {
 		vendor: vendor as never,
@@ -178,17 +184,111 @@ function driverOver(
 	});
 }
 
-vendorContract("modal-vm adapter", modalVm, () => modalAccount().vendor("v1"));
+vendorContract("modal-vm adapter", modalVm, () => modalAccount().vendor("v2", MODAL_VM_APP_NAME));
 vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor("v2"));
 
+describe("Modal benchmark resource configuration", () => {
+	it.each([
+		"modal-gvisor",
+		"modal-vm",
+	] as const)("%s permits CPU bursting and uses the default memory request", async (provider) => {
+		const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
+		const app = new App("ap-prepared", MODAL_APP_NAME);
+		const image = new Image(client, "im-prepared", "");
+		const fromName = spyOn(client.apps, "fromName").mockResolvedValue(app);
+		const fromRegistry = spyOn(client.images, "fromRegistry").mockReturnValue(image);
+		const create = spyOn(client.cpClient, "sandboxCreate").mockResolvedValue({
+			sandboxId: `sb-${"A".repeat(22)}`,
+			metadata: undefined,
+		});
+		const createV2 = spyOn(client.cpClient, "sandboxCreateV2").mockResolvedValue({
+			sandboxId: `sb-0${"0".repeat(25)}`,
+			taskId: "ta-prepared",
+			tunnels: [],
+			metadata: undefined,
+			commandRouterAccess: undefined,
+			sandboxToken: "",
+		});
+		const getTaskId = spyOn(client.cpClient, "sandboxGetTaskId").mockResolvedValue({
+			taskId: "ta-prepared",
+		});
+		const createSecret = spyOn(client.cpClient, "secretGetOrCreate").mockResolvedValue({
+			secretId: "st-environment",
+			metadata: undefined,
+		});
+		try {
+			await modalAllocate(
+				provider,
+				IMAGE,
+				() => client,
+			)(
+				{ request: request(), marker: "benchmark-replicate" },
+				{ signal: AbortSignal.timeout(1000) },
+			);
+			const allocate = createV2;
+			expect(create).not.toHaveBeenCalled();
+			expect(fromName).toHaveBeenCalledWith(
+				provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME,
+				{ createIfMissing: true },
+			);
+			expect(allocate).toHaveBeenCalledTimes(1);
+			// The cost hook isolates this sandbox's billed usage by its marker tag.
+			expect(allocate.mock.calls[0]?.[0]?.tags).toEqual([
+				{ tagName: MODAL_MARKER_TAG, tagValue: "benchmark-replicate" },
+			]);
+			expect(allocate.mock.calls[0]?.[0]).toMatchObject({
+				appId: "ap-prepared",
+				definition: {
+					imageId: "im-prepared",
+					resources: {
+						milliCpu: 4000,
+						milliCpuMax: 0,
+						memoryMb: 128,
+						memoryMbMax: 8192,
+					},
+					runtime: provider === "modal-vm" ? "vm" : "gvisor",
+				},
+			});
+			const environment = createV2.mock.calls[0]?.[0].secretSources?.[0]?.env?.contents;
+			expect(environment).toEqual({
+				REALWORLD_TASK_MEM_MAX_BYTES: "7516192768",
+				BENCHMARK_MODE: "true",
+			});
+		} finally {
+			fromName.mockRestore();
+			fromRegistry.mockRestore();
+			create.mockRestore();
+			createV2.mockRestore();
+			getTaskId.mockRestore();
+			createSecret.mockRestore();
+		}
+	});
+});
+
 describe("Modal end to end through each variant's module", () => {
-	it("GPU teardown waits for the terminated sandbox to disappear from the environment listing", async () => {
+	it("keeps VM and gVisor ownership separate when both use V2", async () => {
+		const account = modalAccount();
+		const vm = driverOver(account, modalVm);
+		const gvisor = driverOver(account, modalGvisor);
+		const vmSession = await vm.create(request());
+		const gvisorSession = await gvisor.create(request());
+		expect(await vm.inventory?.list()).toEqual({ owned: [vmSession.sandboxRef], foreignCount: 1 });
+		expect(await gvisor.inventory?.list()).toEqual({
+			owned: [gvisorSession.sandboxRef],
+			foreignCount: 1,
+		});
+		await vmSession.destroy();
+		expect(account.rows.get(gvisorSession.sandboxRef.id)?.exitCode).toBeNull();
+		await gvisorSession.destroy();
+	});
+
+	it("teardown can wait for the terminated sandbox to disappear from the listing", async () => {
 		const account = modalAccount();
 		let scans = 0;
 		const driver = driverOver(
 			account,
 			modalVm,
-			removedOnceUnlisted(account.vendor("v1"), async () => ++scans < 3),
+			removedOnceUnlisted(account.vendor("v2", MODAL_VM_APP_NAME), async () => ++scans < 3),
 		);
 		const session = await driver.create(request());
 		await session.destroy();
@@ -206,7 +306,7 @@ describe("Modal end to end through each variant's module", () => {
 			const failure = await driver.create(request()).catch((error: unknown) => error);
 			if (!isFailedCreateCleanupError(failure)) throw new Error("create lost its cleanup owner");
 			await expect(failure.cleanup()).rejects.toThrow();
-			const id = account.reveal(module === modalGvisor);
+			const id = account.reveal(module === modalVm ? MODAL_VM_APP_NAME : MODAL_APP_NAME);
 			await failure.cleanup();
 			expect(account.rows.get(id)?.exitCode).toBe(0);
 			expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 0 });

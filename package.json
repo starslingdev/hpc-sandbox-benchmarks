@@ -16,6 +16,7 @@
     },
     "catalogs": {
       "computesdk": {
+        "@basetenlabs/sandbox": "0.5.0",
         "@blaxel/core": "0.3.5",
         "@infercrane/brezel": "0.1.1",
         "@computesdk/blaxel": "1.6.16",
@@ -25,12 +26,13 @@
         "@computesdk/namespace": "1.6.12",
         "@computesdk/provider": "2.1.3",
         "@run-cloud/sdk": "0.9.0",
+        "@nodeops-createos/sandbox": "0.8.2",
         "@daytona/api-client": "0.211.2",
         "@daytona/sdk": "0.211.2",
         "computesdk": "4.1.3",
         "e2b": "2.27.1",
         "microsandbox": "0.6.8",
-        "modal": "0.9.0",
+        "modal": "0.11.1",
         "nice-grpc": "2.1.16",
         "novita-sandbox": "2.0.6",
         "@vercel/sandbox": "2.9.2",
@@ -54,8 +56,7 @@
     "tar": "7.5.22"
   },
   "scripts": {
-    "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
-    "test": "bun --filter '!@sandbox-benchmarks/figures' --if-present test",
+    "test": "bun test --parallel --no-isolate --env-file=/dev/null --path-ignore-patterns='packages/figures/**'",
     "test:figures": "bun --filter @sandbox-benchmarks/figures test",
     "smoke": "bun --filter @sandbox-benchmarks/cli smoke",
     "format": "biome format . --write",
@@ -63,7 +64,7 @@
     "lint:workflows": "bun tooling/repo-checks/src/lint-workflows.ts",
     "lint:fix": "biome check . --write",
     "lint:fix:unsafe": "biome check . --fix --unsafe",
-    "lint:shell": "find packages/templates/images packages/schema/src/pts-profiles lib .mise/tasks -type f \\( -name '*.sh' -o -path '*.mise/tasks/*' \\) -exec mise exec -- shellcheck {} + && scripts/lint-action-shell.sh $(find .github/actions -name 'action.y*ml')",
+    "lint:shell": "find packages/templates/images packages/schema/src/pts-profiles lib .mise/tasks -type f \\( -name '*.sh' -o -path '*.mise/tasks/*' \\) -print0 | xargs -0 -n 4 -P \"$(getconf _NPROCESSORS_ONLN)\" mise exec -- shellcheck -x && scripts/lint-action-shell.sh $(find .github/actions -name 'action.y*ml')",
     "lint:docker": "find packages/templates/images -name 'Dockerfile' -exec mise exec -- hadolint {} +",
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",

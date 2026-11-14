@@ -10,13 +10,14 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
+    "@sandbox-benchmarks/baseten": "workspace:*",
     "@sandbox-benchmarks/blaxel": "workspace:*",
     "@sandbox-benchmarks/boat": "workspace:*",
     "@sandbox-benchmarks/brezel": "workspace:*",
+    "@sandbox-benchmarks/createos": "workspace:*",
     "@sandbox-benchmarks/daytona": "workspace:*",
     "@sandbox-benchmarks/digitalocean": "workspace:*",
     "@sandbox-benchmarks/driver": "workspace:*",

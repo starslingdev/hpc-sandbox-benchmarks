@@ -174,6 +174,9 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
 	return { ...probes, ...provider };
 }
 
+/** Kernels reserve some RAM, so observed memory matches within this fraction of the target. */
+export const MEMORY_TOLERANCE = 0.1;
+
 /**
  * Did the sandbox honor the pinned target spec? vCPUs must match exactly; memory within ±10%
  * (kernels reserve some). Undefined when either observation is missing — we refuse to judge on
@@ -189,6 +192,7 @@ export function readObservedSpecs(readJson: JsonReader): ObservedSpecs {
  */
 export function computeSpecMatched(specs: ObservedSpecs): boolean | undefined {
 	if (specs.vcpus === undefined || specs.memoryGb === undefined) return undefined;
-	const memoryOk = Math.abs(specs.memoryGb - TARGET_SPEC.memoryGb) <= TARGET_SPEC.memoryGb * 0.1;
+	const memoryOk =
+		Math.abs(specs.memoryGb - TARGET_SPEC.memoryGb) <= TARGET_SPEC.memoryGb * MEMORY_TOLERANCE;
 	return specs.vcpus === TARGET_SPEC.vcpus && memoryOk;
 }

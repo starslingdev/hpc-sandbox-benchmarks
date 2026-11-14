@@ -22,6 +22,8 @@ export const PROVIDER_IDS = [
 	"freestyle",
 	"brezel",
 	"digitalocean",
+	"baseten",
+	"createos",
 	"spawnbox",
 ] as const;
 

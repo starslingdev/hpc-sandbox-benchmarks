@@ -25,6 +25,8 @@ on:
           - 'freestyle'
           - 'brezel'
           - 'digitalocean'
+          - 'baseten'
+          - 'createos'
           - 'spawnbox'
           # <<< end generated: provider-options
       suite:

@@ -34,6 +34,7 @@ interface Row {
 	readonly id: string;
 	state: string;
 	template: string;
+	build: string;
 	labels: Record<string, string>;
 }
 
@@ -43,14 +44,28 @@ function spawnboxServer(
 		readonly base?: string;
 		readonly resources?: { vcpus: number; memory_mib: number; disk_gib: number };
 		readonly truncate?: boolean;
+		readonly latestBuild?: string;
 	} = {},
 ) {
-	const view = ({ id, state, template, labels }: Row) => ({ id, state, template, labels });
+	const view = ({ id, state, template, labels, build }: Row) => ({
+		id,
+		state,
+		template,
+		labels,
+		build,
+	});
 	return restStub<Row>(
 		{
 			"POST /v1/sandboxes": ({ body, add }) =>
 				json(
-					view(add({ state: "running", template: body.template, labels: body.labels ?? {} })),
+					view(
+						add({
+							state: "running",
+							template: body.template,
+							build: "bld_1",
+							labels: body.labels ?? {},
+						}),
+					),
 					201,
 				),
 			"GET /v1/sandboxes": ({ rows, url }) => {
@@ -91,6 +106,7 @@ function spawnboxServer(
 							base: options.base ?? IMAGE,
 							resources: options.resources ?? { vcpus: 4, memory_mib: 8192, disk_gib: 40 },
 							current_build: "bld_1",
+							latest_build: { id: options.latestBuild ?? "bld_1", state: "ready" },
 						}
 					: notFound(),
 		},
@@ -143,6 +159,29 @@ describe("Spawnbox end to end through its module", () => {
 		const server = spawnboxServer({ base: "debian:bookworm" });
 		await expect(driverOver(server).create(request)).rejects.toThrow();
 		expect([...server.rows.values()].map((row) => row.state)).toEqual(["deleted"]);
+	});
+
+	test("a sandbox from an older build is refused", async () => {
+		const server = spawnboxServer({ latestBuild: "bld_2" });
+		await expect(driverOver(server).create(request)).rejects.toThrow();
+		expect([...server.rows.values()].map((row) => row.state)).toEqual(["deleted"]);
+	});
+
+	test("file reads preserve empty and JSON text exactly", async () => {
+		const server = spawnboxServer();
+		const vendor = vendorOver(server);
+		const { raw } = await vendor.control.create(
+			{ request, marker: "benchmark-00000000-0000-4000-8000-000000000001" },
+			{ signal: new AbortController().signal },
+		);
+		for (const value of ["", "0", "null", '{"x":1}', '"quoted"']) {
+			const response = new Response(value);
+			const reader = spawnboxVendor(
+				context,
+				Object.assign(async () => response, { preconnect() {} }) as typeof fetch,
+			);
+			expect(await reader.data.files?.read(raw, "/file")).toBe(value);
+		}
 	});
 
 	test("a template of another shape is refused", async () => {

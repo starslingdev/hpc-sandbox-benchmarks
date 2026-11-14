@@ -10,6 +10,7 @@ import type {
 	SandboxDriver,
 	SandboxSession,
 } from "@sandbox-benchmarks/driver";
+import { bindCostEvidence } from "@sandbox-benchmarks/driver";
 import { bakedArtifactName, TARGET_SPEC } from "@sandbox-benchmarks/schema";
 import { TOOLCHAIN_IMAGE_NAME, TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema/toolchain";
 import { executeSuite, withSandboxWork } from "./index.ts";
@@ -125,6 +126,45 @@ describe("declarative session operations", () => {
 		expect(contents).toContain("guest-fingerprint");
 		expect(contents).toContain("disk-shortfall");
 		expect(contents).toContain("itest");
+	});
+	test("captures cost evidence through the allocation's bound hook, after teardown", async () => {
+		const root = mkdtempSync(join(tmpdir(), "session-suite-"));
+		roots.push(root);
+		const { allocation, calls } = fixture(async (command) => {
+			if (command.includes("/toolchain-manifest.json"))
+				return result(
+					JSON.stringify({ image_name: TOOLCHAIN_IMAGE_NAME, image_version: TOOLCHAIN_VERSION }),
+				);
+			return result(command.includes("df -Pk") ? "1" : "");
+		});
+		const sdk = { packageName: "fixture", version: "1" };
+		const bound = bindCostEvidence<"e2b">(
+			{
+				sdk,
+				captureAfterTeardown: async (input, env) => {
+					calls.push(`cost ${env.E2B_API_KEY}`);
+					return {
+						kind: "missing",
+						cell: input.cell,
+						subject: { kind: "sandbox", sandboxId: input.sandboxId },
+						capturedAt: "2026-11-14T00:00:00.000Z",
+						sdk,
+						reason: "unsupported_public_api",
+						detail: "fixture",
+					};
+				},
+			},
+			{ E2B_API_KEY: "bound-key" },
+		);
+		await executeSuite({
+			allocation: { ...allocation, costEvidence: bound },
+			runId: "session-test",
+			suiteName: "system",
+			resultsDir: root,
+		});
+		expect(calls).toEqual(["create", "destroy", "cost bound-key"]);
+		const evidence = JSON.parse(readFileSync(join(root, "provider-cost-evidence.json"), "utf8"));
+		expect(evidence).toMatchObject({ kind: "missing", subject: { sandboxId: "itest" } });
 	});
 	test("readiness failure retains request attribution and always destroys", async () => {
 		const root = mkdtempSync(join(tmpdir(), "session-suite-"));

@@ -3,10 +3,10 @@
 
 export const MODAL_PROVENANCE = Object.freeze({
 	packageName: "modal",
-	version: "0.9.0",
+	version: "0.11.1",
 });
 
 export const MODAL_NATIVE_PROVENANCE = Object.freeze({
 	packageName: "modal",
-	version: "0.9.0",
+	version: "0.11.1",
 });

@@ -47,7 +47,7 @@ Read the full [methodology](./docs/methodology.md).
 ```bash
 mise install                     # pinned non-Bun tools (typos, shellcheck, hadolint)
 bun install --frozen-lockfile
-bun run typecheck
+bun check
 bun run test
 bun run lint
 ```

@@ -2,12 +2,15 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
+
+// A private module instance (Bun keys modules by specifier, query included): these tests assert on
+// the process-wide registry itself, which other files sharing a --no-isolate test worker populate.
+const {
 	cleanupOwnedSandboxes,
 	createOwnedSandbox,
 	releaseOwnedSandbox,
 	withOwnedSandbox,
-} from "./sandbox-owner.ts";
+}: typeof import("./sandbox-owner.ts") = await import(`./sandbox-owner.ts?${"private-registry"}`);
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;

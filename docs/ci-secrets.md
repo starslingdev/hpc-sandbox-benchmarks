@@ -239,6 +239,8 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `FREESTYLE_API_KEY` | Freestyle provider runtime and validation |
    | `BREZEL_API_KEY` | Brezel provider runtime and validation |
    | `DIGITAL_OCEAN_TOKEN` | DigitalOcean MicroVMs provider runtime and validation |
+   | `BASETEN_API_KEY` | Baseten Sandboxes provider runtime and validation |
+   | `CREATEOS_API_KEY` | CreateOS provider runtime and validation |
    | `SPAWNBOX_API_KEY` | Spawnbox provider runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 

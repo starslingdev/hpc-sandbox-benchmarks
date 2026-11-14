@@ -32,6 +32,8 @@ const REQUIRED_INPUTS = {
 	freestyle: ["FREESTYLE_API_KEY"],
 	brezel: ["BREZEL_API_KEY", "BREZEL_API_URL", "BREZEL_PROJECT_ID", "BREZEL_ENVIRONMENT_REVISION"],
 	digitalocean: ["DIGITAL_OCEAN_TOKEN"],
+	baseten: ["BASETEN_API_KEY"],
+	createos: ["CREATEOS_API_KEY"],
 	spawnbox: ["SPAWNBOX_API_KEY", "SPAWNBOX_URL"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
@@ -52,6 +54,8 @@ const ARTIFACT_KINDS = {
 	freestyle: "baked",
 	brezel: "none",
 	digitalocean: "image",
+	baseten: "baked",
+	createos: "none",
 	spawnbox: "image",
 } as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
 
@@ -62,6 +66,7 @@ const BAKED = {
 	blaxel: true,
 	freestyle: true,
 	novita: true,
+	baseten: true,
 } as const satisfies Record<BakedProviderId, true>;
 
 function localRuntimeDependency(importer: string, specifier: string): string | undefined {
@@ -141,6 +146,7 @@ describe("provider metadata authoring", () => {
 			"blaxel",
 			"freestyle",
 			"novita",
+			"baseten",
 		]);
 		const acceptBaked = (id: BakedProviderId) => id;
 		const acceptStock = (id: StockProviderId) => id;

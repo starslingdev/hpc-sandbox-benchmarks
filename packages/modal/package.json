@@ -16,16 +16,18 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "generate:proto": "mise exec aqua:bufbuild/buf@1.75.0 -- buf generate && biome check --write src/gen"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "catalog:computesdk",
     "@sandbox-benchmarks/driver": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "modal": "catalog:computesdk",
-    "nice-grpc": "catalog:computesdk",
-    "@sandbox-benchmarks/schema": "workspace:*"
+    "nice-grpc": "catalog:computesdk"
   },
   "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.14.1",
     "@repo/tsconfig": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"

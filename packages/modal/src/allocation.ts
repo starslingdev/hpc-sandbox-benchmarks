@@ -1,5 +1,5 @@
-// Prepared Modal resources for GPU work use the stable V1 gVisor backend. Neither the VM
-// runtime nor the V2 service supports GPUs. Resource handles stay typed by the pinned SDK. The
+// Prepared Modal resources follow the current SDK's routing, including V1 for GPUs.
+// Resource handles stay typed by the pinned SDK. The
 // allocation is the kit's driver over Modal's adapter, created in the caller's App from its image.
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { nvidiaAccelerator } from "@sandbox-benchmarks/driver";
@@ -87,8 +87,10 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 			grpcMiddleware: [middleware],
 		});
 	const allocation = createModalControlRunner(createClient, 300_000);
+	// The SDK routes GPU allocations to V1 and other allocations to V2.
+	const backend = params.gpu ? "v1" : "v2";
 	const base = modalVendor<Sandbox>({
-		backend: "v1",
+		backend,
 		appName,
 		control: (middleware) => modalControlPlane(createClient(middleware)),
 		allocate: ({ marker }, { signal }) =>
@@ -99,18 +101,18 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 				const created = await sdk.sandboxes.create(app, prepared, { ...params, name: marker });
 				// Allocation middleware belongs only to the create transaction. Native SDK work
 				// uses the caller-owned client; driver operations attach their own deadlines.
-				return new Sandbox(client, created.sandboxId, { isV2: false });
+				return new Sandbox(client, created.sandboxId);
 			}),
 	});
 	const listRunner = createModalControlRunner(
 		(middleware) => modalControlPlane(createClient(middleware)),
 		15_000,
 	);
-	// The environment's running V1 sandboxes, the listing the SDK's own iterator requests.
+	// Confirm removal in the same backend and App that created the allocation.
 	const vendor = removedOnceUnlisted(base, (id, signal) =>
 		listRunner.run({ signal }, async (control) => {
 			const pages = modalListingPages((beforeTimestamp) =>
-				control.sandboxes.list({ beforeTimestamp }),
+				control.sandboxes.list({ appId: app.appId, beforeTimestamp }),
 			);
 			for await (const page of pages) if (page.some((row) => row.id === id)) return true;
 			return false;
@@ -118,7 +120,7 @@ export function createModalAllocation(configuration: ModalAllocationConfiguratio
 	);
 	const module = defineVendorDriver("modal-gvisor", {
 		provenance: MODAL_PROVENANCE,
-		sandboxId: modalSandboxId("v1"),
+		sandboxId: modalSandboxId(backend),
 		coverage: coverage(
 			{ vcpus: "mapped", memoryGb: "mapped", diskGb: "unsupported" },
 			{ env: "mapped", gpu: "mapped" },

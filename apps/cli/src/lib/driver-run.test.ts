@@ -90,9 +90,11 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 		const driverIds = Object.keys(DRIVERS);
 		const adapterIds: string[] = providers.map((provider) => provider.name);
 		expect(driverIds.sort()).toEqual([
+			"baseten",
 			"blaxel",
 			"boat",
 			"brezel",
+			"createos",
 			"daytona-container",
 			"daytona-vm",
 			"digitalocean",
@@ -175,7 +177,9 @@ describe("createOwnedDriverSession", () => {
 
 		expect(session.releaseOwnership()).toBe(true);
 		expect(session.releaseOwnership()).toBe(false);
-		expect(await cleanupOwnedSandboxes()).toEqual([]);
+		// The owner registry is process-wide: other test files deliberately leave
+		// unresolved-cleanup sandboxes in it, so assert only that the sweep spared ours.
+		await cleanupOwnedSandboxes({ attempts: 1 });
 		expect(destroys).toBe(0);
 		await session.destroy();
 		expect(destroys).toBe(1);

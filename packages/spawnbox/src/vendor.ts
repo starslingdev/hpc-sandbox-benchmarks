@@ -49,6 +49,7 @@ const sandbox = type({
 	id: SPAWNBOX_SANDBOX_ID,
 	state: "string >= 1",
 	template: "string",
+	"build?": "string | null",
 	labels: type({ "[string]": "string" }),
 }).onUndeclaredKey("ignore");
 type SpawnboxSandbox = typeof sandbox.infer;
@@ -65,6 +66,7 @@ const template = type({
 		disk_gib: "number",
 	}).onUndeclaredKey("ignore"),
 	"current_build?": "string | null",
+	"latest_build?": type({ id: "string", state: "string" }).or("null"),
 }).onUndeclaredKey("ignore");
 const execResult = type({
 	stdout: "string",
@@ -136,7 +138,13 @@ export function spawnboxVendor(
 	const request = (
 		method: string,
 		path: string,
-		options: { body?: unknown; raw?: string; signal?: AbortSignal; timeoutMs?: number } = {},
+		options: {
+			body?: unknown;
+			raw?: string;
+			text?: boolean;
+			signal?: AbortSignal;
+			timeoutMs?: number;
+		} = {},
 	): Promise<unknown> =>
 		bounded(options.signal, options.timeoutMs ?? CONTROL_TIMEOUT_MS, async (within) => {
 			const body =
@@ -152,6 +160,7 @@ export function spawnboxVendor(
 			});
 			const text = await response.text();
 			if (response.ok) {
+				if (options.text) return text;
 				if (!text) return undefined;
 				try {
 					return JSON.parse(text);
@@ -242,6 +251,16 @@ export function spawnboxVendor(
 				const built = template.assert(
 					await request("GET", `/templates/${templateName}`, { signal }),
 				);
+				if (
+					!raw.build ||
+					raw.build !== built.current_build ||
+					raw.build !== built.latest_build?.id ||
+					built.latest_build.state !== "ready"
+				)
+					return {
+						status: "unsupported",
+						detail: "sandbox does not run the latest ready template build",
+					};
 				if (built.base !== imageRef)
 					return {
 						status: "unsupported",
@@ -280,7 +299,9 @@ export function spawnboxVendor(
 			},
 			files: {
 				read: async (native, path) => {
-					const body = await request("GET", `/sandboxes/${native.id}${filePath(path)}`);
+					const body = await request("GET", `/sandboxes/${native.id}${filePath(path)}`, {
+						text: true,
+					});
 					if (typeof body !== "string") throw new Error(`Spawnbox path ${path} is not a file`);
 					return body;
 				},

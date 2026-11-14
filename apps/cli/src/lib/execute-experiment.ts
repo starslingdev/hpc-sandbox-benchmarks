@@ -283,6 +283,7 @@ export async function executeExperimentBatch(
 							module: opened.module,
 							driver,
 							request: { spec: cell.target, artifact: opened.artifact },
+							costEvidence: opened.costEvidence,
 						},
 						runId: plan.id,
 						replicateIndex: cell.replicate,

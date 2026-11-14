@@ -14,8 +14,7 @@
     "./container/artifact": "./src/container/artifact.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
     "@daytona/sdk": "catalog:computesdk",

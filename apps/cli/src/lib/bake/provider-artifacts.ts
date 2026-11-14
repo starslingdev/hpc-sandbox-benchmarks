@@ -21,6 +21,7 @@ import {
 	isMirroredProviderId,
 	REGISTRY,
 } from "@sandbox-benchmarks/schema/providers";
+import { bakeBasetenImage } from "./baseten.ts";
 import { bakeBlaxelImage } from "./blaxel.ts";
 import { bakeDaytonaContainerSnapshot, bakeDaytonaVmSnapshot } from "./daytona.ts";
 import { bakeE2bTemplate } from "./e2b.ts";
@@ -46,6 +47,7 @@ export const BAKED_ARTIFACT_BUILDERS = {
 	blaxel: bakeBlaxelImage,
 	novita: bakeNovitaTemplate,
 	freestyle: bakeFreestyleSnapshot,
+	baseten: bakeBasetenImage,
 } as const satisfies Record<BakedProviderId, BakeProviderArtifact>;
 
 export function buildBakedProviderArtifact(

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
+	BoundCostEvidenceCapability,
 	CreateRequest,
 	DriverModule,
 	ProviderId,
@@ -121,6 +122,7 @@ export {
 	withOwnedSandbox,
 	withOwnedShutdownOperation,
 } from "./lib/sandbox-owner.ts";
+export { HOST_VCPUS_PROBE } from "./lib/setup.ts";
 
 /**
  * The universal sandbox a provider's `sandbox.create` returns (computesdk's `Sandbox`). Derived from
@@ -668,7 +670,7 @@ export interface SuiteRunContext {
 	resultsDir: string;
 	/** The provider's exec transport capability — drives the per-step sync/detached choice. */
 	transport: ProviderTransport;
-	costEvidence?: ProviderCostEvidenceCapability;
+	costEvidence?: ProviderCostEvidenceCapability | undefined;
 	/** Port-native readiness plan supplied by the selected DriverModule composition root. When
 	 *  present, the harness enforces its policy budget and does not run the legacy generic exec poll. */
 	driverReadiness?: SuiteDriverReadinessPlan;
@@ -794,6 +796,7 @@ export interface DriverAllocation<Handle = unknown> {
 	readonly module: DriverModule<ProviderId, Handle>;
 	readonly driver: SandboxDriver<Handle>;
 	readonly request: Omit<CreateRequest, "deadlineMs">;
+	readonly costEvidence?: BoundCostEvidenceCapability | undefined;
 }
 
 export interface ExecuteSuiteOptions {
@@ -881,7 +884,7 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 				}
 				throw new Error("sandbox removal remains unconfirmed");
 			},
-			...(module.costEvidence === undefined ? {} : { costEvidence: module.costEvidence }),
+			costEvidence: allocation.costEvidence,
 		},
 		() => {
 			const managed = options.managed;

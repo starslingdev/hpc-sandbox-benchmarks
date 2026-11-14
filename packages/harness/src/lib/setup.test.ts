@@ -3,12 +3,21 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUITES } from "@sandbox-benchmarks/schema";
-import { OBSERVED_SPECS_SCRIPT, REPO_URL, setupSteps } from "./setup.ts";
+import { HOST_VCPUS_PROBE, OBSERVED_SPECS_SCRIPT, REPO_URL, setupSteps } from "./setup.ts";
 
 it("emits a syntactically valid observed-specs script using the shared isolation probe", () => {
 	const syntax = Bun.spawnSync(["bash", "-n", "-c", OBSERVED_SPECS_SCRIPT]);
 	expect(syntax.exitCode, syntax.stderr.toString()).toBe(0);
 	expect(OBSERVED_SPECS_SCRIPT).toContain('source "$PWD/lib/probe/isolation/main.sh"');
+});
+
+// GNU nproc is Linux-only.
+it.skipIf(Bun.which("nproc") === null)("counts CPUs past Modal's OpenMP hints", () => {
+	const count = (command: string, env: Record<string, string | undefined>) =>
+		Bun.spawnSync(["sh", "-c", command], { env }).stdout.toString();
+	const { OMP_NUM_THREADS: _n, OMP_THREAD_LIMIT: _l, ...clean } = process.env;
+	const hinted = { ...clean, OMP_NUM_THREADS: "1", OMP_THREAD_LIMIT: "1" };
+	expect(count(HOST_VCPUS_PROBE, hinted)).toBe(count("nproc", clean));
 });
 
 describe("setupSteps", () => {

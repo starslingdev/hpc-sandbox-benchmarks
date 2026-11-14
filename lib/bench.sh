@@ -1118,6 +1118,24 @@ run_realworld_pts() {
 		"${REPO_ROOT}/lib/pts/realworld/realworld-runner.sh" \
 		"${REPO_ROOT}/lib/pts/realworld/openclaw-lint.mjs"
 
+	# Persist the sandbox's task budget through PTS's per-test environment changes.
+	if [ -n "${REALWORLD_TASK_MEM_MAX_BYTES:-}" ]; then
+		case "$REALWORLD_TASK_MEM_MAX_BYTES" in
+		*[!0-9]*)
+			echo "ERROR: REALWORLD_TASK_MEM_MAX_BYTES must be a positive integer" >&2
+			return 1
+			;;
+		esac
+		if [ "$REALWORLD_TASK_MEM_MAX_BYTES" -le 0 ]; then
+			echo "ERROR: REALWORLD_TASK_MEM_MAX_BYTES must be a positive integer" >&2
+			return 1
+		fi
+		# Expand the fallback when PTS sources target.env, preserving per-profile limits.
+		# shellcheck disable=SC2016
+		printf '\nREALWORLD_TASK_MEM_MAX_BYTES=${REALWORLD_TASK_MEM_MAX_BYTES:-%s}\n' "$REALWORLD_TASK_MEM_MAX_BYTES" \
+			>> "$(pts_user_dir)/test-profiles/local/${profile}/target.env"
+	fi
+
 	run_pts_benchmark "local/${profile}" "$prefix"
 }
 

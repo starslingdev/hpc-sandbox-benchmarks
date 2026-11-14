@@ -1,7 +1,7 @@
 # `@sandbox-benchmarks/templates` — provider toolchain images
 
 Modular, composable Dockerfiles that build the **shared toolchain** every sandbox provider runs, plus
-the **per-provider variants** (e2b, daytona, blaxel, modal, vercel) that compose on top of it. Published as
+the **per-provider variants** (e2b, daytona, blaxel, baseten, modal, vercel) that compose on top of it. Published as
 `ghcr.io/starslingdev/sandbox-benchmarks-toolchain` (name + version, like every pin, live in the
 arktype-validated TypeScript config — see below).
 
@@ -13,6 +13,7 @@ debian:13-slim                 (upstream, BASE_IMAGE default for base/)
        ├─ e2b/                 thin variant: e2b template (envd injected by the e2b builder)
        ├─ daytona/             thin variant: daytona snapshot source
        ├─ blaxel/              sandbox API + disk-backed writable paths
+       ├─ baseten/             sandbox API + volume-backed writable paths
        ├─ modal/               thin variant: consumed via Image.fromRegistry
        └─ vercel/              thin variant: mirrored to VCR for custom-image sandbox boots
 ```
