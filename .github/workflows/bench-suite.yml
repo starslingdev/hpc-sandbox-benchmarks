@@ -146,6 +146,7 @@ jobs:
           BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(inputs.providers), 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(inputs.providers), 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ contains(fromJSON(inputs.providers), 'baseten') && secrets.BASETEN_API_KEY || '' }}
+          CREATEOS_API_KEY: ${{ contains(fromJSON(inputs.providers), 'createos') && secrets.CREATEOS_API_KEY || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}

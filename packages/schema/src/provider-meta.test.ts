@@ -33,6 +33,7 @@ const REQUIRED_INPUTS = {
 	brezel: ["BREZEL_API_KEY", "BREZEL_API_URL", "BREZEL_PROJECT_ID", "BREZEL_ENVIRONMENT_REVISION"],
 	digitalocean: ["DIGITAL_OCEAN_TOKEN"],
 	baseten: ["BASETEN_API_KEY"],
+	createos: ["CREATEOS_API_KEY"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
 const ARTIFACT_KINDS = {
@@ -53,6 +54,7 @@ const ARTIFACT_KINDS = {
 	brezel: "none",
 	digitalocean: "image",
 	baseten: "baked",
+	createos: "none",
 } as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
 
 const BAKED = {
