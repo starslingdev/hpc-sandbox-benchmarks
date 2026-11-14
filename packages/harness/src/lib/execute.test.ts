@@ -141,12 +141,12 @@ describe("sandbox preamble", () => {
 		);
 	});
 
-	// The preamble prefixes EVERY command and is joined under `set -eo pipefail`, so a failing write
-	// here takes down the whole step — including probes that never touch PTS. PTS creates its own state
-	// directory, so selecting state must stay read-only.
-	it("selects PTS state without writing to the filesystem", () => {
-		expect(PTS_STATE_SELECT_SH).not.toContain("mkdir");
-		expect(PTS_STATE_SELECT_SH).not.toContain("$HOME");
+	it("uses a writable HOME install root linked to baked profiles for an unmapped uid", () => {
+		expect(PTS_STATE_SELECT_SH).toContain("elif ! id -un");
+		expect(PTS_STATE_SELECT_SH).toContain(
+			'mkdir -p "$HOME/.phoronix-test-suite/installed-tests/pts"',
+		);
+		expect(PTS_STATE_SELECT_SH).toContain('ln -s "$profile" "$link"');
 	});
 
 	it("never disables the mise python — baked images have no distro python3 to fall back to", () => {

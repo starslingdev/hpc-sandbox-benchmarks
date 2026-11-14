@@ -14,8 +14,8 @@
 //     because PTS falls back to the config's ~/.phoronix-test-suite/installed-tests/;
 //   - pointing an unprivileged user at the baked root puts it on root's 0600 core.pt2so and a
 //     HOME-expanded results tree that bench.sh's composite finder never searches;
-//   - a write (mkdir) while selecting state runs under `set -e` in all three contexts, so it takes
-//     down the whole step — including leaves that never touch PTS — when HOME is unset or unwritable.
+//   - an injected uid with no passwd entry needs a writable HOME override because PTS otherwise
+//     resolves its state under read-only /; named users keep the default with no write.
 
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -26,12 +26,21 @@ import { findRepoRoot } from "./lib/workspace.ts";
 const root = findRepoRoot();
 const read = (path: string): string => readFileSync(join(root, path), "utf8");
 
-/** The bench.sh block, extracted line-anchored on its guard through the matching `fi`. */
+/** The bench.sh block, extracted from its guard through the matching `fi`. */
 function benchShStateBlock(): string {
 	const lines = read("lib/bench.sh").split("\n");
 	const start = lines.findIndex((line) => line.trim() === `if [ -d ${PTS_BAKED_ROOT} ]; then`);
 	if (start === -1) throw new Error("lib/bench.sh: no PTS state selection block");
-	const end = lines.findIndex((line, i) => i > start && line.trim() === "fi");
+	let depth = 0;
+	let end = -1;
+	for (let i = start; i < lines.length; i++) {
+		const line = lines[i]?.trim() ?? "";
+		if (/^if\b.*\bthen$/.test(line)) depth++;
+		if (line === "fi" && --depth === 0) {
+			end = i;
+			break;
+		}
+	}
 	if (end === -1) throw new Error("lib/bench.sh: unterminated PTS state selection block");
 	return lines.slice(start, end + 1).join("\n");
 }
@@ -39,18 +48,25 @@ function benchShStateBlock(): string {
 describe("PTS state selection alignment", () => {
 	// The canonical snippet itself. Asserted here rather than only at its consumers so a change to the
 	// policy has to be a deliberate edit to this list, not a silent one-character fix.
-	it("keeps the shared install root and leaves an unprivileged user on PTS's own default", () => {
+	it("keeps shared profiles and selects HOME state for an unmapped uid", () => {
 		expect(PTS_STATE_SELECT_SH).toContain(
 			`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/`,
 		);
 		expect(PTS_STATE_SELECT_SH).toContain(`export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/`);
-		// UNSET, never repointed: an inherited image ENV must be dropped, and PTS's default already is
-		// $HOME/.phoronix-test-suite.
+		expect(PTS_STATE_SELECT_SH).toContain("elif ! id -un");
+		expect(PTS_STATE_SELECT_SH).toContain(
+			'export PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"',
+		);
 		expect(PTS_STATE_SELECT_SH).toContain("unset PTS_USER_PATH_OVERRIDE");
 	});
 
-	it("selects state without writing to the filesystem", () => {
-		expect(PTS_STATE_SELECT_SH).not.toContain("mkdir");
+	it("creates state only for an unmapped uid", () => {
+		expect(PTS_STATE_SELECT_SH).toContain(
+			'mkdir -p "$HOME/.phoronix-test-suite/installed-tests/pts"',
+		);
+		expect(PTS_STATE_SELECT_SH).toContain(
+			'export PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"',
+		);
 	});
 
 	// By-construction only holds while the consumers really interpolate the constant; a re-inlined
@@ -67,8 +83,13 @@ describe("PTS state selection alignment", () => {
 		expect(block).toContain(`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/`);
 		expect(block).toContain('if [ "$(id -u)" -eq 0 ]');
 		expect(block).toContain(`export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/`);
+		expect(block).toContain("elif ! id -un");
+		expect(block).toContain('export PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"');
 		expect(block).toContain("unset PTS_USER_PATH_OVERRIDE");
-		expect(block).not.toContain("mkdir");
+		expect(block).toContain('mkdir -p "$HOME/.phoronix-test-suite/installed-tests/pts"');
+		expect(block).toContain(
+			'export PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"',
+		);
 	});
 
 	// The image ENV is the fourth copy of this policy and the one that outlives a rebuild. It must

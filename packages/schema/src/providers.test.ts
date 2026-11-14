@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { ProviderMeta, ProviderPricing } from "./index.ts";
 import {
+	expectedRuntimeIdentity,
 	getProvider,
 	hourlyCostAtTargetSpec,
 	isoDateSchema,
+	isUnexpectedRuntimeUser,
 	PROVIDERS,
 	pricingQuantityAtTargetSpec,
 	pricingQuantityRuleSchema,
@@ -81,6 +83,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"novita",
 			"runcloud",
 			"tama",
+			"tangle",
 			"vercel",
 		]);
 	});
@@ -98,6 +101,12 @@ describe("@sandbox-benchmarks/schema providers", () => {
 				expect(provider.transport.detachedPoll).toBe(true);
 			}
 		}
+	});
+
+	it("recognizes Tangle's unprivileged runtime user without reporting drift", () => {
+		expect(expectedRuntimeIdentity("tangle")).toBe("unprivileged");
+		expect(isUnexpectedRuntimeUser("tangle", "uid-1000")).toBe(false);
+		expect(isUnexpectedRuntimeUser("tangle", "root")).toBe(true);
 	});
 
 	it("deep-freezes the registry and resolves legacy aliases", () => {

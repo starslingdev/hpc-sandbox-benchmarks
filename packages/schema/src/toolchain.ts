@@ -216,14 +216,15 @@ export const PTS_BAKED_ROOT = "/var/lib/phoronix-test-suite";
  * may inject an unprivileged runtime user. Those two identities need DIFFERENT
  * mutable state and the SAME installed profiles, which is exactly the split below:
  *
- *   - `PTS_TEST_INSTALL_ROOT_PATH` keeps the baked installed tests shared. It is the only path PTS
- *     10.8.4 exposes its own env override for, and without it an unprivileged run falls back to the
- *     config's `~/.phoronix-test-suite/installed-tests/` and reports ZERO installed tests — the
- *     failure this exists to prevent. The published v7 image predates this ENV, so setting it
- *     at runtime is what makes an already-published image work.
- *   - `PTS_USER_PATH_OVERRIDE` is UNSET for a non-root user rather than pointed anywhere. PTS's own
- *     per-user default is already `$HOME/.phoronix-test-suite`, and it creates that directory itself —
- *     so there is no mkdir here to fail under `set -e` when HOME is unset or unwritable. Pointing an
+ *   - `PTS_TEST_INSTALL_ROOT_PATH` points at the baked tests for named users. PTS 10.8.4 accepts
+ *     that override only when the root is writable; an unmapped uid therefore gets a writable
+ *     HOME install root with links to the baked profiles. Without that view it reports ZERO
+ *     installed tests. The published v7 image predates this ENV.
+ *   - `PTS_USER_PATH_OVERRIDE` is UNSET for a named non-root user: PTS uses that user's passwd
+ *     home directory. An injected uid with no passwd entry needs an explicit writable state path:
+ *     PTS's posix_getpwuid() lookup otherwise resolves to `/.phoronix-test-suite` even with HOME set.
+ *     Create and select `$HOME/.phoronix-test-suite` only for that unmapped uid. Its config's `~`
+ *     paths also need replacement with absolute HOME paths after batch-setup. Pointing an
  *     unprivileged user at the baked root instead is what breaks: root's `core.pt2so` is mode 0600
  *     (the bake's chmod runs before the profile layers rewrite it), and PTS expands its non-daemon
  *     `ResultsDirectory` through HOME regardless of the override — so the shared setting yields
@@ -243,4 +244,13 @@ export const PTS_STATE_SELECT_SH =
 	`if [ -d ${PTS_BAKED_ROOT} ]; then ` +
 	`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/; ` +
 	`if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/; ` +
+	`elif ! id -un >/dev/null 2>&1; then ` +
+	`if [ -z "\${HOME:-}" ] || [ ! -w "$HOME" ]; then echo "PTS needs a writable HOME for an unmapped uid" >&2; exit 1; fi; ` +
+	`mkdir -p "$HOME/.phoronix-test-suite/installed-tests/pts" "$HOME/.phoronix-test-suite/test-results"; ` +
+	`for profile in ${PTS_BAKED_ROOT}/installed-tests/pts/*; do [ -d "$profile" ] || continue; ` +
+	`link="$HOME/.phoronix-test-suite/installed-tests/pts/$(basename "$profile")"; ` +
+	`[ -e "$link" ] || ln -s "$profile" "$link"; done; ` +
+	`export PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"; ` +
+	`export PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/"; ` +
+	`export PATH="$HOME/.local/pts/bin:$PATH"; ` +
 	`else unset PTS_USER_PATH_OVERRIDE; fi; fi`;
