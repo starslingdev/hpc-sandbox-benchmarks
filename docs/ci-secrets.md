@@ -239,6 +239,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `FREESTYLE_API_KEY` | Freestyle provider runtime and validation |
    | `BREZEL_API_KEY` | Brezel provider runtime and validation |
    | `DIGITAL_OCEAN_TOKEN` | DigitalOcean MicroVMs provider runtime and validation |
+   | `SPAWNBOX_API_KEY` | Spawnbox provider runtime and validation |
    <!-- <<< end generated: provider-secrets -->
 
    For Boat, a key created with the `ci` preset is insufficient: that preset omits
@@ -305,6 +306,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BREZEL_API_URL` | Brezel | — |
    | `BREZEL_PROJECT_ID` | Brezel | — |
    | `BREZEL_ENVIRONMENT_REVISION` | Brezel | — |
+   | `SPAWNBOX_URL` | Spawnbox | — |
    <!-- <<< end generated: provider-variables -->
 
    Optional values with a declared provider default use it when unset. The two Vercel namespace

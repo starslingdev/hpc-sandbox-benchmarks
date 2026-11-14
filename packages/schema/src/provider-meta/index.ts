@@ -15,6 +15,7 @@ import modal_vm from "./modal-vm.ts";
 import namespace from "./namespace.ts";
 import novita from "./novita.ts";
 import runcloud from "./runcloud.ts";
+import spawnbox from "./spawnbox.ts";
 import tama from "./tama.ts";
 import vercel from "./vercel.ts";
 
@@ -35,6 +36,7 @@ const MODULES = {
 	freestyle: freestyle,
 	brezel: brezel,
 	digitalocean: digitalocean,
+	spawnbox: spawnbox,
 } as const satisfies { [P in ProviderId]: ProviderMetaModule<P> };
 
 export const REGISTRY = {
@@ -54,6 +56,7 @@ export const REGISTRY = {
 	freestyle: MODULES.freestyle.meta,
 	brezel: MODULES.brezel.meta,
 	digitalocean: MODULES.digitalocean.meta,
+	spawnbox: MODULES.spawnbox.meta,
 } as const satisfies Record<ProviderId, ProviderMetaSource>;
 
 type IdsWithArtifact<K extends ProviderArtifact["kind"]> = {

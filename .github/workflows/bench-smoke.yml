@@ -25,6 +25,7 @@ on:
           - 'freestyle'
           - 'brezel'
           - 'digitalocean'
+          - 'spawnbox'
           # <<< end generated: provider-options
       suite:
         description: Suite to run

@@ -536,6 +536,8 @@ jobs:
           BREZEL_PROJECT_ID: ${{ matrix.provider == 'brezel' && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
           BREZEL_ENVIRONMENT_REVISION: ${{ matrix.provider == 'brezel' && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           DIGITAL_OCEAN_TOKEN: ${{ matrix.provider == 'digitalocean' && secrets.DIGITAL_OCEAN_TOKEN || '' }}
+          SPAWNBOX_API_KEY: ${{ matrix.provider == 'spawnbox' && secrets.SPAWNBOX_API_KEY || '' }}
+          SPAWNBOX_URL: ${{ matrix.provider == 'spawnbox' && (env.SPAWNBOX_URL || vars.SPAWNBOX_URL || secrets.SPAWNBOX_URL) || '' }}
           # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
@@ -734,6 +736,8 @@ jobs:
           BREZEL_PROJECT_ID: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_PROJECT_ID || vars.BREZEL_PROJECT_ID || secrets.BREZEL_PROJECT_ID) || '' }}
           BREZEL_ENVIRONMENT_REVISION: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'brezel') && (env.BREZEL_ENVIRONMENT_REVISION || vars.BREZEL_ENVIRONMENT_REVISION || secrets.BREZEL_ENVIRONMENT_REVISION) || '' }}
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
+          SPAWNBOX_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'spawnbox') && secrets.SPAWNBOX_API_KEY || '' }}
+          SPAWNBOX_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'spawnbox') && (env.SPAWNBOX_URL || vars.SPAWNBOX_URL || secrets.SPAWNBOX_URL) || '' }}
           # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |

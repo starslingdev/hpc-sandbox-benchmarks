@@ -78,6 +78,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"namespace",
 			"novita",
 			"runcloud",
+			"spawnbox",
 			"tama",
 			"vercel",
 		]);
