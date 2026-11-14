@@ -94,6 +94,12 @@ export {
 	type DatasetCell,
 	type LeaderboardDataset,
 } from "./lib/leaderboard-datasets.ts";
+// Measured (provider-reported) cost, reachable from `Leaderboard.measuredCost`.
+export type {
+	MeasuredCostProvider,
+	MeasuredCostSuite,
+	UnmeasuredReason,
+} from "./lib/measured-cost.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {
 	buildObservedMixtures,
