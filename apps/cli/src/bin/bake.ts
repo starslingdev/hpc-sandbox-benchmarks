@@ -201,6 +201,7 @@ if (import.meta.main) {
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
+		basetenImageCandidate: bakedArtifactName("baseten", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,

@@ -25,6 +25,7 @@ on:
           - 'freestyle'
           - 'brezel'
           - 'digitalocean'
+          - 'baseten'
           # <<< end generated: provider-options
       suite:
         description: Suite to run

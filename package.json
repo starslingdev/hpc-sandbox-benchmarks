@@ -16,6 +16,7 @@
     },
     "catalogs": {
       "computesdk": {
+        "@basetenlabs/sandbox": "0.5.0",
         "@blaxel/core": "0.3.5",
         "@infercrane/brezel": "0.1.1",
         "@computesdk/blaxel": "1.6.16",

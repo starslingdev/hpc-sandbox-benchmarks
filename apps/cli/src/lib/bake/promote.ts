@@ -258,6 +258,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
+		basetenImageCandidate: bakedArtifactName("baseten", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
 		daytonaVmTarget: config.daytonaVm.target,

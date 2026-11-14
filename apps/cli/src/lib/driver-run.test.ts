@@ -90,6 +90,7 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 		const driverIds = Object.keys(DRIVERS);
 		const adapterIds: string[] = providers.map((provider) => provider.name);
 		expect(driverIds.sort()).toEqual([
+			"baseten",
 			"blaxel",
 			"boat",
 			"brezel",
