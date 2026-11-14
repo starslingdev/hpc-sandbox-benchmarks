@@ -58,6 +58,7 @@ import type {
 	PooledDataset,
 } from "./leaderboard-datasets.ts";
 import { combineLeaderboardDatasets } from "./leaderboard-datasets.ts";
+import { MEMORY_TOLERANCE } from "./specs.ts";
 
 /**
  * The repository the published leaderboard lives in — the base for every provenance link in the header.
@@ -1166,6 +1167,13 @@ function coverageSummary(gaps: CoverageGap[]): string {
 	return `${gaps.length} uncovered result${gaps.length === 1 ? "" : "s"} across ${byProvider.size} provider${byProvider.size === 1 ? "" : "s"} (${parts.join(", ")}). A gap is a missing result — the provider **failing to cover** that workload — never a tie or a zero.`;
 }
 
+/** A below-target RAM reading on a balloon-backed VM (Modal's) is its boot size, not a ceiling. */
+function elasticMemoryNote(observed: ObservedSpecs, target: TargetSpec): string {
+	if (observed.memoryGb === undefined) return "";
+	if (observed.memoryGb >= target.memoryGb * (1 - MEMORY_TOLERANCE)) return "";
+	return " The RAM figure is guest memory when probed: on a balloon-backed VM it can grow on demand toward the provider's limit, so it is a starting size, not a ceiling.";
+}
+
 /** Compact requested/observed allocation description, omitting fields probes could not see. */
 function formatSpec(spec: TargetSpec | ObservedSpecs): string {
 	const parts = [
@@ -1368,7 +1376,7 @@ export function renderLeaderboardMarkdown(
 	}
 	for (const caveat of board.comparabilityCaveats) {
 		lines.push(
-			`> **Comparability warning:** ${caveat.displayName}'s observed compute did not match the requested CPU/RAM target; its observed allocation was **${formatSpec(caveat.observedSpecs)}**. Its measured ranks are not like-for-like with compute-matched providers.`,
+			`> **Comparability warning:** ${caveat.displayName}'s observed compute did not match the requested CPU/RAM target; its observed allocation was **${formatSpec(caveat.observedSpecs)}**. Its measured ranks are not like-for-like with compute-matched providers.${elasticMemoryNote(caveat.observedSpecs, board.targetSpec)}`,
 			"",
 		);
 	}

@@ -371,6 +371,20 @@ describe("buildLeaderboard", () => {
 		);
 		expect(md).toContain("**4 vCPU · 8 GiB RAM · 40 GB disk**");
 		expect(md).not.toContain("Same pinned target");
+		// RAM at the target is a real reading, not a balloon's starting size.
+		expect(md).not.toContain("starting size");
+	});
+
+	it("says a below-target RAM reading is a starting size, not a ceiling", () => {
+		// Modal's bursting VM: 20 schedulable CPUs and a balloon that boots at 1.08 GB.
+		const modalVm = {
+			...provider("modal-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+			specMatched: false,
+			observedSpecs: { vcpus: 20, memoryGb: 1.08 },
+		};
+		const md = render(buildLeaderboard(run([modalVm])));
+		expect(md).toContain("**20 vCPU · 1.08 GiB RAM**");
+		expect(md).toContain("a starting size, not a ceiling");
 	});
 });
 
