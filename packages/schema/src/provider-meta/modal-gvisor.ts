@@ -14,10 +14,13 @@ export default defineProviderMeta("modal-gvisor", {
 		class: "userspace",
 		technology: "gVisor container",
 		notes:
-			"Modal's default sandbox runtime. scalableSandboxes enabled in the harness; CPU can burst beyond the request.",
+			"Modal's default sandbox runtime. CPU and memory can burst beyond the request. Creates set experimentalOptions.performance_sensitive so Modal schedules onto its low-variance CPU pool (https://modal.com/docs/guide/performance-sensitive-sandboxes).",
 	},
 	pricing: modalPricing,
-	maturity: { status: "ga", notes: "scalableSandboxes enabled in the harness." },
+	maturity: {
+		status: "ga",
+		notes: "V2 backend with bursting and performance-sensitive CPU scheduling.",
+	},
 	specPinning: "settable",
 	transport: modalTransport,
 });
