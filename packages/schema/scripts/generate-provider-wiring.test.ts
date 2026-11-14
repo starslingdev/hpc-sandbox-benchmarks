@@ -274,6 +274,7 @@ describe("provider wiring projections", () => {
 			"digitalocean",
 			"baseten",
 			"createos",
+			"munito",
 		]);
 		expect([...PROVIDER_IDS].filter((id) => fleet.waivers[id] !== undefined)).toEqual([]);
 
