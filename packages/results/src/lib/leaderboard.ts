@@ -126,6 +126,12 @@ export const FIGURE_DIMENSION: Dimension = "realworld";
 export const POOLED_BOARD_HEADING = "Combined dataset analysis";
 
 /**
+ * The `dimension` a measured-cost chart carries in {@link LeaderboardMetricFigure}. Not a catalog
+ * Dimension: these charts sit in the board's Measured cost section, never inside a dimension's.
+ */
+export const MEASURED_COST_FIGURE_DIMENSION = "measured cost";
+
+/**
  * One rendered suite chart the Markdown embeds — what the renderer needs in order to link a figure
  * it did not produce.
  *
@@ -1065,7 +1071,9 @@ function metricFigureImage(figure: LeaderboardMetricFigure): string {
 	const environments = `${figure.charted} environment${figure.charted === 1 ? "" : "s"}`;
 	const disclosed = figure.unmeasured === 0 ? "" : `, ${figure.unmeasured} disclosed as unmeasured`;
 	const alt = escapeAttribute(
-		`${figure.label}: ${environments} ranked best-first${disclosed}, with 95% intervals`,
+		figure.dimension === MEASURED_COST_FIGURE_DIMENSION
+			? `${figure.label}: provider-reported billed cost for ${environments}, cheapest first and not ranked${disclosed}, whiskers spanning the lowest and highest bill`
+			: `${figure.label}: ${environments} ranked best-first${disclosed}, with 95% intervals`,
 	);
 	return `<img src="${escapeAttribute(figure.file)}" width="${figure.width}" alt="${alt}">`;
 }
@@ -1287,6 +1295,7 @@ function formatMeasuredCoverage(measured: number, expected: number): string {
 function measuredCostSection(
 	providers: readonly MeasuredCostProvider[],
 	target: TargetSpec,
+	figures: readonly LeaderboardMetricFigure[],
 ): string[] {
 	if (providers.length === 0) return [];
 	const lines: string[] = [
@@ -1310,6 +1319,8 @@ function measuredCostSection(
 			return `| ${provider.displayName} | ${formatMeasuredCoverage(provider.observed, provider.expected)} | ${total} | ${formatUnmeasured(provider.unmeasured)} |`;
 		}),
 		"",
+		// One chart per realworld suite with a measured pipeline run, in the open beside the summary.
+		...figures.flatMap((figure) => [metricFigureImage(figure), ""]),
 	];
 	// Per-suite figures only for providers that measured something: a provider with no observed
 	// sandbox has nothing to show per suite, and its summary row already says why.
@@ -1564,7 +1575,13 @@ export function renderLeaderboardMarkdown(
 		if (collapsed) lines.push("</details>", "");
 	}
 
-	lines.push(...measuredCostSection(board.measuredCost, board.targetSpec));
+	lines.push(
+		...measuredCostSection(
+			board.measuredCost,
+			board.targetSpec,
+			metricFigures.filter((figure) => figure.dimension === MEASURED_COST_FIGURE_DIMENSION),
+		),
+	);
 
 	// Coverage gaps: summary first; full table + legends inside <details> so unfinished providers
 	// don't bury the rankings.
