@@ -14,7 +14,7 @@ export default defineProviderMeta("modal-vm", {
 		class: "microVM",
 		technology: "microVM (VM runtime)",
 		notes:
-			"Modal's VM runtime — a gVisor-free KVM microVM, selected per-create via runtime: vm with CPU and memory bursting (same pushed toolchain image as modal-gvisor).",
+			"Modal's VM runtime — a gVisor-free KVM microVM, selected per-create via runtime: vm with CPU and memory bursting and experimentalOptions.performance_sensitive (same pushed toolchain image as modal-gvisor; https://modal.com/docs/guide/performance-sensitive-sandboxes).",
 	},
 	pricing: modalPricing,
 	maturity: {
