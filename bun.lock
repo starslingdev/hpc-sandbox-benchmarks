@@ -133,6 +133,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/briq": {
+      "name": "@sandbox-benchmarks/briq",
+      "version": "0.0.0",
+      "dependencies": {
+        "@briq-cloud/sdk": "catalog:computesdk",
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/createos": {
       "name": "@sandbox-benchmarks/createos",
       "version": "0.0.0",
@@ -198,6 +213,7 @@
         "@sandbox-benchmarks/blaxel": "workspace:*",
         "@sandbox-benchmarks/boat": "workspace:*",
         "@sandbox-benchmarks/brezel": "workspace:*",
+        "@sandbox-benchmarks/briq": "workspace:*",
         "@sandbox-benchmarks/createos": "workspace:*",
         "@sandbox-benchmarks/daytona": "workspace:*",
         "@sandbox-benchmarks/digitalocean": "workspace:*",
@@ -487,6 +503,7 @@
       "@basetenlabs/sandbox": "0.5.0",
       "@blaxel/core": "0.3.5",
       "@boatdev/sdk": "1.0.0",
+      "@briq-cloud/sdk": "0.1.2",
       "@bufbuild/protobuf": "2.14.1",
       "@computesdk/blaxel": "1.6.16",
       "@computesdk/daytona": "1.7.31",
@@ -622,6 +639,8 @@
     "@blaxel/core": ["@blaxel/core@0.3.5", "", { "dependencies": { "@hey-api/client-fetch": "^0.10.0", "@modelcontextprotocol/sdk": "^1.20.0", "archiver": "^7.0.1", "axios": "^1.9.0", "dockerfile-ast": "^0.7.1", "dotenv": "^16.5.0", "form-data": "^4.0.2", "jwt-decode": "^4.0.0", "toml": "^3.0.0", "uuid": "^11.1.0", "ws": "^8.18.2", "yaml": "^2.7.1", "zod": "^3.24.3" } }, "sha512-undBY+3HH8TWrBfYpd3OxshyEjulmPWi+Mrl0VQd2VopaRAkvYDLhwjJISOagZdhRGRUTskwjg2vGTPZQhfrnQ=="],
 
     "@boatdev/sdk": ["@boatdev/sdk@1.0.0", "", {}, "sha512-ktYkXQYeu5SmXUWdsa2oKhf0IJEMcxmsO4sbKHvOcUCw3t2tNWPNeSZtuxaFBdbU01LTDJ10n8kEMw004Fzy1g=="],
+
+    "@briq-cloud/sdk": ["@briq-cloud/sdk@0.1.2", "", { "dependencies": { "ws": "^8.21.0" } }, "sha512-t9opzVTALWVKADZzMWB9Mep3yhB1efedpfbXwzvVex2WFeBHY00e2hSfn1N7fhC9OzuuizBYBy3CG3jCftXcfA=="],
 
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.14.1", "", {}, "sha512-agRJn3+EJDUe8AvxTx/LnHA/GErvLE62pSaSk7+MwFOtOv8eWBu/qCq2qoZjBjVZ3C2aiFJCveuSs17KMkYGOw=="],
 
@@ -1038,6 +1057,8 @@
     "@sandbox-benchmarks/boat": ["@sandbox-benchmarks/boat@workspace:packages/boat"],
 
     "@sandbox-benchmarks/brezel": ["@sandbox-benchmarks/brezel@workspace:packages/brezel"],
+
+    "@sandbox-benchmarks/briq": ["@sandbox-benchmarks/briq@workspace:packages/briq"],
 
     "@sandbox-benchmarks/cli": ["@sandbox-benchmarks/cli@workspace:apps/cli"],
 
@@ -2014,6 +2035,8 @@
     "@blaxel/core/dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
 
     "@blaxel/core/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
+
+    "@briq-cloud/sdk/ws": ["ws@8.21.3", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="],
 
     "@bufbuild/protoplugin/typescript": ["typescript@5.4.5", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ=="],
 

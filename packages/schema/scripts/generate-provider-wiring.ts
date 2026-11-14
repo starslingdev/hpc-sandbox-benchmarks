@@ -524,6 +524,7 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 			REGISTRY.createos.sdkPackage,
 			catalogVersion(catalog, REGISTRY.createos.sdkPackage),
 		],
+		["BRIQ", REGISTRY.briq.sdkPackage, catalogVersion(catalog, REGISTRY.briq.sdkPackage)],
 	] as const;
 	const packages = new Set(
 		driverFleetProjection(root).moduleIds.map((id) => driverModuleLocation(id).directory),

@@ -1,0 +1,27 @@
+{
+  "name": "@sandbox-benchmarks/briq",
+  "version": "0.0.0",
+  "private": true,
+  "description": "briq sandbox integration for driverkit.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@briq-cloud/sdk": "catalog:computesdk",
+    "@sandbox-benchmarks/driver": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
