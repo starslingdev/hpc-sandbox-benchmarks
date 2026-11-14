@@ -83,6 +83,7 @@ describe("buildReleasePlan matrix", () => {
 			"digitalocean",
 			"baseten",
 			"createos",
+			"briq",
 		]);
 	});
 

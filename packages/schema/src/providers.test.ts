@@ -68,6 +68,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"blaxel",
 			"boat",
 			"brezel",
+			"briq",
 			"createos",
 			"daytona-container",
 			"daytona-vm",

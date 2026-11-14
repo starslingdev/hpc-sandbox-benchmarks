@@ -24,6 +24,7 @@ export const PROVIDER_IDS = [
 	"digitalocean",
 	"baseten",
 	"createos",
+	"briq",
 ] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
