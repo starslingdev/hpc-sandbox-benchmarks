@@ -6,7 +6,11 @@
 import { describe, expect, test } from "bun:test";
 import type { CreateSandboxOptions, Sandbox } from "@run-cloud/sdk";
 import { RunCloudError } from "@run-cloud/sdk";
-import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
+import type {
+	CreateRequest,
+	DriverContext,
+	SandboxTeardownResult,
+} from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import { sdkStub, vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
 import runcloud, {
@@ -208,24 +212,25 @@ describe("run.cloud end to end through its module", () => {
 		expect(RUNCLOUD_SANDBOX_ID.allows("sb-test")).toBe(true);
 		const capture = runcloud.costEvidence?.captureAfterTeardown;
 		if (!capture) throw new Error("run.cloud declares no cost evidence");
-		const cell = { runId: "run-1", providerId: "runcloud", suite: "cpu-node" } as const;
 		const attemptedAt = "2026-08-08T00:00:00.000Z";
-		expect(
-			await capture({
-				cell,
-				providerId: "runcloud",
-				sandboxId: "sb-1",
-				teardown: { completed: true, attemptedAt, completedAt: attemptedAt },
-			}),
-		).toMatchObject({ kind: "missing", reason: "not_sandbox_scoped" });
-		expect(
-			await capture({
-				cell,
-				providerId: "runcloud",
-				sandboxId: "sb-1",
-				teardown: { completed: false, attemptedAt },
-			}),
-		).toMatchObject({ kind: "missing", reason: "sandbox_teardown_unconfirmed" });
+		const run = (teardown: SandboxTeardownResult) =>
+			capture(
+				{
+					cell: { runId: "run-1", providerId: "runcloud", suite: "cpu-node" },
+					providerId: "runcloud",
+					sandboxId: "sb-1",
+					teardown,
+				},
+				{ RUN_CLOUD_API_KEY: "test-key" },
+			);
+		expect(await run({ completed: true, attemptedAt, completedAt: attemptedAt })).toMatchObject({
+			kind: "missing",
+			reason: "not_sandbox_scoped",
+		});
+		expect(await run({ completed: false, attemptedAt })).toMatchObject({
+			kind: "missing",
+			reason: "sandbox_teardown_unconfirmed",
+		});
 	});
 
 	test("a DELETE refused by the network, an outage or a conflict is asked again; a definitive one is not", async () => {

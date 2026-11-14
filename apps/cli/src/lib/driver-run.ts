@@ -13,14 +13,17 @@ import { executeSuite, measureLifecycleOperation } from "@sandbox-benchmarks/har
 
 import { resolve } from "node:path";
 import type {
+	BoundCostEvidenceCapability,
 	CreateRequest,
 	DriverModule,
+	EnvOf,
 	ExecResult,
 	ResolvedArtifact,
 	SandboxDriver,
 	SandboxSession,
 } from "@sandbox-benchmarks/driver";
 import {
+	bindCostEvidence,
 	isRetryableDriverCreate,
 	launchDetached,
 	readTextFile,
@@ -239,6 +242,7 @@ export interface OpenedDriver {
 	readonly driver: SandboxDriver;
 	readonly artifact: ResolvedArtifact;
 	readonly transport: ProviderTransport;
+	readonly costEvidence?: BoundCostEvidenceCapability | undefined;
 }
 
 /** A live driver session whose process ownership can be explicitly handed to the operator. */
@@ -354,7 +358,15 @@ export async function openDriver<P extends DriverProviderId>(
 		artifact: REGISTRY[id].artifact,
 		resolvedArtifact: artifact,
 	} as Parameters<DriverModule<ProviderId>["driver"]>[0]);
-	return { module, driver, artifact, transport: driverTransport(module.execution) };
+	return {
+		module,
+		driver,
+		artifact,
+		transport: driverTransport(module.execution),
+		// The same erasure as the driver context above: `env` is this id's parsed slice.
+		costEvidence:
+			module.costEvidence && bindCostEvidence(module.costEvidence, env as EnvOf<ProviderId>),
+	};
 }
 
 /** True when `value` is a registered DriverModule id (`Object.keys(DRIVERS)`). */
@@ -575,6 +587,7 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 				module: opened.module,
 				driver: opened.driver,
 				request: { spec: TARGET_SPEC, artifact: opened.artifact },
+				costEvidence: opened.costEvidence,
 			},
 			runId: options.runId,
 			...(options.replicateIndex === undefined ? {} : { replicateIndex: options.replicateIndex }),
@@ -622,9 +635,7 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 		artifact: opened.artifact,
 		resultsDir,
 		transport: opened.transport,
-		...(opened.module.costEvidence === undefined
-			? {}
-			: { costEvidence: opened.module.costEvidence }),
+		costEvidence: opened.costEvidence,
 		driverReadiness: {
 			timeoutMs: driverReadinessBudgetMs(opened.module),
 			verify: async ({ signal }) => {
