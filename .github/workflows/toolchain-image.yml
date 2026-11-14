@@ -538,6 +538,8 @@ jobs:
           DIGITAL_OCEAN_TOKEN: ${{ matrix.provider == 'digitalocean' && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ matrix.provider == 'baseten' && secrets.BASETEN_API_KEY || '' }}
           CREATEOS_API_KEY: ${{ matrix.provider == 'createos' && secrets.CREATEOS_API_KEY || '' }}
+          SPAWNBOX_API_KEY: ${{ matrix.provider == 'spawnbox' && secrets.SPAWNBOX_API_KEY || '' }}
+          SPAWNBOX_URL: ${{ matrix.provider == 'spawnbox' && (env.SPAWNBOX_URL || vars.SPAWNBOX_URL || secrets.SPAWNBOX_URL) || '' }}
           # <<< end generated: provider-inputs-bake
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |
@@ -738,6 +740,8 @@ jobs:
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'baseten') && secrets.BASETEN_API_KEY || '' }}
           CREATEOS_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'createos') && secrets.CREATEOS_API_KEY || '' }}
+          SPAWNBOX_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'spawnbox') && secrets.SPAWNBOX_API_KEY || '' }}
+          SPAWNBOX_URL: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'spawnbox') && (env.SPAWNBOX_URL || vars.SPAWNBOX_URL || secrets.SPAWNBOX_URL) || '' }}
           # <<< end generated: provider-inputs-promote
           VERCEL_CANDIDATE_IMAGE: ${{ steps.vercel-vcr.outcome == 'success' && steps.vercel-vcr.outputs.digest-ref || '' }}
         run: |

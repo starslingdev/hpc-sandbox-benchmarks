@@ -209,6 +209,7 @@
         "@sandbox-benchmarks/namespace": "workspace:*",
         "@sandbox-benchmarks/novita": "workspace:*",
         "@sandbox-benchmarks/runcloud": "workspace:*",
+        "@sandbox-benchmarks/spawnbox": "workspace:*",
         "@sandbox-benchmarks/tama": "workspace:*",
         "@sandbox-benchmarks/vercel": "workspace:*",
       },
@@ -406,6 +407,20 @@
         "@nodable/compact-builder": "catalog:xml",
         "@nodable/flexible-xml-parser": "catalog:xml",
         "@octokit/rest": "22.0.1",
+        "@repo/tsconfig": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/spawnbox": {
+      "name": "@sandbox-benchmarks/spawnbox",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sandbox-benchmarks/driver": "workspace:*",
+        "@sandbox-benchmarks/schema": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
         "@repo/tsconfig": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -1074,6 +1089,8 @@
     "@sandbox-benchmarks/runcloud": ["@sandbox-benchmarks/runcloud@workspace:packages/runcloud"],
 
     "@sandbox-benchmarks/schema": ["@sandbox-benchmarks/schema@workspace:packages/schema"],
+
+    "@sandbox-benchmarks/spawnbox": ["@sandbox-benchmarks/spawnbox@workspace:packages/spawnbox"],
 
     "@sandbox-benchmarks/tama": ["@sandbox-benchmarks/tama@workspace:packages/tama"],
 

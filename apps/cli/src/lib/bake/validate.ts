@@ -103,6 +103,8 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 		// The native SDK boots an arbitrary OCI image directly; there is no template to bake.
 		case "digitalocean":
 		// MicroVMs boot `source.oci_ref` directly; there is no template to bake.
+		case "spawnbox":
+		// The operator builds a template from the candidate image; the adapter boots it by the image name.
 		case "tama":
 			// `tama new --image` pulls an arbitrary OCI ref at create time, so the candidate boots the same
 			// way the published version does; there is no provider-side artifact.

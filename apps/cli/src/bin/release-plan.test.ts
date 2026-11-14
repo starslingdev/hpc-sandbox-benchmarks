@@ -83,6 +83,7 @@ describe("buildReleasePlan matrix", () => {
 			"digitalocean",
 			"baseten",
 			"createos",
+			"spawnbox",
 		]);
 	});
 
@@ -139,7 +140,12 @@ describe("buildReleasePlan matrix", () => {
 		expect(plan.matrix.include.map((c) => c.provider)).toContain("boat");
 		expect(plan.required).toContain("blaxel");
 		expect(plan.required).not.toContain("boat");
-		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual(["boat", "brezel", "createos"]);
+		expect(Object.keys(RELEASE_UNSCOPABLE_PROVIDERS)).toEqual([
+			"boat",
+			"brezel",
+			"createos",
+			"spawnbox",
+		]);
 	});
 
 	// Everything keys off `partial`, never "did the operator type a list" — otherwise spelling out the

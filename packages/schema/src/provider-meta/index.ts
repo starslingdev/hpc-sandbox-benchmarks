@@ -17,6 +17,7 @@ import modal_vm from "./modal-vm.ts";
 import namespace from "./namespace.ts";
 import novita from "./novita.ts";
 import runcloud from "./runcloud.ts";
+import spawnbox from "./spawnbox.ts";
 import tama from "./tama.ts";
 import vercel from "./vercel.ts";
 
@@ -39,6 +40,7 @@ const MODULES = {
 	digitalocean: digitalocean,
 	baseten: baseten,
 	createos: createos,
+	spawnbox: spawnbox,
 } as const satisfies { [P in ProviderId]: ProviderMetaModule<P> };
 
 export const REGISTRY = {
@@ -60,6 +62,7 @@ export const REGISTRY = {
 	digitalocean: MODULES.digitalocean.meta,
 	baseten: MODULES.baseten.meta,
 	createos: MODULES.createos.meta,
+	spawnbox: MODULES.spawnbox.meta,
 } as const satisfies Record<ProviderId, ProviderMetaSource>;
 
 type IdsWithArtifact<K extends ProviderArtifact["kind"]> = {
