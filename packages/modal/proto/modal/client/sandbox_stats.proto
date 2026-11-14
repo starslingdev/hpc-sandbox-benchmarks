@@ -1,0 +1,39 @@
+// Vendored subset of Modal's `modal_proto/api.proto` (Apache-2.0):
+// https://github.com/modal-labs/modal-client/blob/9d7267c6c9f0f2d905462ed0ee2ae5d3e89ccc44/modal_proto/api.proto
+//
+// Only the messages behind `ModalClient/SandboxGetTimeRangeStats`, copied verbatim, so the cost hook
+// can call the RPC that the pinned `modal` npm SDK does not yet generate. Upstream warns that direct
+// gRPC use carries no compatibility guarantee: replace this with `app.sandboxes.stats()` once a
+// modal-js release ships it (merged upstream 2026-11-12, modal-labs/modal-client#76454).
+// Regenerate with `bun run --cwd packages/modal generate:proto`.
+
+syntax = "proto3";
+
+package modal.client;
+
+import "google/protobuf/timestamp.proto";
+
+message SandboxGetTimeRangeStatsRequest {
+  google.protobuf.Timestamp since = 1;
+  google.protobuf.Timestamp until = 2;
+  repeated string group_by_tags = 3;
+  map<string, string> tags = 4;
+  string app_id = 5;
+  string page_token = 6;
+}
+
+message SandboxGetTimeRangeStatsResponse {
+  repeated SandboxStatsGroup groups = 1;
+  string next_page_token = 2;
+}
+
+message SandboxStatsGroup {
+  message TagValue {
+    optional string value = 1;
+  }
+  map<string, TagValue> tags = 1;
+  double cost = 2 [deprecated = true];
+  map<string, double> cost_by_resource = 3 [deprecated = true];
+  string cost_str = 4;  // Supersedes cost
+  map<string, string> cost_by_resource_str = 5;  // Supersedes cost_by_resource
+}

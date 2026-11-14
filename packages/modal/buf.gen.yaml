@@ -1,0 +1,7 @@
+version: v2
+plugins:
+  - local: ["bun", "x", "--bun", "protoc-gen-es"]
+    out: src/gen
+    opt:
+      - target=ts
+      - import_extension=ts

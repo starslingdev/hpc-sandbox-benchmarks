@@ -6,20 +6,18 @@ import type { CreateAttempt, Op } from "@sandbox-benchmarks/driver/vendor";
 import { coverage, defineVendorDriver, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
 import { ModalClient } from "modal";
 import type { ClientMiddleware } from "nice-grpc";
-import { modalCostEvidence } from "./cost.ts";
+import { MODAL_MARKER_TAG, modalCostEvidence } from "./cost.ts";
 import { MODAL_PROVENANCE } from "./provenance.ts";
+import type { ModalProviderId } from "./vendor.ts";
 import {
 	createModalControlRunner,
-	MODAL_APP_NAME,
 	MODAL_DESTROY_TIMEOUT_MS,
 	MODAL_INVENTORY_TIMEOUT_MS,
-	MODAL_VM_APP_NAME,
+	modalAppName,
 	modalControlPlane,
 	modalSandboxId,
 	modalVendor,
 } from "./vendor.ts";
-
-type ModalProviderId = "modal-gvisor" | "modal-vm";
 
 /**
  * `sandbox.exec([...])` waits for the result with no separate per-exec timeout and no hard gateway
@@ -60,6 +58,8 @@ export function modalAllocate(
 				memoryLimitMiB: spec.memoryGb * 1024,
 				// VM MemTotal grows with demand; size the runner's guard from the configured ceiling.
 				env: { REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)), ...env },
+				// The cost hook isolates this sandbox's billed usage by filtering stats on this tag.
+				tags: { [MODAL_MARKER_TAG]: marker },
 			};
 			const registry = client.images.fromRegistry(image);
 			return client.sandboxes.create(app, registry, {
@@ -69,11 +69,6 @@ export function modalAllocate(
 		});
 }
 
-function modalAppName(provider: ModalProviderId) {
-	return provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME;
-}
-
-/** Separate Apps keep each runtime's inventory and cleanup ownership disjoint. */
 export function defineModalDriver<P extends ModalProviderId>(provider: P) {
 	const backend = "v2";
 	return defineVendorDriver(provider, {
@@ -84,7 +79,7 @@ export function defineModalDriver<P extends ModalProviderId>(provider: P) {
 			{ env: "mapped" },
 		),
 		execution: MODAL_EXECUTION,
-		costEvidence: modalCostEvidence,
+		costEvidence: modalCostEvidence(provider),
 		markerKey: "name",
 		recovery: { provesAbsence: false },
 		// One listing page drains the App, and the whole listing shares the same minute;

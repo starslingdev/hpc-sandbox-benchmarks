@@ -202,9 +202,10 @@ exact hourly denominator; a null hourly total emits none of the three metrics an
 This distinction keeps published-but-dynamic providers visible and auditable without ranking an
 assumption:
 
-- **Modal is usage-dependent.** Modal bills `max(request, usage)`. Request-equals-limit does not prove
-  the quantities Modal ultimately billed, so catalog rates remain metadata but produce no exact
-  economics rows without sandbox-scoped provider-observed usage.
+- **Modal is usage-dependent.** Modal bills `max(request, usage)`, and its sandboxes run with CPU
+  bursting above the request, so the catalog rate × reservation understates what a sandbox cost.
+  Catalog rates remain metadata and produce no economics rows; the billed cost of each sandbox is
+  retained instead as provider-reported `costEvidence` (below).
 - **Blaxel and Vercel are unranked** because CPU is active-use billed. Their cited 100%-active values
   (`$0.3312/hr` and `$0.6816/hr`) are useful references, not observed totals for I/O-heavy Runs.
 - **run.cloud is unranked** because `$0.0593784/hr` is only its reserved CPU floor plus provisioned
@@ -218,9 +219,15 @@ sandbox-attributed public API result after confirmed teardown; schema validation
 authenticate that external response. `missing` records why a usable result is unavailable and never
 means zero. `providerCostTotal(records, expectedCells)` produces an exact total only relative to the
 authoritative expected cells supplied by its caller: the record cells must equal that set exactly and
-all records must be observed, cell-unique, sandbox-unique, and use one currency. Modal currently records `unsupported_public_api`: its generated
-resource-usage RPC is private and is not called. run.cloud records `not_sandbox_scoped`: its public
-usage API is organization-wide cumulative usage and is not called or delta-attributed to one sandbox.
+all records must be observed, cell-unique, sandbox-unique, and use one currency.
+
+Modal records `observed`, `provider_reported` USD from `SandboxGetTimeRangeStats` (the RPC behind
+`app.sandboxes.stats()`), filtered on the sandbox's `sandbox-benchmarks-marker` tag, so the figure is
+exactly that sandbox's billed CPU and memory, burst included. The figure moves for several seconds
+after terminate; the hook waits for it to settle and otherwise records `missing`, never a partial
+figure. run.cloud records `not_sandbox_scoped`:
+its public usage API is organization-wide cumulative usage and is not called or delta-attributed to
+one sandbox.
 
 Run v6 separately retains `artifactEvidence` for every benchmark sandbox cell. The host writes the
 requested provider artifact before probing the sandbox. Canonical release refs are upgraded to
