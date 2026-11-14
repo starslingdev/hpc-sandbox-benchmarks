@@ -141,4 +141,10 @@ describe("buildMetricChartModel for a measured bill", () => {
 		expect(measured.legendNote).toStartWith("sorted cheapest first · not a ranking");
 		expect(measured.legend[0]?.label).toBe("median billed per sandbox");
 	});
+
+	it("scales to the highest bill, so no whisker is cut at the chart edge", () => {
+		// The fixture's widest bound (300) is past the ranked cap (230); a bill range keeps it.
+		expect(measured.bars.map((bar) => bar.scaleFraction)).toEqual([200 / 300, 190 / 300, 50 / 300]);
+		expect(measured.legendNote).not.toContain("interval cut at chart edge");
+	});
 });

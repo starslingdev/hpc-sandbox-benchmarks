@@ -99,15 +99,18 @@ export function buildMetricChartModel(
 	note: string,
 ): MetricChartModel {
 	const providerById = new Map(model.providers.map((p) => [p.id, p]));
-	// The chart's own maximum: the widest interval bound, capped at WHISKER_OVERRUN × the largest
-	// value so one wide interval cannot shrink every bar. 0 for an all-zero metric keeps the
-	// fractions finite.
-	const largestValue = Math.max(0, ...figure.rows.map((row) => row.value));
-	const largestBound = Math.max(0, ...figure.rows.map((row) => row.hi));
-	const scaleMax = Math.min(largestBound, (largestValue * (100 + WHISKER_OVERRUN_PERCENT)) / 100);
-	const fraction = (value: number): number => (scaleMax > 0 ? clamp01(value / scaleMax) : 0);
 	// A measured bill is not a ranking: no badge, even on the cheapest bar.
 	const measured = figure.measured === true;
+	// The chart's own maximum: the widest interval bound, capped at WHISKER_OVERRUN × the largest
+	// value so one wide interval cannot shrink every bar. A measured bill's whisker is not an
+	// estimate but the highest bill actually paid, so it is never cut. 0 for an all-zero metric
+	// keeps the fractions finite.
+	const largestValue = Math.max(0, ...figure.rows.map((row) => row.value));
+	const largestBound = Math.max(0, ...figure.rows.map((row) => row.hi));
+	const scaleMax = measured
+		? largestBound
+		: Math.min(largestBound, (largestValue * (100 + WHISKER_OVERRUN_PERCENT)) / 100);
+	const fraction = (value: number): number => (scaleMax > 0 ? clamp01(value / scaleMax) : 0);
 	const bestRank = measured ? undefined : figure.rows[0]?.rank;
 	const better = figure.direction === "HIB" ? "higher is better" : "lower is better";
 	const environments = `${figure.rows.length} environment${figure.rows.length === 1 ? "" : "s"}`;
