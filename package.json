@@ -54,8 +54,8 @@
     "tar": "7.5.22"
   },
   "scripts": {
-    "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
-    "test": "bun --filter '!@sandbox-benchmarks/figures' --if-present test",
+    "typecheck": "bun check",
+    "test": "bun test --parallel --env-file=/dev/null --path-ignore-patterns='packages/figures/**'",
     "test:figures": "bun --filter @sandbox-benchmarks/figures test",
     "smoke": "bun --filter @sandbox-benchmarks/cli smoke",
     "format": "biome format . --write",

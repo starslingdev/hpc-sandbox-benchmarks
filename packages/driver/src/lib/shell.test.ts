@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DriverError } from "./errors.ts";
@@ -12,12 +12,15 @@ import { launchDetached, readTextFile, shellQuote, writeTextFile } from "./shell
  * shell, not against our own idea of one. No files/launch capabilities: the fallbacks under
  * test are exactly what a capability-less vendor session exercises.
  */
-function localShellSession(cwd: string): SandboxSession {
+function localShellSession(cwd: string, env?: Record<string, string>): SandboxSession {
 	return stubSession({
 		native: cwd,
 		async exec(command): Promise<ExecResult> {
 			const started = Date.now();
-			const child = Bun.spawnSync(["/bin/sh", "-c", command], { cwd });
+			const child = Bun.spawnSync(["/bin/sh", "-c", command], {
+				cwd,
+				...(env ? { env: { ...process.env, ...env } } : {}),
+			});
 			return {
 				exit:
 					child.exitCode !== null
@@ -126,8 +129,14 @@ describe("launchDetached", () => {
 	});
 
 	test("surfaces a real target command that fails during the acceptance window", async () => {
+		// The launcher's 50 ms acceptance window races the child's login-shell startup, which a
+		// CPU-saturated parallel run can push past 50 ms. Shadow `sleep` on PATH to widen the window
+		// so the test proves "a failure inside the window surfaces", not "this host is fast".
+		const bin = join(dir, "slow-sleep-bin");
+		mkdirSync(bin);
+		writeFileSync(join(bin, "sleep"), "#!/bin/sh\nexec /bin/sleep 0.5\n", { mode: 0o755 });
 		const error = await launchDetached(
-			localShellSession(dir),
+			localShellSession(dir, { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` }),
 			"definitely-not-a-real-sandbox-command",
 		).catch((caught) => caught);
 		expect(error).toBeInstanceOf(DriverError);

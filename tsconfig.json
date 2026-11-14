@@ -1,3 +1,4 @@
 {
-  "extends": "@repo/tsconfig/base.json"
+  "extends": "@repo/tsconfig/base.json",
+  "include": ["apps/*/src", "packages/*/src", "packages/schema/scripts", "tooling/*/src"]
 }

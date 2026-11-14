@@ -39,7 +39,7 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           # Pinned to the toolchain version the repo develops against.
-          bun-version: 1.4.0
+          bun-version: 1.4.4
           # This runner's setup-bun cache restores without a working ~/.bun/bin/bun, so a cache hit
           # fails the "Set up Bun" step. Always download bun fresh instead of restoring the cache.
           no-cache: true
@@ -59,23 +59,31 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      # Biome gate — `biome check . --error-on-warnings`; warnings fail the build.
-      - name: Lint (Biome)
-        run: bun run lint
+      # The read-only static gates are independent of one another, so they run as one parallel
+      # group (each keeps its own step and log); the group waits for all four and fails if any does.
+      - parallel:
+          # Biome gate — `biome check . --error-on-warnings`; warnings fail the build.
+          - name: Lint (Biome)
+            run: bun run lint
 
-      # Shell + Dockerfile gates for the toolchain images (packages/templates/images). shellcheck and
-      # hadolint are version-pinned in mise.toml and installed by the mise step above.
-      - name: Lint shell (shellcheck)
-        run: bun run lint:shell
+          # Shell + Dockerfile gates for the toolchain images (packages/templates/images). shellcheck
+          # and hadolint are version-pinned in mise.toml and installed by the mise step above.
+          - name: Lint shell (shellcheck)
+            run: bun run lint:shell
 
-      - name: Lint Dockerfiles (hadolint)
-        run: bun run lint:docker
+          - name: Lint Dockerfiles (hadolint)
+            run: bun run lint:docker
 
-      - name: Typecheck
-        run: bun run typecheck
+          # `bun check`: one multi-threaded type-check of every workspace member's sources.
+          - name: Typecheck
+            run: bun run typecheck
 
+      # One `bun test --parallel` process spreads every member's test files across all cores, each
+      # file in a fresh global (no cross-file leaks through process-wide registries).
       - name: Test
-        run: bun run test
+        run: |
+          echo "runner cores: $(nproc)"
+          bun run test
 
       # Catalog drift gate — re-run the PTS catalog generator against the vendored profiles and fail
       # if the committed pts-generated.ts drifts (un-regenerated profile bump or a hand edit). Diffs
@@ -119,7 +127,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
 
       # setup-pinned-chrome reads the installed playwright-core to resolve its pin, so the install
       # must precede it. --ignore-scripts keeps CI's zero-lifecycle-script posture: the browser is

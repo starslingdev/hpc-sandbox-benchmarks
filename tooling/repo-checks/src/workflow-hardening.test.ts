@@ -612,7 +612,7 @@ describe("checkToolchainPrScope", () => {
 		paths = TOOLCHAIN_ACTION_SMOKE_PR_PATHS,
 		buildx = "true",
 		summaryIf = "always()",
-		run = `test "$(bun --version)" = "1.4.0"
+		run = `test "$(bun --version)" = "1.4.4"
 test "$(tama --version | awk '{print $2}')" = "0.1.17"
 bun packages/templates/src/pins.ts >/dev/null
 docker buildx inspect --bootstrap`,

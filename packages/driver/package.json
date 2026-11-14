@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "bun check"
   },
   "dependencies": {
     "@sandbox-benchmarks/schema": "workspace:*",
