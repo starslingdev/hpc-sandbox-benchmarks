@@ -7,7 +7,7 @@ CLI (`@sandbox-benchmarks/cli`) that plans, runs, normalizes, and renders sandbo
 benchmarks. There is no server or web UI — everything is exercised through Bun and the CLI bins.
 
 ### Toolchain (provisioned by the startup update script)
-- The startup update script is self-healing: it installs `mise` (2026.7.11) and `bun` (1.4.0) if
+- The startup update script is self-healing: it installs `mise` (2026.7.11) and `bun` (1.4.4) if
  they are missing, symlinks `mise`, `bun`, and **`bunx`** into `/usr/local/bin` (so they resolve on a
  bare `PATH`), then runs `mise install` (pinned non-Bun tools) + `bun install --ignore-scripts`. The
  `bunx` symlink is load-bearing: `bun run check:catalog-drift` spawns `bunx biome`, so a missing
@@ -38,7 +38,7 @@ on this host VM install it on demand (the update script does not).
 ### Running checks / the app
 The command contract lives in the root `package.json` and `docs/architecture.md`; run those scripts
 directly:
-- `bun run lint`, `bun run typecheck`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
+- `bun run lint`, `bun check`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
   `bun run lint:shell`, `bun run lint:docker`.
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or
   `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json`. Bins are listed under

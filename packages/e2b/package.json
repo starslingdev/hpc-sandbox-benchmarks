@@ -11,8 +11,7 @@
     "./artifact": "./src/artifact.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
     "@sandbox-benchmarks/driver": "workspace:*",

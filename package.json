@@ -54,8 +54,7 @@
     "tar": "7.5.22"
   },
   "scripts": {
-    "typecheck": "bun --filter '!./' --filter '*' --if-present typecheck",
-    "test": "bun --filter '!@sandbox-benchmarks/figures' --if-present test",
+    "test": "bun test --parallel --no-isolate --env-file=/dev/null --path-ignore-patterns='packages/figures/**'",
     "test:figures": "bun --filter @sandbox-benchmarks/figures test",
     "smoke": "bun --filter @sandbox-benchmarks/cli smoke",
     "format": "biome format . --write",
@@ -63,7 +62,7 @@
     "lint:workflows": "bun tooling/repo-checks/src/lint-workflows.ts",
     "lint:fix": "biome check . --write",
     "lint:fix:unsafe": "biome check . --fix --unsafe",
-    "lint:shell": "find packages/templates/images packages/schema/src/pts-profiles lib .mise/tasks -type f \\( -name '*.sh' -o -path '*.mise/tasks/*' \\) -exec mise exec -- shellcheck {} + && scripts/lint-action-shell.sh $(find .github/actions -name 'action.y*ml')",
+    "lint:shell": "find packages/templates/images packages/schema/src/pts-profiles lib .mise/tasks -type f \\( -name '*.sh' -o -path '*.mise/tasks/*' \\) -print0 | xargs -0 -n 4 -P \"$(getconf _NPROCESSORS_ONLN)\" mise exec -- shellcheck -x && scripts/lint-action-shell.sh $(find .github/actions -name 'action.y*ml')",
     "lint:docker": "find packages/templates/images -name 'Dockerfile' -exec mise exec -- hadolint {} +",
     "spell": "mise exec -- typos",
     "spell:fix": "mise exec -- typos --write-changes",

@@ -36,7 +36,6 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
     "smoke": "bun src/bin/bench-smoke.ts",
     "bake": "bun src/bin/bake.ts"
   },

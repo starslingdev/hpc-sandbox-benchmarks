@@ -15,8 +15,7 @@
     "./cleanup-observation": "./src/cleanup-observation.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
     "@sandbox-benchmarks/driver": "workspace:*",

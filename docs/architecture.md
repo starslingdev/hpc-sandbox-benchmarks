@@ -180,8 +180,8 @@ the Run model or builds a document never spawns a browser.
 | Command              | What it does                                                            |
 |----------------------|-------------------------------------------------------------------------|
 | `bun install`        | Resolve the graph, symlink workspaces, install catalogs (≥7-day-old releases). |
-| `bun run typecheck`  | `tsc --noEmit` per member — proof of source-first/no-build.             |
-| `bun run test`       | Browser-free `bun test` per member, including repo-checks invariants, excluding the Chrome-backed figures suite. |
+| `bun check`          | One type-check over every member — proof of source-first/no-build.     |
+| `bun run test`       | Browser-free `bun test --parallel` over every member, including repo-checks invariants, excluding the Chrome-backed figures suite. |
 | `bun run test:figures` | Chrome-backed figures screenshot tests; CI's `figures` job runs this on a hosted runner with pinned headless Chrome. |
 | `bun run lint`       | `biome check . --error-on-warnings` — CI gate; warnings fail (root-only Biome config). |
 | `bun run format`     | `biome format . --write` — formatting only (no import sorting / lint fixes). |
@@ -212,7 +212,7 @@ install-time postinstall.
 
 `.github/workflows/ci.yml` runs the command contract on every pull request and every push to
 `main`: `bun install --frozen-lockfile --ignore-scripts` → `bun run lint` (the Biome gate) →
-`bun run lint:shell` → `bun run lint:docker` → `bun run typecheck` → browser-free `bun run test` →
+`bun run lint:shell` → `bun run lint:docker` → `bun check` → browser-free `bun run test` →
 `bun run check:catalog-drift` → `bun run check:provider-registry-drift` → `bun run spell` (typos, set up via [mise](https://mise.jdx.dev)).
 A second `figures` job runs pinned-Chrome `bun run test:figures` on a hosted `ubuntu-24.04` runner —
 the same image that renders the committed figures, and the one where Chrome can keep its sandbox.

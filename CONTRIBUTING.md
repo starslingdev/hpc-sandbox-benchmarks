@@ -26,8 +26,8 @@ in a separate job that provisions pinned headless Chrome.
 
 ```sh
 bun install          # resolve the graph (frozen lockfile in CI)
-bun run typecheck    # tsc --noEmit per member
-bun run test         # browser-free bun test per member, incl. repo-checks invariants
+bun check            # type-check every member in one multi-threaded pass (Bun >= 1.4.3)
+bun run test         # browser-free bun test --parallel across members, incl. repo-checks invariants
 bun run lint         # biome check; warnings fail
 bun run spell        # typos (via mise)
 ```

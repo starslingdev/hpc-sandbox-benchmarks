@@ -541,7 +541,10 @@ describe("StepRunner.runDetached", () => {
 
 		const { sandbox, commands } = catPollSandbox({ log: fullLog, exitCode: "0" });
 		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
-		const result = await runner.runDetached("collect benchmark-results", "true", 60_000);
+		const result = await runner.runDetached("collect benchmark-results", "true", 60_000, {
+			// Silent: echoing this multi-hundred-KB log made the GitHub runner spend ~2 min ingesting it.
+			silent: true,
+		});
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toBe(fullLog);
@@ -580,7 +583,10 @@ describe("StepRunner.runDetached", () => {
 
 		const { sandbox, commands } = catPollSandbox({ log: fullLog, exitCode: "0" });
 		const runner = new StepRunner(sandbox, CAPPED, async () => undefined);
-		const result = await runner.runDetached("utf8 boundary", "true", 60_000);
+		const result = await runner.runDetached("utf8 boundary", "true", 60_000, {
+			// Silent: echoing this multi-hundred-KB log made the GitHub runner spend ~2 min ingesting it.
+			silent: true,
+		});
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toBe(fullLog);

@@ -14,8 +14,7 @@
     "./smoke": "./src/smoke.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
     "@sandbox-benchmarks/providers": "workspace:*",
