@@ -1661,3 +1661,65 @@ describe("the metric charts: headline above the collapse, the rest beside their 
 		expect(renderLeaderboardMarkdown(board(), [], [])).not.toContain("<img");
 	});
 });
+
+describe("measured cost section", () => {
+	const record = (
+		replicateIndex: number,
+		amount?: number,
+	): NonNullable<ProviderRun["costEvidence"]>[number] => {
+		const base = {
+			cell: {
+				runId: "run-1",
+				providerId: "modal-gvisor" as const,
+				suite: "realworld-mastra" as const,
+				replicateIndex,
+			},
+			subject: { kind: "sandbox" as const, sandboxId: `sb-${replicateIndex}` },
+			capturedAt: "2026-11-14T00:00:00.000Z",
+			sdk: { packageName: "modal", version: "0.11.1" },
+		};
+		return amount === undefined
+			? { ...base, kind: "missing", reason: "provider_api_error", detail: "Throttled." }
+			: {
+					...base,
+					kind: "observed",
+					apiOperation: "SandboxGetTimeRangeStats",
+					usage: [{ resource: "cpu", quantity: 1, unit: "CPU-seconds" }],
+					amount,
+					currency: "USD",
+					source: "provider_reported",
+					responseJson: "{}",
+				};
+	};
+	const md = (costEvidence: NonNullable<ProviderRun["costEvidence"]>) =>
+		render(
+			buildLeaderboard(
+				run([
+					{
+						...provider("modal-gvisor", [metric("node_web_tooling_runs_per_s", [10])]),
+						costEvidence,
+					},
+				]),
+			),
+		);
+
+	it("is absent when no provider recorded cost evidence", () => {
+		expect(md([])).not.toContain("## Measured cost");
+	});
+
+	it("prints the exact total only when every sandbox was measured", () => {
+		const complete = md([record(0, 0.1), record(1, 0.3)]);
+		expect(complete).toContain("| Modal (gVisor) | 2 of 2 | 0.4 USD | — |");
+		expect(complete).toContain("realworld-mastra _(per pipeline run)_ | 0.2 USD | 0.1 – 0.3 |");
+		const partial = md([record(0, 0.1), record(1)]);
+		expect(partial).toContain(
+			"| Modal (gVisor) | 1 of 2 | unmeasured | 1 × `provider_api_error` |",
+		);
+	});
+
+	it("leaves the per-suite table out when nothing was measured", () => {
+		const none = md([record(0), record(1)]);
+		expect(none).toContain("| 0 of 2 | unmeasured |");
+		expect(none).not.toContain("Measured cost per suite");
+	});
+});
