@@ -18,13 +18,15 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "catalog:computesdk",
     "@sandbox-benchmarks/driver": "workspace:*",
+    "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
     "modal": "catalog:computesdk",
-    "nice-grpc": "catalog:computesdk",
-    "@sandbox-benchmarks/schema": "workspace:*"
+    "nice-grpc": "catalog:computesdk"
   },
   "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.14.1",
     "@repo/tsconfig": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
