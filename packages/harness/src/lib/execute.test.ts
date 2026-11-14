@@ -146,7 +146,6 @@ describe("sandbox preamble", () => {
 	// directory, so selecting state must stay read-only.
 	it("selects PTS state without writing to the filesystem", () => {
 		expect(PTS_STATE_SELECT_SH).not.toContain("mkdir");
-		expect(PTS_STATE_SELECT_SH).not.toContain("$HOME");
 	});
 
 	it("never disables the mise python — baked images have no distro python3 to fall back to", () => {

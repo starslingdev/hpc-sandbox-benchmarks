@@ -147,6 +147,7 @@ jobs:
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(inputs.providers), 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ contains(fromJSON(inputs.providers), 'baseten') && secrets.BASETEN_API_KEY || '' }}
           CREATEOS_API_KEY: ${{ contains(fromJSON(inputs.providers), 'createos') && secrets.CREATEOS_API_KEY || '' }}
+          TANGLE_API_KEY: ${{ contains(fromJSON(inputs.providers), 'tangle') && secrets.TANGLE_API_KEY || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}

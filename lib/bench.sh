@@ -267,7 +267,7 @@ bench_cmd() {
 #     `set -e` when HOME is unset or unwritable. Pointing that user at the baked root is what breaks —
 #     root's core.pt2so is mode 0600, and PTS expands its non-daemon ResultsDirectory through HOME
 #     regardless of the override, so the shared setting both warns on every invocation and leaves the
-#     composite finder below searching a tree PTS never writes.
+#     composite finder below searching a tree PTS never writes. (HOME-relocated state: PTS_STATE_SELECT_SH.)
 #
 # Root keeps the explicit override: redundant when PTS reaches its daemonized branch (writable /var/lib
 # AND /etc force PTS_USER_PATH to the baked root anyway), load-bearing when it does not.
@@ -276,12 +276,13 @@ bench_cmd() {
 # generated smoke probe interpolate; this file cannot import TS, so the copy is gated as text by
 # tooling/repo-checks/src/pts-state-alignment.test.ts.
 if [ -d /var/lib/phoronix-test-suite ]; then
-	export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/
-	if [ "$(id -u)" -eq 0 ]; then
-		export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/
-	else
-		unset PTS_USER_PATH_OVERRIDE
-	fi
+	case "${PTS_USER_PATH_OVERRIDE:-}" in
+	"${HOME:-/nonexistent}"/*) ;; # the provider relocated PTS state and installs into HOME
+	*)
+		export PTS_TEST_INSTALL_ROOT_PATH=/var/lib/phoronix-test-suite/installed-tests/
+		if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=/var/lib/phoronix-test-suite/; else unset PTS_USER_PATH_OVERRIDE; fi
+		;;
+	esac
 fi
 
 # Locate PTS's effective data directory — where it keeps MUTABLE state (core.pt2so, user-config.xml,
@@ -581,6 +582,8 @@ _configure_pts_batch() {
 	# failure this check exists to prevent. A missing config means batch-setup wrote nothing at all.
 	cfg="$(pts_config_file)"
 	[ -f "$cfg" ] || return 1
+	# PTS expands `~` in its config through getpwuid, so HOME-relocated state needs absolute paths.
+	case "${PTS_USER_PATH_OVERRIDE:-}" in "${HOME:-/nonexistent}"/*) sed -i "s#~/#${HOME}/#g" "$cfg" ;; esac
 	grep -q "<RunAllTestCombinations>${want}</RunAllTestCombinations>" "$cfg"
 }
 
