@@ -376,6 +376,7 @@ describe("Baseten image builder", () => {
 			"Dockerfile",
 			"_shared/validate-base.sh",
 			"baseten/entrypoint.sh",
+			"blaxel.toml",
 		]);
 		expect(files.Dockerfile).toContain(
 			`FROM ghcr.io/starslingdev/sandbox-benchmarks-toolchain@sha256:`,

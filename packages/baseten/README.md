@@ -22,6 +22,13 @@ shared toolchain image can't boot as is, so the release bakes it. `./artifact` p
 `client.images.push`, `FROM` the digest-pinned toolchain base. Sandboxes boot `<name>:latest`.
 The remote builder pulls the base without credentials, so the toolchain package must be public.
 
+The context root carries `blaxel.toml` with `[build] slim = false`. Baseten's builder, like Blaxel's,
+slims every image by default, and that pass strips the C compiler and the dpkg database. PTS
+profiles that compile inside the sandbox need the compiler. Baseten documents neither the pass nor the
+opt-out. A scratch `ubuntu:24.04` + `build-essential` image built without the file boots with no
+`gcc`; with it, `cc` compiles and runs (2026-11-14). The bake's `cc-toolchain` probe fails the release
+if the builder strips the compiler again.
+
 ## Behaviour
 
 - **Size:** Baseten derives vCPU from memory through a fixed table (2048 MiB → 1 vCPU, 4096 → 2,

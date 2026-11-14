@@ -1,0 +1,5 @@
+# Read by Baseten's remote image builder from the build-context root, as Blaxel's builder reads it.
+# Without it the builder slims the image and strips the C compiler and the dpkg database, which
+# fails the bake's cc-toolchain probe. Baseten does not document this; see packages/baseten/README.md.
+[build]
+slim = false

@@ -36,10 +36,11 @@ export function basetenArtifactBuilder(
 	return defineArtifactBuilder<"baseten", EnvOf<"baseten">>("baseten", async (request) => {
 		const { name, base, imagesDir, env, log, signal } = request;
 		const read = (path: string) => readFile(join(imagesDir, path), "utf8");
-		const [template, entrypoint, validate] = await Promise.all([
+		const [template, entrypoint, validate, manifest] = await Promise.all([
 			read("baseten/Dockerfile"),
 			read("baseten/entrypoint.sh"),
 			read("_shared/validate-base.sh"),
+			read("baseten/blaxel.toml"),
 		]);
 		log(`Baseten image ${name} from ${base.digestRef}`);
 		// The remote builder pulls the base anonymously: the toolchain package must be public.
@@ -49,6 +50,8 @@ export function basetenArtifactBuilder(
 				Dockerfile: pinBasetenBaseImage(template, base.digestRef),
 				"baseten/entrypoint.sh": entrypoint,
 				"_shared/validate-base.sh": validate,
+				// The builder reads its options from the context root; this one turns off slimming.
+				"blaxel.toml": manifest,
 			},
 			memory: BUILD_MEMORY_MB,
 			volume: BUILD_VOLUME_MB,
