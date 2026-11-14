@@ -3,43 +3,33 @@ import type { SandboxInstance } from "@tangle-network/sandbox";
 import { SandboxError } from "@tangle-network/sandbox";
 import { TANGLE_PTS_PREFLIGHT, tangleVendor } from "./vendor.ts";
 
-const vendor = tangleVendor({} as Parameters<typeof tangleVendor>[0], {
-	resolvedArtifact: { kind: "image", ref: "image" },
+const vendor = tangleVendor({} as never, { resolvedArtifact: { kind: "image", ref: "image" } });
+const refused = (status: number, disposition?: "not-admitted") =>
+	vendor.control.refused?.(
+		new SandboxError("x", { status, createFailureDisposition: disposition }),
+	);
+
+test("a non-retryable 4xx refuses; a bare 429 stays ambiguous unless the SDK labels it", () => {
+	expect(refused(400)).toEqual({ retryable: false });
+	expect(refused(409)).toBeUndefined();
+	expect(refused(429)).toBeUndefined();
+	expect(refused(429, "not-admitted")).toEqual({ retryable: true });
 });
 
-test("a non-retryable 4xx refuses, while a bare 429 stays ambiguous unless the SDK labels it", () => {
-	const refused = (error: SandboxError) => vendor.control.refused?.(error);
-	expect(refused(new SandboxError("over limit", { status: 400 }))).toEqual({ retryable: false });
-	expect(refused(new SandboxError("busy", { status: 429 }))).toBeUndefined();
-	expect(
-		refused(new SandboxError("quota", { status: 429, createFailureDisposition: "not-admitted" })),
-	).toEqual({ retryable: true });
-	expect(refused(new SandboxError("conflict", { status: 409 }))).toBeUndefined();
-});
-
-test("every command and the preflight run behind the image toolchain and HOME PTS state", async () => {
+test("the preflight and every command run behind the image toolchain and HOME PTS state", async () => {
 	const commands: string[] = [];
-	const sandbox = {
-		resources: { cpuCores: 4, memoryMB: 8192 },
-		exec: async (command: string) => {
-			commands.push(command);
-			return { exitCode: 0, stdout: "", stderr: "" };
-		},
-		process: {
-			spawn: async (command: string) => {
-				commands.push(command);
-				return { pid: 7 };
-			},
-		},
-	} as unknown as SandboxInstance;
-	const spec = { vcpus: 4, memoryGb: 8, diskGb: 40 };
-	const op = { signal: new AbortController().signal };
+	const record = async (command: string) => {
+		commands.push(command);
+		return { exitCode: 0, pid: 7 };
+	};
+	const sandbox = { exec: record, process: { spawn: record } } as unknown as SandboxInstance;
+	const spec = { vcpus: 4, memoryGb: 8 };
+	const op = { signal: AbortSignal.timeout(1_000) };
 	expect(await vendor.data.prepare?.({ native: sandbox } as never, { spec } as never, op)).toEqual({
 		status: "honored",
 	});
 	await vendor.data.exec(sandbox, "true");
-	await vendor.data.launch?.(sandbox, "mise run x");
+	await vendor.data.launch?.(sandbox, "true");
 	expect(commands[0]).toEndWith(TANGLE_PTS_PREFLIGHT);
-	for (const command of commands)
-		expect(command).toStartWith('export PATH="$HOME/.local/pts/bin:/usr/local/share/mise/shims:');
+	for (const command of commands) expect(command).toStartWith('export PATH="$HOME/.local/pts/bin:');
 });

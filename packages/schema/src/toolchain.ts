@@ -228,9 +228,8 @@ export const PTS_BAKED_ROOT = "/var/lib/phoronix-test-suite";
  *     (the bake's chmod runs before the profile layers rewrite it), and PTS expands its non-daemon
  *     `ResultsDirectory` through HOME regardless of the override — so the shared setting yields
  *     permission errors AND a results tree lib/bench.sh's composite finder never searches.
- *   - A provider can relocate BOTH paths into HOME, and an override there is left alone: Tangle's
- *     uid has no passwd entry (PTS resolves its default through getpwuid, not HOME) and its image
- *     filesystem is read-only, so its adapter prepares writable state and installs under HOME.
+ *   - An override inside HOME means the provider relocated BOTH paths there and is left alone: Tangle's
+ *     uid has no passwd entry (PTS resolves its default via getpwuid) and its image is read-only.
  *
  * Root keeps the explicit override. It is redundant when PTS reaches its daemonized branch (writable
  * /var/lib + /etc, which forces PTS_USER_PATH to the baked root anyway), and load-bearing when it

@@ -267,8 +267,7 @@ bench_cmd() {
 #     `set -e` when HOME is unset or unwritable. Pointing that user at the baked root is what breaks —
 #     root's core.pt2so is mode 0600, and PTS expands its non-daemon ResultsDirectory through HOME
 #     regardless of the override, so the shared setting both warns on every invocation and leaves the
-#     composite finder below searching a tree PTS never writes. A provider whose image filesystem is
-#     read-only for a uid with no passwd entry relocates both paths into HOME; see PTS_STATE_SELECT_SH.
+#     composite finder below searching a tree PTS never writes. (HOME-relocated state: PTS_STATE_SELECT_SH.)
 #
 # Root keeps the explicit override: redundant when PTS reaches its daemonized branch (writable /var/lib
 # AND /etc force PTS_USER_PATH to the baked root anyway), load-bearing when it does not.

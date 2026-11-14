@@ -146,8 +146,7 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(result.installRoot).toBe("<root>/installed-tests/");
 	});
 
-	// Tangle's uid has no passwd entry and its image filesystem is read-only, so its adapter relocates
-	// PTS state and installs into HOME; the selector must leave both alone.
+	// Tangle's adapter relocates PTS state and installs into HOME; the selector must leave both alone.
 	it("leaves PTS state that a provider relocated into HOME alone", async () => {
 		const override = "/home/agent/.phoronix-test-suite/";
 		const result = await runPtsCheck("fio-2.1.0", ["pts/fio-2.1.0"], { uid: 1000, override });

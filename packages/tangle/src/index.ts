@@ -6,7 +6,7 @@ import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
 import { Sandbox } from "@tangle-network/sandbox";
 import { type } from "arktype";
 import { TANGLE_PROVENANCE } from "./provenance.ts";
-import { CONTROL_TIMEOUT_MS, CREATE_TIMEOUT_MS, TANGLE_NAME, tangleVendor } from "./vendor.ts";
+import { CREATE_TIMEOUT_MS, TANGLE_NAME, tangleVendor } from "./vendor.ts";
 
 export { TANGLE_PROVENANCE };
 
@@ -25,13 +25,7 @@ export default defineVendorDriver("tangle", {
 	execution: { syncCapMs: MIN, durable: "native-launch" },
 	// Create (15m), readiness (5m), cleanup (2m), and the preflight and disk proof (1m).
 	createBudget: { owner: "harness", timeoutMs: CREATE_TIMEOUT_MS + 8 * MIN },
-	timing: {
-		pollMs: 2_000,
-		readyTimeoutMs: 5 * MIN,
-		deleteTimeoutMs: 2 * MIN,
-		controlTimeoutMs: CONTROL_TIMEOUT_MS,
-	},
-	pageCap: 1_000,
+	timing: { pollMs: 2_000, readyTimeoutMs: 5 * MIN, deleteTimeoutMs: 2 * MIN },
 	// The sandbox name carries the attempt's UUID; `get` is by id, so recovery scans the listing.
 	markerKey: "name",
 	markerSpelling: TANGLE_NAME,

@@ -1,6 +1,5 @@
-// The Tangle Sandbox adapter over @tangle-network/sandbox. Probed live (2026-11-14): commands run
-// as uid 1000 with no passwd entry and a Nix-first PATH, and /usr/share is read-only, so `prepare`
-// gives PTS writable state and code under HOME and every command carries the prefix below.
+// The Tangle Sandbox adapter over @tangle-network/sandbox. Probed live (2026-11-14): commands run as
+// uid 1000 with no passwd entry, a Nix-first PATH and a read-only image filesystem.
 
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
@@ -15,23 +14,17 @@ import type { Sandbox, SandboxInstance } from "@tangle-network/sandbox";
 import { SandboxError } from "@tangle-network/sandbox";
 
 export const TANGLE_NAME = markerSpelling("sandbox-benchmarks-");
-export const CONTROL_TIMEOUT_MS = 30_000;
 /** The create blocks until running; a cold pull of the toolchain image needs well over the SDK's 120s. */
 export const CREATE_TIMEOUT_MS = 15 * 60_000;
 
-/**
- * PTS resolves its default state through getpwuid (no entry here) and the image filesystem is
- * read-only, so state and installs live under HOME (PTS_STATE_SELECT_SH leaves them alone). The
- * writable PTS copy comes first so its parser can be patched; the image toolchain precedes Nix.
- */
+/** PTS state, installs and a patchable PTS copy live under HOME; the image toolchain precedes Nix. */
 const PREFIX =
 	'export PATH="$HOME/.local/pts/bin:/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH" ' +
 	'PTS_USER_PATH_OVERRIDE="$HOME/.phoronix-test-suite/" PTS_TEST_INSTALL_ROOT_PATH="$HOME/.phoronix-test-suite/installed-tests/"; ';
 
 /**
- * Idempotent: writable copies of the baked installs (several profiles rebuild or write in their own
- * directory); a profile this uid cannot read (pgbench's root-owned cluster) stays a link, so its leaf
- * records the permission gap. Then a PTS code copy whose launcher points at itself.
+ * Idempotent: writable copies of the baked installs (profiles rebuild in place); one this uid cannot
+ * read (pgbench's root cluster) stays a link so its leaf records the gap; a self-pointing PTS copy.
  */
 export const TANGLE_PTS_PREFLIGHT = [
 	"set -eu",
@@ -41,15 +34,13 @@ export const TANGLE_PTS_PREFLIGHT = [
 	'  dest="$installed/$(basename "$profile")"',
 	'  [ -e "$dest" ] || cp -R "$profile" "$dest" 2>/dev/null || { rm -rf "$dest"; ln -s "$profile" "$dest"; }',
 	"done",
-	'pts="$HOME/.local/pts"',
-	'if [ ! -x "$pts/bin/phoronix-test-suite" ]; then',
-	'  rm -rf "$pts" && mkdir -p "$pts/bin" "$pts/share"',
-	'  cp -R /usr/share/phoronix-test-suite "$pts/share/"',
-	`  sed "s#^export PTS_DIR='/usr/share/phoronix-test-suite/'#export PTS_DIR='$pts/share/phoronix-test-suite/'#" /usr/bin/phoronix-test-suite > "$pts/bin/phoronix-test-suite"`,
-	`  grep -qF "PTS_DIR='$pts/share/" "$pts/bin/phoronix-test-suite"`,
-	'  chmod 755 "$pts/bin/phoronix-test-suite"',
+	'pts="$HOME/.local/pts" bin="$HOME/.local/pts/bin/phoronix-test-suite"',
+	'if [ ! -x "$bin" ]; then',
+	'  rm -rf "$pts" && mkdir -p "$pts/bin" "$pts/share" && cp -R /usr/share/phoronix-test-suite "$pts/share/"',
+	`  sed "s#^export PTS_DIR='/usr/share/#export PTS_DIR='$pts/share/#" /usr/bin/phoronix-test-suite > "$bin"`,
+	`  grep -qF "PTS_DIR='$pts/share/" "$bin" && chmod 755 "$bin"`,
 	"fi",
-	'"$pts/bin/phoronix-test-suite" version',
+	'"$bin" version',
 ].join("\n");
 
 function phaseOf(status: string): Phase {
@@ -77,11 +68,9 @@ export function tangleVendor(
 	{ resolvedArtifact }: Pick<DriverContext<"tangle">, "resolvedArtifact">,
 ): Vendor<SandboxInstance, SandboxInstance> {
 	const exec = async (sandbox: SandboxInstance, command: string, options?: ExecOptions) => {
-		const { exitCode, stdout, stderr } = await sandbox.exec(PREFIX + command, {
-			timeoutMs: 600_000, // the runtime's per-command ceiling; the harness owns step deadlines
-			...(options?.signal && { signal: options.signal }),
-		});
-		return { exitCode, stdout, stderr };
+		// 600s is the runtime's per-command ceiling; the harness owns step deadlines.
+		const opts = { timeoutMs: 600_000, ...(options?.signal && { signal: options.signal }) };
+		return sandbox.exec(PREFIX + command, opts);
 	};
 	return {
 		control: {
@@ -105,7 +94,6 @@ export function tangleVendor(
 							maxLifetimeSeconds: LEAK_EXPIRY_MS / 1000,
 							idleTimeoutSeconds: LEAK_EXPIRY_MS / 1000,
 							deleteAfterStoppedSeconds: 300,
-							metadata: { "sandbox-benchmarks": "tangle" },
 						},
 						{ timeoutMs: CREATE_TIMEOUT_MS, signal },
 					),
@@ -118,7 +106,7 @@ export function tangleVendor(
 			remove: async (_id, { signal, current }) => {
 				const sandbox = (await current())?.raw;
 				if (sandbox === undefined) return "removed";
-				await bounded(signal, CONTROL_TIMEOUT_MS, (bound) => sandbox.delete({ signal: bound }));
+				await bounded(signal, 30_000, (bound) => sandbox.delete({ signal: bound }));
 				return "accepted";
 			},
 			page: async (cursor) => {
@@ -143,28 +131,21 @@ export function tangleVendor(
 		data: {
 			attach: ({ raw }) => raw,
 			prepare: async ({ native }, { spec }, { signal }) => {
-				const granted = native.resources;
-				if (
-					granted &&
-					(granted.cpuCores !== spec.vcpus || granted.memoryMB !== spec.memoryGb * 1024)
-				)
+				const g = native.resources;
+				if (g && (g.cpuCores !== spec.vcpus || g.memoryMB !== spec.memoryGb * 1024))
 					return {
 						status: "unsupported",
-						detail: `requested ${spec.vcpus} vCPU / ${spec.memoryGb} GiB but the sandbox was granted ${granted.cpuCores} vCPU / ${granted.memoryMB} MiB`,
+						detail: `requested ${spec.vcpus} vCPU / ${spec.memoryGb} GiB, granted ${g.cpuCores} vCPU / ${g.memoryMB} MiB`,
 					};
 				const { exitCode, stdout, stderr } = await exec(native, TANGLE_PTS_PREFLIGHT, { signal });
-				if (exitCode !== 0)
-					throw new Error(
-						`Tangle PTS preflight failed (exit ${exitCode}): ${(stderr || stdout).trim().slice(-400)}`,
-					);
-				return { status: "honored" };
+				if (exitCode === 0) return { status: "honored" };
+				throw new Error(`Tangle PTS preflight exit ${exitCode}: ${(stderr || stdout).slice(-400)}`);
 			},
 			exec,
 			// Accepted once the runtime returns a pid; the harness observes completion via its done-file.
 			launch: async (sandbox, command) => {
 				const { pid } = await sandbox.process.spawn(PREFIX + command, { timeoutMs: 0 });
-				if (!Number.isSafeInteger(pid) || pid <= 0)
-					throw new Error("Tangle spawn returned no process id");
+				if (!(pid > 0)) throw new Error("Tangle spawn returned no process id");
 			},
 		},
 	};
