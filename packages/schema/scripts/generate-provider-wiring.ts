@@ -524,6 +524,7 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 			REGISTRY.createos.sdkPackage,
 			catalogVersion(catalog, REGISTRY.createos.sdkPackage),
 		],
+		["TANGLE", REGISTRY.tangle.sdkPackage, catalogVersion(catalog, REGISTRY.tangle.sdkPackage)],
 	] as const;
 	const packages = new Set(
 		driverFleetProjection(root).moduleIds.map((id) => driverModuleLocation(id).directory),

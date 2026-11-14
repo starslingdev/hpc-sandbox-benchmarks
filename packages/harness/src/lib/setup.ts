@@ -218,7 +218,7 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"isolation_collect",
 	"isolation_classify",
 	"set -e",
-	"user=$(id -un)",
+	'user=$(id -un 2>/dev/null) || user="uid-$(id -u)"',
 	String.raw`esc() { printf '%s' "$1" | sed 's/["\\]/\\&/g'; }`,
 	"{",
 	`  printf '{"vcpus":%s,"memoryGb":%s' "$vcpus" "$memory_gb"`,

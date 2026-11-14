@@ -45,7 +45,7 @@ const INHERITED_OVERRIDE = "/inherited-from-image-env/";
 async function runPtsCheck(
 	installTests: string,
 	installedProfiles: string[],
-	{ uid = 0 }: { uid?: number } = {},
+	{ uid = 0, override = INHERITED_OVERRIDE }: { uid?: number; override?: string } = {},
 ): Promise<{
 	exitCode: number;
 	stdout: string;
@@ -70,7 +70,7 @@ async function runPtsCheck(
 		const proc = Bun.spawn(["bash", "-c", script], {
 			stdout: "pipe",
 			stderr: "pipe",
-			env: { ...process.env, PTS_USER_PATH_OVERRIDE: INHERITED_OVERRIDE },
+			env: { ...process.env, HOME: "/home/agent", PTS_USER_PATH_OVERRIDE: override },
 		});
 		const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
 		const probeFile = Bun.file(probePath);
@@ -144,6 +144,15 @@ describe("@sandbox-benchmarks/templates smoke", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.userPathOverride).toBeUndefined();
 		expect(result.installRoot).toBe("<root>/installed-tests/");
+	});
+
+	// Tangle's adapter relocates PTS state and installs into HOME; the selector must leave both alone.
+	it("leaves PTS state that a provider relocated into HOME alone", async () => {
+		const override = "/home/agent/.phoronix-test-suite/";
+		const result = await runPtsCheck("fio-2.1.0", ["pts/fio-2.1.0"], { uid: 1000, override });
+		expect(result.exitCode).toBe(0);
+		expect(result.userPathOverride).toBe(override);
+		expect(result.installRoot).toBeUndefined();
 	});
 
 	// No mkdir on either branch: the probe runs under `set -euo pipefail` in smokeBashScript(), so a
