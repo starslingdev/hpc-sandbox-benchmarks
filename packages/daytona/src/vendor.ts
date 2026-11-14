@@ -21,6 +21,8 @@ import { type } from "arktype";
 
 export type DaytonaId = "daytona-vm" | "daytona-container";
 export const DAYTONA_SANDBOX_ID = type("string.uuid");
+/** The v0 control plane every existing Daytona cell creates on. */
+export const DAYTONA_V0_API_URL = "https://app.daytona.io/api";
 /** The bound on one SDK request. */
 export const DAYTONA_CONTROL_TIMEOUT_MS = 10_000;
 /**
