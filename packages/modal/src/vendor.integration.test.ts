@@ -235,6 +235,7 @@ describe("Modal benchmark resource configuration", () => {
 			// The cost hook isolates this sandbox's billed usage by its marker tag.
 			expect(allocate.mock.calls[0]?.[0]?.tags).toEqual([
 				{ tagName: MODAL_MARKER_TAG, tagValue: "benchmark-replicate" },
+				{ tagName: "perf_sensitive", tagValue: "true" },
 			]);
 			expect(allocate.mock.calls[0]?.[0]).toMatchObject({
 				appId: "ap-prepared",
@@ -247,6 +248,7 @@ describe("Modal benchmark resource configuration", () => {
 						memoryMbMax: 8192,
 					},
 					runtime: provider === "modal-vm" ? "vm" : "gvisor",
+					experimentalOptionsV2: { performance_sensitive: "true" },
 				},
 			});
 			const environment = createV2.mock.calls[0]?.[0].secretSources?.[0]?.env?.contents;
