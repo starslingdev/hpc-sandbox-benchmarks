@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test",
-    "typecheck": "bun check"
+    "test": "bun test"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",

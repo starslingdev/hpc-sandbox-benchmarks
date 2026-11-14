@@ -67,9 +67,8 @@ describe("package metadata invariants", () => {
 			});
 
 			if (member.hasSrc) {
-				it("source member defines test + typecheck scripts", () => {
+				it("source member defines a test script", () => {
 					expect(pkg.scripts?.test).toBeDefined();
-					expect(pkg.scripts?.typecheck).toBeDefined();
 				});
 			} else {
 				it("config-only member declares a non-empty files array", () => {

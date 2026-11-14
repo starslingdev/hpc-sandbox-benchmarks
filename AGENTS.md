@@ -38,7 +38,7 @@ on this host VM install it on demand (the update script does not).
 ### Running checks / the app
 The command contract lives in the root `package.json` and `docs/architecture.md`; run those scripts
 directly:
-- `bun run lint`, `bun run typecheck`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
+- `bun run lint`, `bun check`, `bun run test`, `bun run spell`, `bun run check:catalog-drift`,
   `bun run lint:shell`, `bun run lint:docker`.
 - Run a CLI bin directly, e.g. `bun apps/cli/src/bin/plan-matrix.ts --list-providers` or
   `bun apps/cli/src/bin/leaderboard.ts data/dataset/runs/<id>.json`. Bins are listed under

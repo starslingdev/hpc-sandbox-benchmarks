@@ -21,8 +21,7 @@
     "./vendor/e2b-protocol": "./src/vendor-e2b-protocol.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "bun check"
+    "test": "bun test"
   },
   "dependencies": {
     "@sandbox-benchmarks/schema": "workspace:*",

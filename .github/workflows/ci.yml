@@ -76,7 +76,7 @@ jobs:
 
           # `bun check`: one multi-threaded type-check of every workspace member's sources.
           - name: Typecheck
-            run: bun run typecheck
+            run: bun check
 
       # One `bun test --parallel` process spreads every member's test files across all cores, each
       # file in a fresh global (no cross-file leaks through process-wide registries).
