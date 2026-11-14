@@ -232,6 +232,14 @@ figure. run.cloud records `not_sandbox_scoped`:
 its public usage API is organization-wide cumulative usage and is not called or delta-attributed to
 one sandbox.
 
+Daytona's v0 cells record `observed`, `provider_reported` USD from the analytics API's per-sandbox
+usage periods: the allocation times its wall clock, so there is no burst on v0. The bill appears
+about 20 s after delete and sometimes later than the hook budget allows; a bill that has not appeared
+is recorded `missing`, not zero. A v2 burstable sandbox (opt-in, `DAYTONA_V2_ZEN5_BURST`) records
+`calculated_from_provider_usage`: `/sandboxes/{id}/usage/history` reports measured core-seconds and
+memory byte-seconds per minute but no price, so each bucket is priced at the greater of the measured
+use and the guarantee, at Daytona's dated list rates, which the evidence names with their sources.
+
 ### Measured cost on the board
 
 The leaderboard renders `costEvidence` in a **Measured cost** section after `economics`, derived from
