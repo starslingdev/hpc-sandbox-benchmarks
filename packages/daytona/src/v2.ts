@@ -12,6 +12,8 @@
 import { type } from "arktype";
 
 export const DAYTONA_V2_API_URL = "https://api.daytona.com";
+/** v2 ids are `sbx_<id>-<region>` (seen live 2026-11-14), not the v0 UUIDs of `DAYTONA_SANDBOX_ID`. */
+export const DAYTONA_V2_SANDBOX_ID = type(/^sbx_[A-Za-z0-9]+-[a-z0-9-]+$/);
 
 export type DaytonaV2CpuType =
 	| "zen3"
