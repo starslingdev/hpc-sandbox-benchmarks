@@ -78,12 +78,10 @@ jobs:
           - name: Typecheck
             run: bun check
 
-      # One `bun test --parallel` process spreads every member's test files across all cores, each
-      # file in a fresh global (no cross-file leaks through process-wide registries).
+      # One `bun test --parallel --no-isolate` run spreads every member's test files across the
+      # cores; each worker loads the module graph once instead of once per file (half the CPU).
       - name: Test
-        run: |
-          echo "runner cores: $(nproc)"
-          bun run test
+        run: bun run test
 
       # Catalog drift gate — re-run the PTS catalog generator against the vendored profiles and fail
       # if the committed pts-generated.ts drifts (un-regenerated profile bump or a hand edit). Diffs

@@ -54,7 +54,7 @@
     "tar": "7.5.22"
   },
   "scripts": {
-    "test": "bun test --parallel --env-file=/dev/null --path-ignore-patterns='packages/figures/**'",
+    "test": "bun test --parallel --no-isolate --env-file=/dev/null --path-ignore-patterns='packages/figures/**'",
     "test:figures": "bun --filter @sandbox-benchmarks/figures test",
     "smoke": "bun --filter @sandbox-benchmarks/cli smoke",
     "format": "biome format . --write",
