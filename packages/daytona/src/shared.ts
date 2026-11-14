@@ -4,12 +4,14 @@
 
 import { Daytona } from "@daytona/sdk";
 import { defineVendorDriver, pinned, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
+import { daytonaCostEvidence } from "./cost.ts";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
 import {
 	DAYTONA_CONTROL_TIMEOUT_MS,
 	DAYTONA_LISTING_TIMEOUT_MS,
 	DAYTONA_SANDBOX_ID,
+	DAYTONA_V0_API_URL,
 	daytonaVendor,
 } from "./vendor.ts";
 
@@ -27,6 +29,8 @@ export function defineDaytonaDriver<P extends DaytonaId>(id: P) {
 		// keeps running (docs/evidence/daytona-exec-transport.md). The threshold is unmeasured, so
 		// anything past a conservative 60s takes native background launch plus done-file polling.
 		execution: { syncCapMs: 60_000, durable: "native-launch" },
+		// Existing cells run on v0, whose analytics API reports each sandbox's billed USD.
+		costEvidence: daytonaCostEvidence({ api: "v0" }),
 		markerKey: "name",
 		// One listing page is the whole account (the SDK drains its own cursor); every other read is
 		// already bounded by the SDK's per-request timeout.
@@ -40,7 +44,7 @@ export function defineDaytonaDriver<P extends DaytonaId>(id: P) {
 				id === "daytona-container" ? "container" : "linux-vm",
 				new Daytona({
 					apiKey: env.DAYTONA_API_KEY,
-					apiUrl: "https://app.daytona.io/api",
+					apiUrl: DAYTONA_V0_API_URL,
 					target:
 						"DAYTONA_CONTAINER_TARGET" in env ? env.DAYTONA_CONTAINER_TARGET : env.DAYTONA_TARGET,
 					requestTimeoutMs: DAYTONA_CONTROL_TIMEOUT_MS,
