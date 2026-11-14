@@ -25,6 +25,7 @@ export interface DriverModuleMap {
 	digitalocean: typeof import("@sandbox-benchmarks/digitalocean").default;
 	baseten: typeof import("@sandbox-benchmarks/baseten").default;
 	createos: typeof import("@sandbox-benchmarks/createos").default;
+	spawnbox: typeof import("@sandbox-benchmarks/spawnbox").default;
 }
 
 type Assert<Condition extends true> = Condition;
@@ -62,6 +63,7 @@ export const DRIVERS: {
 	digitalocean: () => import("@sandbox-benchmarks/digitalocean").then((module) => module.default),
 	baseten: () => import("@sandbox-benchmarks/baseten").then((module) => module.default),
 	createos: () => import("@sandbox-benchmarks/createos").then((module) => module.default),
+	spawnbox: () => import("@sandbox-benchmarks/spawnbox").then((module) => module.default),
 });
 
 export const loadDriverModule = <P extends DriverProviderId>(id: P): Promise<DriverModuleMap[P]> =>

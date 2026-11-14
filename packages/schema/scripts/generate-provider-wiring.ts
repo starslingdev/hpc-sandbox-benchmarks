@@ -524,6 +524,8 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 			REGISTRY.createos.sdkPackage,
 			catalogVersion(catalog, REGISTRY.createos.sdkPackage),
 		],
+		// No client library is published; the adapter targets the documented v1 HTTP API.
+		["SPAWNBOX", REGISTRY.spawnbox.sdkPackage, "v1"],
 	] as const;
 	const packages = new Set(
 		driverFleetProjection(root).moduleIds.map((id) => driverModuleLocation(id).directory),

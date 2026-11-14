@@ -34,6 +34,7 @@ const REQUIRED_INPUTS = {
 	digitalocean: ["DIGITAL_OCEAN_TOKEN"],
 	baseten: ["BASETEN_API_KEY"],
 	createos: ["CREATEOS_API_KEY"],
+	spawnbox: ["SPAWNBOX_API_KEY", "SPAWNBOX_URL"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
 const ARTIFACT_KINDS = {
@@ -55,6 +56,7 @@ const ARTIFACT_KINDS = {
 	digitalocean: "image",
 	baseten: "baked",
 	createos: "none",
+	spawnbox: "image",
 } as const satisfies Record<ProviderId, (typeof REGISTRY)[ProviderId]["artifact"]["kind"]>;
 
 const BAKED = {
