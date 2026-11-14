@@ -280,14 +280,16 @@ describe("Baseten end to end through its module", () => {
 			labels: { [BASETEN_OWNER_LABEL]: "baseten" },
 			volumes: [{ name, mountPath: BASETEN_VOLUME_MOUNT_DIR }],
 		});
-		expect(team.processCalls[0]).toMatchObject({
+		// The sandbox API answers a probe before the keepalive starts.
+		expect(team.processCalls[0]).toMatchObject({ command: "true", waitForCompletion: true });
+		expect(team.processCalls[1]).toMatchObject({
 			name: BASETEN_KEEPALIVE_PROCESS,
 			command: "sleep infinity",
 			keepAlive: true,
 			timeoutMs: 0,
 			waitForCompletion: false,
 		});
-		expect(team.processCalls[1]?.command).toContain(`df -Pk '${BASETEN_PTS_DATA_DIR}'`);
+		expect(team.processCalls[2]?.command).toContain(`df -Pk '${BASETEN_PTS_DATA_DIR}'`);
 
 		expect((await session.exec("sh -c 'exit 7'")).exit).toEqual({ kind: "exited", code: 7 });
 		await session.launch?.("echo done > /tmp/done");
