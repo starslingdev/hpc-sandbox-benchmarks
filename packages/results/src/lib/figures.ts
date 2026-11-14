@@ -32,9 +32,13 @@ import {
 	pipelineChartHtml,
 } from "@sandbox-benchmarks/figures";
 import type { Run } from "@sandbox-benchmarks/schema";
-import { METRIC_CATALOG, PROVIDERS, SUITES } from "@sandbox-benchmarks/schema";
+import { getMetric, METRIC_CATALOG, PROVIDERS, SUITES } from "@sandbox-benchmarks/schema";
 import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
-import { buildLeaderboard, FIGURE_DIMENSION } from "./leaderboard.ts";
+import {
+	buildLeaderboard,
+	FIGURE_DIMENSION,
+	MEASURED_COST_FIGURE_DIMENSION,
+} from "./leaderboard.ts";
 import type { LeaderboardDataset } from "./leaderboard-datasets.ts";
 
 /**
@@ -223,7 +227,86 @@ export function metricFigureModelOf(
 					};
 				}),
 		);
-	return { metrics, providers };
+	return { metrics: [...metrics, ...measuredCostFigures(board, validated)], providers };
+}
+
+/**
+ * One chart per realworld suite with at least one measured pipeline run: each bar a provider's
+ * median billed cost per pipeline run, the whisker its lowest and highest bill. Drawn from the
+ * board's measured-cost section, so the chart and its table are one derivation.
+ *
+ * Only the realworld suites are drawn: one sandbox there is one pipeline run, so the bar answers
+ * "what did one CI pipeline cost", while a synthetic suite's per-sandbox bill depends on how long
+ * the harness chose to keep sampling. Those stay in the table. One measured provider is enough to
+ * chart — a bill is a number worth seeing, not a comparison that needs a second bar.
+ */
+function measuredCostFigures(board: Leaderboard, validated: ReadonlySet<string>): MetricFigure[] {
+	const providers = board.measuredCost.filter((provider) => validated.has(provider.providerId));
+	const suites = [
+		...new Set(
+			providers.flatMap((provider) =>
+				provider.suites.filter((suite) => suite.perPipelineRun).map((suite) => suite.suite),
+			),
+		),
+	];
+	return suites.flatMap((suiteId): MetricFigure[] => {
+		const entries = providers.flatMap((provider) => {
+			const suite = provider.suites.find((candidate) => candidate.suite === suiteId);
+			return suite ? [{ provider, suite }] : [];
+		});
+		const measured = entries
+			.flatMap(({ provider, suite }) =>
+				suite.median !== null && provider.currency !== null
+					? [{ provider, suite, median: suite.median, currency: provider.currency }]
+					: [],
+			)
+			.sort(
+				(a, b) =>
+					a.median - b.median || a.provider.providerId.localeCompare(b.provider.providerId, "en"),
+			);
+		const currencies = new Set(measured.map(({ currency }) => currency));
+		const [currency] = currencies;
+		if (currency === undefined || currencies.size !== 1) return [];
+		const firstTask = SUITES[suiteId].metrics[0];
+		const suiteName =
+			(firstTask === undefined ? undefined : getMetric(firstTask)?.label.split(":")[0]) ?? suiteId;
+		return [
+			{
+				id: measuredCostFigureId(suiteId),
+				label: `Measured cost per ${suiteName} pipeline run`,
+				dimension: MEASURED_COST_FIGURE_DIMENSION,
+				unit: currency,
+				direction: "LIB",
+				headline: false,
+				derived: false,
+				measured: true,
+				rows: measured.map(({ provider, suite, median }, index) => ({
+					provider: provider.providerId,
+					value: median,
+					lo: suite.amounts[0] ?? median,
+					hi: suite.amounts.at(-1) ?? median,
+					rank: index + 1,
+					n: suite.amounts.length,
+					sandboxes: suite.amounts.length,
+				})),
+				unmeasured: entries
+					.filter(({ suite }) => suite.median === null)
+					.map(({ provider, suite }) => ({
+						provider: provider.providerId,
+						outcome: "unmeasured",
+						reason: `No observed bill for any of ${suite.expected} sandboxes: ${suite.unmeasured
+							.map(({ reason, count }) => `${count} × ${reason}`)
+							.join(", ")}.`,
+					})),
+			},
+		];
+	});
+}
+
+/** A measured-cost chart's id, and so its file name. Hyphenated with a prefix no suite id or
+ *  catalog metric id carries, so it can share the figure directory with both. */
+export function measuredCostFigureId(suiteId: string): string {
+	return `measured-cost-${suiteId}`;
 }
 
 /** The metric figures the Markdown links, in the board's dimension and metric order. */
@@ -248,6 +331,15 @@ export function leaderboardMetricFigures(model: MetricFigureModel): LeaderboardM
  * the retained count is what the run actually has.
  */
 export function metricFigureNote(figure: MetricFigure): string {
+	if (figure.measured === true) {
+		return (
+			"Each bar is the median billed cost of one pipeline run across the sandboxes that were measured, " +
+			"as the provider's billing API reported it after teardown, CPU burst included; the whisker spans " +
+			"the lowest and highest bill. This is **measured**, not catalog pricing, and not a ranking — " +
+			"the board's Measured cost table gives how many of each provider's sandboxes it rests on. " +
+			"The scale is this chart's own."
+		);
+	}
 	const range = (values: number[]): string => {
 		const low = Math.min(...values);
 		const high = Math.max(...values);
