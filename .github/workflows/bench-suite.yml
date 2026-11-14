@@ -147,7 +147,6 @@ jobs:
           DIGITAL_OCEAN_TOKEN: ${{ contains(fromJSON(inputs.providers), 'digitalocean') && secrets.DIGITAL_OCEAN_TOKEN || '' }}
           BASETEN_API_KEY: ${{ contains(fromJSON(inputs.providers), 'baseten') && secrets.BASETEN_API_KEY || '' }}
           CREATEOS_API_KEY: ${{ contains(fromJSON(inputs.providers), 'createos') && secrets.CREATEOS_API_KEY || '' }}
-          CREATEOS_SANDBOX_BASE_URL: ${{ contains(fromJSON(inputs.providers), 'createos') && (env.CREATEOS_SANDBOX_BASE_URL || vars.CREATEOS_SANDBOX_BASE_URL || secrets.CREATEOS_SANDBOX_BASE_URL || 'https://api.sb.createos.sh') || '' }}
           # <<< end generated: provider-inputs-bench
           # >>> generated: provider-runner-lifetime — bun run generate-provider-wiring
           BENCH_RUNNER_LIFETIME_MINUTES: ${{ '' }}

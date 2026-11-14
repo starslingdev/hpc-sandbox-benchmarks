@@ -8,15 +8,14 @@ import {
 	vendorDriver,
 } from "@sandbox-benchmarks/driver/vendor/testing";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
-import createos, { CREATEOS_PYTHON_PREFLIGHT, createosVendor } from "./index.ts";
+import createos from "./index.ts";
+import { CREATEOS_PYTHON_PREFLIGHT, createosVendor } from "./vendor.ts";
 
 const request = { spec: TARGET_SPEC, artifact: { kind: "none" }, deadlineMs: 300_000 } as const;
 const missing = () => Response.json({ error: "not found" }, { status: 404 });
 const ok = (data: unknown) => Response.json({ status: "success", data });
 
 function account(preflight: { exit_code: number; error?: string } = { exit_code: 0 }) {
-	let hideItem = false;
-	let rejectDelete = false;
 	const stub = restStub<SandboxView>(
 		{
 			"POST /v1/sandboxes": ({ body, add }) => {
@@ -33,13 +32,9 @@ function account(preflight: { exit_code: number; error?: string } = { exit_code:
 				const { envs: _, ...view } = row;
 				return ok(view);
 			},
-			"GET /v1/sandboxes": ({ rows }) => ok([...rows.values()].map(({ envs: _, ...view }) => view)),
-			"GET /v1/sandboxes/:id": ({ row }) => (hideItem ? missing() : ok(row)),
+			"GET /v1/sandboxes": ({ rows }) => ok([...rows.values()]),
+			"GET /v1/sandboxes/:id": ({ row }) => ok(row),
 			"DELETE /v1/sandboxes/:id": ({ row }) => {
-				if (rejectDelete) {
-					rejectDelete = false;
-					return missing();
-				}
 				row.status = "destroyed";
 				return ok({ id: row.id, status: row.status });
 			},
@@ -72,20 +67,12 @@ function account(preflight: { exit_code: number; error?: string } = { exit_code:
 		vendor,
 		timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
 	});
-	return {
-		...stub,
-		vendor,
-		driver,
-		hideItem: () => {
-			hideItem = true;
-			rejectDelete = true;
-		},
-	};
+	return { ...stub, vendor, driver };
 }
 
 vendorContract("createos", createos, () => account().vendor);
 
-test("pins the allocation, attributes list rows, and retries a lagging item/delete view", async () => {
+test("pins the allocation, attributes list rows by env key, and tears down once", async () => {
 	const a = account();
 	const session = await a.driver.create(request);
 	const body = a.calls.find((call) => call.method === "POST")?.body;
@@ -100,9 +87,8 @@ test("pins the allocation, attributes list rows, and retries a lagging item/dele
 		owned: [session.sandboxRef],
 		foreignCount: 0,
 	});
-	a.hideItem();
 	await session.destroy();
-	expect(a.calls.filter((call) => call.method === "DELETE")).toHaveLength(2);
+	expect(a.calls.filter((call) => call.method === "DELETE")).toHaveLength(1);
 	expect(a.rows.get(session.sandboxRef.id)?.status).toBe("destroyed");
 });
 

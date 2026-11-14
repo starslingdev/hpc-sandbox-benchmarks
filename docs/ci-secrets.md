@@ -307,7 +307,6 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BREZEL_API_URL` | Brezel | — |
    | `BREZEL_PROJECT_ID` | Brezel | — |
    | `BREZEL_ENVIRONMENT_REVISION` | Brezel | — |
-   | `CREATEOS_SANDBOX_BASE_URL` | CreateOS | <code>https://api.sb.createos.sh</code> |
    <!-- <<< end generated: provider-variables -->
 
    Optional values with a declared provider default use it when unset. The two Vercel namespace

@@ -6,15 +6,7 @@ export default defineProviderMeta("createos", {
 	website: "https://createos.sh/products/sandbox",
 	sdkPackage: "@nodeops-createos/sandbox",
 	artifact: { kind: "none" },
-	inputs: [
-		"CREATEOS_API_KEY",
-		{
-			name: "CREATEOS_SANDBOX_BASE_URL",
-			source: { kind: "variable" },
-			required: false,
-			default: "https://api.sb.createos.sh",
-		},
-	],
+	inputs: ["CREATEOS_API_KEY"],
 	runtimeIdentity: "root",
 	isolation: {
 		class: "microVM",
