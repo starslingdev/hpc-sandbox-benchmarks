@@ -1,11 +1,27 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
+	getMetric,
 	NETWORK_DOWNLOAD_FILE,
 	NETWORK_DOWNLOAD_TARGET,
 	NETWORK_LATENCY_FILE,
 	networkDnsColdFile,
 } from "@sandbox-benchmarks/schema";
 import { isNetworkProbeFile, networkProbeContributions } from "./network-probes.ts";
+
+function capturedCurl(url: string): Record<string, unknown> {
+	const rows = readFileSync(
+		join(import.meta.dir, "__fixtures__/probes/curl-records.ndjson"),
+		"utf8",
+	)
+		.split("\n")
+		.filter((line) => line.length > 0)
+		.map((line) => JSON.parse(line) as Record<string, unknown>)
+		.filter((row) => row.url === url);
+	expect(rows).toHaveLength(1);
+	return rows[0] as Record<string, unknown>;
+}
 
 const curl = (overrides: Record<string, unknown> = {}) => ({
 	exitcode: 0,
@@ -54,6 +70,45 @@ describe("latency artifact", () => {
 		const negative = latency([curl({ time_total: -1 })]);
 		expect(networkProbeContributions(NETWORK_LATENCY_FILE, negative)).toEqual([]);
 		expect(networkProbeContributions(NETWORK_LATENCY_FILE, { endpoints: "x" })).toEqual([]);
+	});
+
+	it("publishes each curl phase the latency probe measured, and omits a missing TLS milestone", () => {
+		const https = networkProbeContributions(NETWORK_LATENCY_FILE, {
+			endpoints: [
+				{
+					url: "https://index.crates.io/config.json",
+					curl_records: [capturedCurl("https://index.crates.io/config.json")],
+				},
+			],
+		});
+		expect(https).toEqual([
+			{ metricId: "network_https_index_crates_io_config_total_ms", samples: [50.902] },
+			{ metricId: "network_https_index_crates_io_config_dns_ms", samples: [2.843] },
+			{ metricId: "network_https_index_crates_io_config_tcp_ms", samples: [0.52] },
+			{ metricId: "network_https_index_crates_io_config_tls_ms", samples: [25.822] },
+			{ metricId: "network_https_index_crates_io_config_pretransfer_ms", samples: [0.158] },
+			{ metricId: "network_https_index_crates_io_config_server_ms", samples: [21.485] },
+			{ metricId: "network_https_index_crates_io_config_body_ms", samples: [0.074] },
+		]);
+		expect(getMetric("network_https_index_crates_io_config_tls_ms")).toMatchObject({
+			dimension: "network",
+			unit: "ms",
+			direction: "LIB",
+			headline: false,
+		});
+
+		const plain = networkProbeContributions(NETWORK_LATENCY_FILE, {
+			endpoints: [{ url: "https://pypi.org/", curl_records: [capturedCurl("http://pypi.org/")] }],
+		});
+		expect(plain.map((row) => row.metricId)).toEqual([
+			"network_https_pypi_org_total_ms",
+			"network_https_pypi_org_dns_ms",
+			"network_https_pypi_org_tcp_ms",
+			"network_https_pypi_org_pretransfer_ms",
+			"network_https_pypi_org_server_ms",
+			"network_https_pypi_org_body_ms",
+		]);
+		expect(plain.find((row) => row.metricId.endsWith("_tls_ms"))).toBeUndefined();
 	});
 });
 
