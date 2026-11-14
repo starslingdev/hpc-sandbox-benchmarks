@@ -58,6 +58,13 @@ export const BASETEN_VOLUME_HEADROOM_MB = 256;
 /** A volume is created `DEPLOYING`; a sandbox mounts it only once it is `DEPLOYED`. */
 const VOLUME_READY_TIMEOUT_MS = 3 * 60_000;
 const VOLUME_POLL_MS = 2_000;
+/**
+ * `DEPLOYED` is the container, not the sandbox API inside it: the image's entrypoint seeds the
+ * multi-GB PTS tree onto the volume before it starts the API, and until then the edge answers
+ * 502/503/504 (live, 2026-11-14). The keepalive waits that long, inside the kit's ready budget.
+ */
+const SANDBOX_API_READY_TIMEOUT_MS = 8 * 60_000;
+const SANDBOX_API_POLL_MS = 5_000;
 
 /** Ownership label every benchmark create writes on the sandbox and its volume. */
 export const BASETEN_OWNER_LABEL = "sandbox-benchmarks";
@@ -326,6 +333,21 @@ export function basetenVendor(
 			 */
 			prepare: async ({ native }, request, { signal }) => {
 				const sandbox = await native.sandbox();
+				const deadline = Date.now() + SANDBOX_API_READY_TIMEOUT_MS;
+				for (;;) {
+					try {
+						await sandbox.process.exec({
+							command: "true",
+							waitForCompletion: true,
+							timeoutMs: 0,
+							callOptions: { signal },
+						});
+						break;
+					} catch (error) {
+						if (!(error instanceof SandboxGatewayError) || Date.now() >= deadline) throw error;
+						await delay(SANDBOX_API_POLL_MS, signal);
+					}
+				}
 				const keepalive = await sandbox.process.exec({
 					name: BASETEN_KEEPALIVE_PROCESS,
 					command: "sleep infinity",
