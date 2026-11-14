@@ -131,3 +131,14 @@ describe("buildMetricChartModel", () => {
 		).toThrow(/"omega"/);
 	});
 });
+
+describe("buildMetricChartModel for a measured bill", () => {
+	const measured = buildMetricChartModel({ ...figure, measured: true }, METRIC_FIXTURE, "note");
+
+	it("badges no row and says it is not a ranking", () => {
+		expect(measured.bars.every((bar) => !bar.best)).toBe(true);
+		expect(measured.summary).toContain("provider-reported, not ranked");
+		expect(measured.legendNote).toStartWith("sorted cheapest first · not a ranking");
+		expect(measured.legend[0]?.label).toBe("median billed per sandbox");
+	});
+});

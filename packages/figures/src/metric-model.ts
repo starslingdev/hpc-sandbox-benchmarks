@@ -44,6 +44,12 @@ export interface MetricFigure {
 	/** True for a metric derived from other metrics and published pricing rather than measured —
 	 *  an environment without a row simply has no published price, which is not a coverage gap. */
 	readonly derived: boolean;
+	/**
+	 * True for a provider-reported billed cost (the board's Measured cost section) rather than a
+	 * benchmark metric: the bar is a median bill, the whisker spans the lowest and highest bill, and
+	 * nothing is ranked, so no row wears the badge. Absent means a ranked metric.
+	 */
+	readonly measured?: boolean;
 	/** Ranked best-first, exactly as the board orders its table. */
 	readonly rows: readonly MetricFigureRow[];
 	/** Validated environments with no result for this metric: outcome and reason, no bar. */

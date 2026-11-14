@@ -259,6 +259,13 @@ the Run alone (`packages/results/src/lib/measured-cost.ts`); nothing about it is
   makes that sandbox **unmeasured**: it is listed by reason and never enters a median or a total as
   zero. Providers without a cost hook record nothing and do not appear in the section; their only
   cost figures are the catalog economics above it.
+- **How it is drawn.** Each realworld suite with at least one measured pipeline run gets a chart
+  (`docs/figures/measured-cost-<suite>.webp`) in the same section: one bar per provider at its median
+  bill per pipeline run, the whisker from its lowest to its highest bill, cheapest first, and no
+  "best" badge. Providers with cost evidence but no observed bill for that suite are listed under the
+  bars as unmeasured with their reasons. The synthetic suites stay table-only: their per-sandbox bill
+  depends on how long the harness kept sampling, not on a fixed workload. The charts go through the
+  same document → Chrome → WebP pipeline and artifact gate as every other chart.
 - **Why it is not ranked.** Only providers with a sandbox-scoped billing API can appear, and a usage
   bill and a reservation price answer different questions. Putting Modal's bill in the `economics`
   table would rank it against catalog prices that assume an idle-or-full reservation.
