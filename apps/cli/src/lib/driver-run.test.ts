@@ -174,7 +174,9 @@ describe("createOwnedDriverSession", () => {
 
 		expect(session.releaseOwnership()).toBe(true);
 		expect(session.releaseOwnership()).toBe(false);
-		expect(await cleanupOwnedSandboxes()).toEqual([]);
+		// The owner registry is process-wide: other test files deliberately leave
+		// unresolved-cleanup sandboxes in it, so assert only that the sweep spared ours.
+		await cleanupOwnedSandboxes({ attempts: 1 });
 		expect(destroys).toBe(0);
 		await session.destroy();
 		expect(destroys).toBe(1);
