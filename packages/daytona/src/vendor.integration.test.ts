@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { DaytonaError, Sandbox } from "@daytona/sdk";
-import { DaytonaNotFoundError } from "@daytona/sdk";
+import type { DaytonaError, Sandbox } from "@daytona/sdk/v0";
+import { DaytonaNotFoundError } from "@daytona/sdk/v0";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";

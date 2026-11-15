@@ -2,7 +2,7 @@
 // and nowhere else. Each isolation variant is the same module with its own target and class.
 // Tests lower the same module over a stub client through `vendorDriver`.
 
-import { Daytona } from "@daytona/sdk";
+import { RootOnlyClientV0 as Daytona } from "@daytona/sdk/v0";
 import { defineVendorDriver, pinned, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
 import { daytonaCostEvidence } from "./cost.ts";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";

@@ -9,8 +9,8 @@
 import type { ModelsUsagePeriod } from "@daytona/analytics-api-client";
 import { Configuration as AnalyticsConfiguration, UsageApi } from "@daytona/analytics-api-client";
 import { Configuration as ApiConfiguration, ApiKeysApi } from "@daytona/api-client";
-import { DEFAULT_V2_API_URL } from "@daytona/sdk-v2";
-import type { CreateSandboxOptions } from "@daytona/sdk-v2/v2";
+import { DEFAULT_V2_API_URL } from "@daytona/sdk";
+import type { CreateSandboxOptions } from "@daytona/sdk/v2";
 import type {
 	CostEvidenceCaptureInput,
 	EnvOf,
@@ -65,7 +65,7 @@ const DEADLINE_MS = 26_000;
 // No benchmark sandbox outlives a day.
 const LOOKBACK_MS = 24 * 3_600_000;
 
-// The v0 key endpoint returns the key's organization; 0.211.2's ApiKeyList type omits it.
+// The v0 key endpoint returns the key's organization; the generated ApiKeyList leaves it optional.
 const keyOrganization = type({ organizationId: "string.uuid" });
 
 /** One platform's billing read: what to poll, when it is final, and how it prices. */

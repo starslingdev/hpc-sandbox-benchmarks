@@ -10,8 +10,8 @@
 
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import type { Daytona, Sandbox } from "@daytona/sdk";
-import { DaytonaError, DaytonaNotFoundError, DaytonaRateLimitError } from "@daytona/sdk";
+import type { RootOnlyClientV0 as Daytona, Sandbox } from "@daytona/sdk/v0";
+import { DaytonaError, DaytonaNotFoundError, DaytonaRateLimitError } from "@daytona/sdk/v0";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";

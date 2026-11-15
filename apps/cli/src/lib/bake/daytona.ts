@@ -25,7 +25,7 @@
 // are necessarily separate snapshots.
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi } from "@daytona/api-client";
-import { Daytona, SandboxClass } from "@daytona/sdk";
+import { RootOnlyClientV0 as Daytona, SandboxClass } from "@daytona/sdk/v0";
 import { withCleanupPreservingPrimaryError } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers/config";
 import type { Log } from "./types.ts";
