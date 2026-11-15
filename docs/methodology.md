@@ -232,14 +232,10 @@ figure. run.cloud records `not_sandbox_scoped`:
 its public usage API is organization-wide cumulative usage and is not called or delta-attributed to
 one sandbox.
 
-Daytona's v0 cells record `observed`, `provider_reported` USD from the analytics API's per-sandbox
-usage periods: the allocation times its wall clock, so v0 has no burst. The bill appears about 20 s
-after delete and often later than the hook budget allows; a bill that has not appeared is recorded
-`missing`, not zero. A v2 burstable sandbox (opt-in, `DAYTONA_V2_BURST`: 2-core / 0.5 GiB guarantee,
-4-core / 8 GiB ceiling, `cpu_type: zen5`, so CPU is billed at the Zen 5 multiplier) records
-`calculated_from_provider_usage`: `/sandboxes/{id}/usage/history` reports measured core-seconds and
-memory byte-seconds per minute but no price, so each bucket is priced at the greater of the measured
-use and the guarantee, at Daytona's dated list rates, which the evidence names with their sources.
+Daytona's v0 cells record `provider_reported` USD from the analytics API (allocation × wall clock,
+no burst). A v2 burst sandbox (`DAYTONA_V2_BURST`, Zen 5) records `calculated_from_provider_usage`:
+each usage-history minute is priced at max(measured, guarantee) at the dated list rates, CPU at the
+Zen 5 multiplier. A bill not settled within the hook budget is recorded `missing`, never zero.
 
 ### Measured cost on the board
 

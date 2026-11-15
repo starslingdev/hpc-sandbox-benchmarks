@@ -9,6 +9,8 @@
 import type { ModelsUsagePeriod } from "@daytona/analytics-api-client";
 import { Configuration as AnalyticsConfiguration, UsageApi } from "@daytona/analytics-api-client";
 import { Configuration as ApiConfiguration, ApiKeysApi } from "@daytona/api-client";
+import { DEFAULT_V2_API_URL } from "@daytona/sdk-v2";
+import type { CreateSandboxOptions } from "@daytona/sdk-v2/v2";
 import type {
 	CostEvidenceCaptureInput,
 	EnvOf,
@@ -21,10 +23,40 @@ import type {
 import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
-import type { DaytonaV2Shape, DaytonaV2UsageHistory } from "./v2.ts";
-import { DAYTONA_V2_RATES, daytonaV2UsageHistory, priceV2 } from "./v2.ts";
 import type { DaytonaId } from "./vendor.ts";
-import { DAYTONA_V0_API_URL } from "./vendor.ts";
+
+/**
+ * The v2 burst create (`new Daytona({ apiKey }).v2.create(DAYTONA_V2_BURST)`): a 2-core / 0.5 GiB
+ * guarantee bursting to a 4-core / 8 GiB ceiling, pinned to Zen 5. Its guarantee is the billing floor.
+ */
+export const DAYTONA_V2_BURST = {
+	cpuType: "zen5",
+	resources: { cpu: 2, cpuMax: 4, memory: 0.5, memoryMax: 8, disk: 40 },
+} as const satisfies CreateSandboxOptions;
+
+// On-demand list rates; a `cpuType` multiplies CPU only, and ephemeral disk is free:
+// https://www.daytona.com/docs/billing#pricing-dimensions
+const V2_RATES = {
+	coreHourUsd: 0.101,
+	memoryGibHourUsd: 0.0162,
+	cpuTypeMultiplier: { zen5: 2.3313 } as Record<string, number>,
+	calculation: {
+		componentIds: ["linux.cpu.core_hour.on_demand", "linux.memory.gib_hour.on_demand"],
+		rateVerifiedAt: "2026-11-15T05:20:00.000Z",
+		sourceUrls: ["https://www.daytona.com/pricing", "https://www.daytona.com/docs/billing"],
+	},
+};
+
+// `GET /sandboxes/{id}/usage/history`: the SDK has no helper for it, so it is read directly.
+const usageHistory = type({
+	available: "boolean",
+	periods: type({
+		start_at: "string.date.iso",
+		duration_ms: "number.integer >= 0",
+		cpu_core_seconds: "number >= 0",
+		memory_byte_seconds: "number >= 0",
+	}).array(),
+});
 
 // v0 bills appeared ~17–21 s after delete, sometimes later (n=11, 2026-11-14). Poll every 2 s and
 // accept two identical settled reads, stopping short of the harness's 30 s budget.
@@ -57,7 +89,7 @@ async function v0Bill(
 	const { organizationId } = keyOrganization.assert(
 		(
 			await new ApiKeysApi(
-				new ApiConfiguration({ basePath: DAYTONA_V0_API_URL, baseOptions: { headers } }),
+				new ApiConfiguration({ basePath: "https://app.daytona.io/api", baseOptions: { headers } }),
 			).getCurrentApiKey()
 		).data,
 	);
@@ -120,14 +152,25 @@ async function v0Bill(
 function v2Bill(
 	input: CostEvidenceCaptureInput<DaytonaId>,
 	env: EnvOf<DaytonaId>,
-	shape: DaytonaV2Shape,
-): Bill<DaytonaV2UsageHistory> {
+	create: CreateSandboxOptions,
+): Bill<typeof usageHistory.infer> {
 	const torn = Date.parse(input.teardown.attemptedAt);
-	const startAt = new Date(torn - LOOKBACK_MS);
-	const endAt = new Date(torn + 120_000);
+	const query = new URLSearchParams({
+		start_at: new Date(torn - LOOKBACK_MS).toISOString(),
+		end_at: new Date(torn + 120_000).toISOString(),
+		resolution: "minute",
+	});
+	const url = `${DEFAULT_V2_API_URL}/sandboxes/${encodeURIComponent(input.sandboxId)}/usage/history?${query}`;
 	return {
 		apiOperation: "get_sandbox_usage_history",
-		read: () => daytonaV2UsageHistory(env.DAYTONA_API_KEY, input.sandboxId, startAt, endAt),
+		read: async () => {
+			const response = await fetch(url, {
+				headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
+				signal: AbortSignal.timeout(10_000),
+			});
+			if (!response.ok) throw new Error(`Daytona v2 usage history: HTTP ${response.status}`);
+			return usageHistory.assert(await response.json());
+		},
 		// A minute bucket reports the span it covered; settled once the last one reaches teardown.
 		settled: ({ available, periods }) => {
 			const last = periods.at(-1);
@@ -143,15 +186,30 @@ function v2Bill(
 				? "The sandbox's usage history did not reach teardown before the capture deadline."
 				: "Daytona reported the sandbox's usage history as unavailable (`available: false`).",
 		response: (history) => history,
-		price: ({ periods }) => ({
-			...priceV2(periods, shape),
-			source: "calculated_from_provider_usage",
-			calculation: {
-				componentIds: [...DAYTONA_V2_RATES.componentIds],
-				rateVerifiedAt: DAYTONA_V2_RATES.verifiedAt,
-				sourceUrls: [...DAYTONA_V2_RATES.sourceUrls],
-			},
-		}),
+		// Each bucket bills the greater of measured use and the guarantee.
+		price: ({ periods }) => {
+			const sum = (value: (p: (typeof periods)[number]) => number) =>
+				periods.reduce((total, p) => total + value(p), 0);
+			const floor = (p: (typeof periods)[number], guarantee = 0) =>
+				(guarantee * p.duration_ms) / 1000;
+			const coreSeconds = sum((p) => Math.max(p.cpu_core_seconds, floor(p, create.resources?.cpu)));
+			const gibSeconds = sum((p) =>
+				Math.max(p.memory_byte_seconds / 2 ** 30, floor(p, create.resources?.memory)),
+			);
+			const multiplier = V2_RATES.cpuTypeMultiplier[create.cpuType ?? ""] ?? 1;
+			return {
+				usage: [
+					{ resource: "wall_seconds", quantity: sum((p) => p.duration_ms / 1000), unit: "s" },
+					{ resource: "billed_core_seconds", quantity: coreSeconds, unit: "core-s" },
+					{ resource: "billed_memory_gib_seconds", quantity: gibSeconds, unit: "GiB-s" },
+				],
+				amount:
+					(coreSeconds / 3600) * V2_RATES.coreHourUsd * multiplier +
+					(gibSeconds / 3600) * V2_RATES.memoryGibHourUsd,
+				source: "calculated_from_provider_usage",
+				calculation: V2_RATES.calculation,
+			};
+		},
 	};
 }
 
@@ -186,12 +244,9 @@ async function capture<T>(
 		: { ...base, kind: "missing", reason: "provider_api_error", detail: bill.unsettled(value) };
 }
 
-/**
- * The cost hook for a Daytona cell: `v0` for every existing cell, `v2` with the burst shape the
- * sandbox was created with, since its guarantee is the billing floor.
- */
+/** The cost hook for a Daytona cell: v0 for every existing cell, v2 given the sandbox's create options. */
 export function daytonaCostEvidence(
-	platform: { readonly api: "v0" } | { readonly api: "v2"; readonly shape: DaytonaV2Shape },
+	v2Create?: CreateSandboxOptions,
 ): ProviderCostEvidenceCapability<DaytonaId> {
 	return {
 		sdk: DAYTONA_PROVENANCE,
@@ -211,9 +266,9 @@ export function daytonaCostEvidence(
 					detail: "Sandbox teardown was not confirmed; no provider usage was considered.",
 				};
 			}
-			return platform.api === "v0"
-				? capture(await v0Bill(input, env), record)
-				: capture(v2Bill(input, env, platform.shape), record);
+			return v2Create
+				? capture(v2Bill(input, env, v2Create), record)
+				: capture(await v0Bill(input, env), record);
 		},
 	};
 }
