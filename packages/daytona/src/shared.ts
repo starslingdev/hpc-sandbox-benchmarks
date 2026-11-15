@@ -7,6 +7,7 @@ import { RootOnlyClientV0 } from "@daytona/sdk/v0";
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import type { Vendor } from "@sandbox-benchmarks/driver/vendor";
 import { defineVendorDriver, pinned, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
+import { daytonaCostEvidence } from "./cost.ts";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
 import {
@@ -27,13 +28,14 @@ function defineDaytonaDriver<P extends DaytonaId, Raw, Native>(
 	return defineVendorDriver(id, {
 		provenance: DAYTONA_PROVENANCE,
 		sandboxId: DAYTONA_SANDBOX_ID,
-		// CPU and memory are pinned (v2 at create, v0 by the snapshot); `prepare` proves the allocation.
+		// The cell's CPU and memory (v2: guarantee and ceiling at create; v0: the snapshot); `prepare` proves them.
 		coverage: pinned(4, 8),
 		diskProof: "reported",
 		// Daytona returns HTTP 408 on a multi-minute synchronous executeCommand while the process
 		// keeps running (docs/evidence/daytona-exec-transport.md). The threshold is unmeasured, so
 		// anything past a conservative 60s takes native background launch plus done-file polling.
 		execution: { syncCapMs: 60_000, durable: "native-launch" },
+		costEvidence: daytonaCostEvidence(id),
 		markerKey: "name",
 		// One listing page is the whole account (the SDK drains its own cursor); every other read is
 		// already bounded by the SDK's per-request timeout.

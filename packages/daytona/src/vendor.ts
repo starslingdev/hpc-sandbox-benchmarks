@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import type { DaytonaV2Client } from "@daytona/sdk";
 import type { RootOnlyClientV0 as Daytona, Sandbox } from "@daytona/sdk/v0";
 import { DaytonaError, DaytonaNotFoundError, DaytonaRateLimitError } from "@daytona/sdk/v0";
+import type { CreateSandboxOptions } from "@daytona/sdk/v2";
 import {
 	DISABLED,
 	DaytonaError as V2DaytonaError,
@@ -298,6 +299,15 @@ export function daytonaVendor(
 }
 
 type V2Sandbox = import("@daytona/sdk/v2").Sandbox;
+
+/**
+ * daytona-vm's create shape: a 2-core / 0.5 GiB guarantee bursting to a 4-core / 8 GiB ceiling,
+ * pinned to Zen 5. The guarantee is the billing floor the cost hook prices against.
+ */
+export const DAYTONA_V2_BURST = {
+	cpuType: "zen5",
+	resources: { cpu: 2, cpuMax: 4, memory: 0.5, memoryMax: 8, disk: 40 },
+} as const satisfies CreateSandboxOptions;
 /** The v2 client surface the VM adapter translates (`new Daytona(...).v2`). */
 export type DaytonaV2 = Pick<
 	DaytonaV2Client,
@@ -324,9 +334,9 @@ function v2Record(sandbox: V2Sandbox): VendorRecord<V2Sandbox> {
 }
 
 /**
- * daytona-vm over the v2 control plane, where every Linux sandbox is a VM. The request's CPU and
- * memory are pinned at create (request = limit, so nothing bursts); the boot image is the v2 image
- * the bake imported under the artifact name, in `region`.
+ * daytona-vm over the v2 control plane, where every Linux sandbox is a VM, created with the
+ * {@link DAYTONA_V2_BURST} shape; the boot image is the v2 image the bake imported under the
+ * artifact name, in `region`.
  */
 export function daytonaV2Vendor(
 	{ resolvedArtifact }: Pick<DriverContext<DaytonaId>, "resolvedArtifact">,
@@ -346,24 +356,16 @@ export function daytonaV2Vendor(
 	};
 	return {
 		control: {
-			create: async ({ marker, request: { spec } }) => {
-				const cores = spec.vcpus / 2;
-				return v2Record(
+			create: async ({ marker }) =>
+				v2Record(
 					await client.create(resolvedArtifact.ref, {
+						...DAYTONA_V2_BURST,
 						name: marker,
 						region,
-						resources: {
-							cpu: cores,
-							cpuMax: cores,
-							memory: spec.memoryGb,
-							memoryMax: spec.memoryGb,
-							...(spec.diskGb !== undefined && { disk: spec.diskGb }),
-						},
 						lifecyclePolicy: { idleExpirySeconds: DISABLED },
 						createTimeoutSeconds: CREATE_TIMEOUT_SECS,
 					}),
-				);
-			},
+				),
 			// Recovery looks a lost create up by its marker, which v2 resolves only through its name index.
 			get: async (idOrName) =>
 				v2Record(
@@ -395,19 +397,22 @@ export function daytonaV2Vendor(
 		},
 		data: {
 			attach: ({ raw }) => raw,
-			// The create response omits resources; a fresh read reports what the VM was given.
+			// The create response omits resources; a fresh read reports the guarantee the VM was given.
+			// The burst shape serves only the cell it was sized for: guarantee = spec CPU, ceiling = spec memory.
 			prepare: async ({ native }, { spec }) => {
 				await native.refreshData();
-				const cores = native.cpuMax ?? native.cpu ?? 0;
-				const memory = native.memoryMax ?? native.memory;
+				const { cpu, cpuMax, memory, memoryMax, disk } = DAYTONA_V2_BURST.resources;
 				return native.sandboxClass === "linux" &&
-					cores * 2 === spec.vcpus &&
-					memory === spec.memoryGb &&
-					(spec.diskGb === undefined || (native.disk ?? 0) >= spec.diskGb)
+					cpu * 2 === spec.vcpus &&
+					memoryMax === spec.memoryGb &&
+					native.cpu === cpu &&
+					native.cpuMax === cpuMax &&
+					native.memory === memory &&
+					(native.disk ?? 0) >= (spec.diskGb ?? disk)
 					? { status: "honored" }
 					: {
 							status: "unsupported",
-							detail: `Daytona allocated ${native.sandboxClass} ${cores} cores/${memory} GiB/${native.disk} GiB`,
+							detail: `Daytona allocated ${native.sandboxClass} ${native.cpu}/${native.cpuMax} cores, ${native.memory} GiB, ${native.disk} GiB disk`,
 						};
 			},
 			exec: run,
