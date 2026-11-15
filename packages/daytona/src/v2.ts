@@ -18,12 +18,14 @@ export interface DaytonaV2Shape {
 	readonly memoryGib: number;
 	readonly memoryMaxGib: number;
 	readonly diskGib: number;
+	/** A CPU type from `/cpu-catalog`; requesting one multiplies the CPU price. */
+	readonly cpuType: keyof typeof DAYTONA_V2_RATES.cpuTypeMultiplier;
 }
 
 /**
- * A 2-core / 0.5 GiB guarantee bursting to the Starter plan's 4-core / 8 GiB ceiling, with 40 GiB disk. It
- * requests no CPU type: a `zen5` request is accepted but never placed (2026-11-14), while an
- * unrequested create lands on Zen 5 hardware anyway and is billed at the baseline rate.
+ * A 2-core / 0.5 GiB guarantee bursting to the Starter plan's 4-core / 8 GiB ceiling, with 40 GiB disk, on
+ * Zen 5. An unrequested create also lands on Zen 5 today, but is billed at the baseline rate and
+ * Daytona does not promise that placement; requesting `zen5` pins it and bills CPU at its multiplier.
  */
 export const DAYTONA_V2_BURST: DaytonaV2Shape = Object.freeze({
 	cpu: 2,
@@ -31,6 +33,7 @@ export const DAYTONA_V2_BURST: DaytonaV2Shape = Object.freeze({
 	memoryGib: 0.5,
 	memoryMaxGib: 8,
 	diskGib: 40,
+	cpuType: "zen5",
 });
 
 const usagePeriod = type({
@@ -75,6 +78,7 @@ export function daytonaV2Api(apiKey: string) {
 					memory_mib: shape.memoryGib * 1024,
 					memory_max_mib: shape.memoryMaxGib * 1024,
 					disk_mib: shape.diskGib * 1024,
+					cpu_type: shape.cpuType,
 				}),
 			);
 			return sandbox.id;
@@ -93,16 +97,17 @@ export function daytonaV2Api(apiKey: string) {
 }
 
 /**
- * On-demand list rates. A create that names no CPU type is billed at the baseline rate, and one that
+ * On-demand list rates. The CPU type multiplies CPU only (memory is unaffected), and a create that
  * names no region at its default region's multiplier, or Earth's (1) when none is set:
  * https://www.daytona.com/docs/billing#pricing-dimensions
  */
 export const DAYTONA_V2_RATES = Object.freeze({
-	verifiedAt: "2026-11-14T16:30:00.000Z",
+	verifiedAt: "2026-11-15T05:20:00.000Z",
 	sourceUrls: ["https://www.daytona.com/pricing", "https://www.daytona.com/docs/billing"],
 	componentIds: ["linux.cpu.core_hour.on_demand", "linux.memory.gib_hour.on_demand"],
 	coreHourUsd: 0.101,
 	memoryGibHourUsd: 0.0162,
+	cpuTypeMultiplier: { zen5: 2.3313 },
 });
 
 /** Price buckets as Daytona bills them. Ephemeral disk is free, so it is not priced. */
@@ -123,7 +128,10 @@ export function priceV2(periods: readonly DaytonaV2UsagePeriod[], shape: Daytona
 		billedGib += Math.max(gibSeconds, shape.memoryGib * seconds);
 		peakMemory = Math.max(peakMemory, period.memory_peak_bytes);
 	}
-	const cpuUsd = (billedCore / 3600) * DAYTONA_V2_RATES.coreHourUsd;
+	const cpuUsd =
+		(billedCore / 3600) *
+		DAYTONA_V2_RATES.coreHourUsd *
+		DAYTONA_V2_RATES.cpuTypeMultiplier[shape.cpuType];
 	const memoryUsd = (billedGib / 3600) * DAYTONA_V2_RATES.memoryGibHourUsd;
 	return {
 		amount: cpuUsd + memoryUsd,

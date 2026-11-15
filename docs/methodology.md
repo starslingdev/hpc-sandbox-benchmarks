@@ -236,7 +236,7 @@ Daytona's v0 cells record `observed`, `provider_reported` USD from the analytics
 usage periods: the allocation times its wall clock, so v0 has no burst. The bill appears about 20 s
 after delete and often later than the hook budget allows; a bill that has not appeared is recorded
 `missing`, not zero. A v2 burstable sandbox (opt-in, `DAYTONA_V2_BURST`: 2-core / 0.5 GiB guarantee,
-4-core / 8 GiB ceiling, no CPU type requested, so billed at the baseline rate) records
+4-core / 8 GiB ceiling, `cpu_type: zen5`, so CPU is billed at the Zen 5 multiplier) records
 `calculated_from_provider_usage`: `/sandboxes/{id}/usage/history` reports measured core-seconds and
 memory byte-seconds per minute but no price, so each bucket is priced at the greater of the measured
 use and the guarantee, at Daytona's dated list rates, which the evidence names with their sources.
