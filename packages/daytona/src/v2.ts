@@ -1,16 +1,16 @@
-// Daytona v2 (api.daytona.com) burstable sandboxes, over a thin typed REST client.
+// Daytona v2 (api.daytona.com) burstable sandboxes, through @daytona/sdk 2.x's `v2` client.
 //
-// The pinned @daytona/sdk (0.211.2) has no v2 surface. 2.0.0 does, but it moves the root `Daytona`
-// to `Daytona.v0` under the shared computesdk catalog and exports none of its generated v2 types, so
-// this calls the documented endpoints and narrows only the usage-history response at its edge.
+// The 0.x SDK every existing cell creates on stays pinned under its own name; the 2.x line is
+// installed alongside it as `@daytona/sdk-v2`, so nothing on v0 moves.
 //
 // A v2 sandbox has a guarantee (`cpu`, `memoryGib`) and a ceiling (`cpuMax`, `memoryMaxGib`); one
 // core is 2 vCPU. Each bucket bills the greater of measured use and the guarantee, so CPU and memory
 // used above the guarantee are billed as measured: https://www.daytona.com/docs/billing#sandbox-billing
 
+import type { DaytonaV2Client } from "@daytona/sdk-v2";
+import { Daytona, DEFAULT_V2_API_URL } from "@daytona/sdk-v2";
+import type { CreateSandboxOptions } from "@daytona/sdk-v2/v2";
 import { type } from "arktype";
-
-const API_URL = "https://api.daytona.com";
 
 export interface DaytonaV2Shape {
 	readonly cpu: number;
@@ -48,52 +48,50 @@ export type DaytonaV2UsagePeriod = typeof usagePeriod.infer;
 const usageHistory = type({ available: "boolean", periods: usagePeriod.array() });
 export type DaytonaV2UsageHistory = typeof usageHistory.infer;
 
-const created = type({ id: "string" });
+/** The SDK's v2 client. Ids are `sbx_<id>-<region>`, not v0's UUIDs. */
+export function daytonaV2(apiKey: string): DaytonaV2Client {
+	return new Daytona({ apiKey }).v2;
+}
 
-/** The v2 calls the benchmark needs. Ids are `sbx_<id>-<region>`, not v0's UUIDs. */
-export function daytonaV2Api(apiKey: string) {
-	const call = async (method: string, path: string, body?: object): Promise<unknown> => {
-		const response = await fetch(`${API_URL}${path}`, {
-			method,
-			headers: {
-				Authorization: `Bearer ${apiKey}`,
-				...(body && { "Content-Type": "application/json" }),
-			},
-			...(body && { body: JSON.stringify(body) }),
-			signal: AbortSignal.timeout(10_000),
-		});
-		const text = await response.text();
-		if (!response.ok) {
-			throw new Error(`Daytona v2 ${method} ${path.split("?")[0]}: HTTP ${response.status}`);
-		}
-		return text ? JSON.parse(text) : undefined;
-	};
+/** Create options for a burst sandbox of `shape`, for `daytonaV2(key).create(options)`. */
+export function burstCreateOptions(name: string, shape: DaytonaV2Shape): CreateSandboxOptions {
 	return {
-		createBurst: async (name: string, shape: DaytonaV2Shape): Promise<string> => {
-			const sandbox = created.assert(
-				await call("POST", "/sandboxes", {
-					name,
-					cpu: shape.cpu,
-					cores_max: shape.cpuMax,
-					memory_mib: shape.memoryGib * 1024,
-					memory_max_mib: shape.memoryMaxGib * 1024,
-					disk_mib: shape.diskGib * 1024,
-					cpu_type: shape.cpuType,
-				}),
-			);
-			return sandbox.id;
+		name,
+		cpuType: shape.cpuType,
+		resources: {
+			cpu: shape.cpu,
+			cpuMax: shape.cpuMax,
+			memory: shape.memoryGib,
+			memoryMax: shape.memoryMaxGib,
+			disk: shape.diskGib,
 		},
-		delete: async (sandboxId: string): Promise<void> => {
-			await call("DELETE", `/sandboxes/${encodeURIComponent(sandboxId)}`);
-		},
-		usageHistory: async (sandboxId: string, startAt: Date, endAt: Date) =>
-			usageHistory.assert(
-				await call(
-					"GET",
-					`/sandboxes/${encodeURIComponent(sandboxId)}/usage/history?start_at=${startAt.toISOString()}&end_at=${endAt.toISOString()}&resolution=minute`,
-				),
-			),
 	};
+}
+
+/**
+ * Minute usage buckets for one sandbox. The SDK has no helper for
+ * `GET /sandboxes/{id}/usage/history` (2.0.0-alpha.13 carries only its generated type, unexported),
+ * so this is the one v2 call made directly, narrowed at its edge.
+ */
+export async function daytonaV2UsageHistory(
+	apiKey: string,
+	sandboxId: string,
+	startAt: Date,
+	endAt: Date,
+): Promise<DaytonaV2UsageHistory> {
+	const query = new URLSearchParams({
+		start_at: startAt.toISOString(),
+		end_at: endAt.toISOString(),
+		resolution: "minute",
+	});
+	const response = await fetch(
+		`${DEFAULT_V2_API_URL}/sandboxes/${encodeURIComponent(sandboxId)}/usage/history?${query}`,
+		{ headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000) },
+	);
+	if (!response.ok) {
+		throw new Error(`Daytona v2 GET /sandboxes/{id}/usage/history: HTTP ${response.status}`);
+	}
+	return usageHistory.assert(await response.json());
 }
 
 /**

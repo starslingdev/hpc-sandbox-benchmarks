@@ -22,7 +22,7 @@ import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "@sandbox-benchmar
 import { type } from "arktype";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaV2Shape, DaytonaV2UsageHistory } from "./v2.ts";
-import { DAYTONA_V2_RATES, daytonaV2Api, priceV2 } from "./v2.ts";
+import { DAYTONA_V2_RATES, daytonaV2UsageHistory, priceV2 } from "./v2.ts";
 import type { DaytonaId } from "./vendor.ts";
 import { DAYTONA_V0_API_URL } from "./vendor.ts";
 
@@ -122,13 +122,12 @@ function v2Bill(
 	env: EnvOf<DaytonaId>,
 	shape: DaytonaV2Shape,
 ): Bill<DaytonaV2UsageHistory> {
-	const api = daytonaV2Api(env.DAYTONA_API_KEY);
 	const torn = Date.parse(input.teardown.attemptedAt);
 	const startAt = new Date(torn - LOOKBACK_MS);
 	const endAt = new Date(torn + 120_000);
 	return {
 		apiOperation: "get_sandbox_usage_history",
-		read: () => api.usageHistory(input.sandboxId, startAt, endAt),
+		read: () => daytonaV2UsageHistory(env.DAYTONA_API_KEY, input.sandboxId, startAt, endAt),
 		// A minute bucket reports the span it covered; settled once the last one reaches teardown.
 		settled: ({ available, periods }) => {
 			const last = periods.at(-1);

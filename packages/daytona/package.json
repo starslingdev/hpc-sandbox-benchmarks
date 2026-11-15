@@ -19,6 +19,7 @@
   "dependencies": {
     "@daytona/analytics-api-client": "catalog:computesdk",
     "@daytona/sdk": "catalog:computesdk",
+    "@daytona/sdk-v2": "catalog:computesdk",
     "@sandbox-benchmarks/driver": "workspace:*",
     "@sandbox-benchmarks/schema": "workspace:*",
     "arktype": "catalog:",
