@@ -581,7 +581,7 @@ test("a valid Run digest cannot substitute changed samples or another provider's
 	}
 }, 20_000);
 
-test("partial aggregation retains proven metrics from incomplete suites and rejects unresolved evidence", () => {
+test("partial aggregation retains proven metrics from incomplete suites and withholds only the provider with unresolved evidence", () => {
 	const f = fixture("partial-metrics", {
 		suite: "realworld-better-auth",
 		changeMetric(metric) {
@@ -602,23 +602,55 @@ test("partial aggregation retains proven metrics from incomplete suites and reje
 			.flatMap((provider) => provider.metrics)
 			.every((metric) => metric.samples.every((sample) => sample > 0)),
 	).toBe(true);
-	expect(aggregateExperiment(plan, attempts.slice(1), { allowPartial: true }).run).toBeUndefined();
 	const first = attempts[0];
 	if (!first) throw new Error("missing fixture attempt");
-	first.evidence.cleanup = "unresolved";
-	const blocked = aggregateExperiment(plan, attempts, { allowPartial: true });
-	expect(blocked.run).toBeUndefined();
-	expect(blocked.publicationBlockers).toContain(`unresolved cleanup: ${first.evidence.id}`);
-	// Without --allow-partial the same blockers say why partial publication would not help either,
-	// and they lead the report so a truncated metric shortfall cannot bury them.
-	const strict = aggregateExperiment(plan, attempts);
-	expect(strict.publicationBlockers).toEqual(blocked.publicationBlockers);
-	expect(describeIncompleteExperiment(strict)[0]).toBe(
-		`publication blocked: unresolved cleanup: ${first.evidence.id}`,
-	);
-	expect(aggregateExperiment(plan, attempts.slice(1)).publicationBlockers).toEqual([
-		"missing attempts: 1 cell(s)",
+	const owner = plan.cells.find((cell: { id: string }) => cell.id === first.evidence.cellId)
+		?.provider as string;
+	const other = owner === "e2b" ? "novita" : "e2b";
+	const withheldOnly = (run: typeof partial) => {
+		const cells = run?.experiment?.partial?.cells ?? [];
+		expect(
+			cells.filter((c) => c.provider === owner).every((c) => c.retainedMetrics.length === 0),
+		).toBe(true);
+		expect(
+			cells.filter((c) => c.provider === other).every((c) => c.retainedMetrics.length === 9),
+		).toBe(true);
+		const providers = run?.providers ?? [];
+		expect(providers.find((p) => p.providerId === owner)?.metrics).toEqual([]);
+		expect(providers.find((p) => p.providerId === owner)?.gaps.at(-1)?.reason).toStartWith(
+			`Publication withheld for ${owner}: `,
+		);
+		expect(providers.find((p) => p.providerId === other)?.metrics.length).toBeGreaterThan(0);
+	};
+	// A lost attempt artifact withholds its own provider; the other provider still publishes.
+	const lost = aggregateExperiment(plan, attempts.slice(1), { allowPartial: true });
+	expect(lost.withheldProviders).toEqual([
+		{ provider: owner, reasons: ["missing attempts: 1 cell(s)"] },
 	]);
+	withheldOnly(lost.run);
+	first.evidence.cleanup = "unresolved";
+	const withheld = aggregateExperiment(plan, attempts, { allowPartial: true });
+	expect(withheld.publicationBlockers).toBeUndefined();
+	expect(withheld.withheldProviders).toEqual([
+		{ provider: owner, reasons: [`unresolved cleanup: ${first.evidence.id}`] },
+	]);
+	withheldOnly(withheld.run);
+	// Without --allow-partial nothing publishes; the withholding still leads the report so a
+	// truncated metric shortfall cannot bury it.
+	const strict = aggregateExperiment(plan, attempts);
+	expect(strict.run).toBeUndefined();
+	expect(strict.withheldProviders).toEqual(withheld.withheldProviders);
+	expect(describeIncompleteExperiment(strict)[0]).toBe(
+		`publication withheld for ${owner}: unresolved cleanup: ${first.evidence.id}`,
+	);
+	// When the only provider with measurements is withheld, nothing verified remains to publish.
+	const onlyOwner = attempts.filter(
+		(a) =>
+			plan.cells.find((cell: { id: string }) => cell.id === a.evidence.cellId)?.provider === owner,
+	);
+	expect(
+		aggregateExperiment(plan, onlyOwner, { allowPartial: true }).publicationBlockers,
+	).toContain("no verified measurements");
 	first.evidence.cleanup = "confirmed";
 	first.evidence.planDigest = `sha256:${"b".repeat(64)}`;
 	expect(aggregateExperiment(plan, attempts, { allowPartial: true }).run).toBeUndefined();
@@ -655,11 +687,22 @@ test("later cleanup evidence unblocks partial promotion without restoring failed
 		},
 	});
 	const args = [f.planFile, f.attemptsRoot, f.candidate, "--allow-partial"];
-	expect(invoke("aggregate-experiment", args).exitCode).toBe(1);
+	// Unresolved, the cleanup withholds e2b alone: novita still publishes, e2b retains nothing.
+	const before = invoke("aggregate-experiment", args);
+	expect(before.exitCode).toBe(0);
+	expect(before.stderr.toString()).toContain(
+		`publication withheld for e2b: unresolved cleanup: ${id}`,
+	);
+	const candidate = join(f.candidate, "runs", `${f.runId}.json`);
+	const withheldRun = parseRun(JSON.parse(readFileSync(candidate, "utf8")));
+	expect(withheldRun.experiment?.cleanupRecoveries).toBeUndefined();
+	expect(withheldRun.providers.find((p) => p.providerId === "e2b")?.metrics).toEqual([]);
+	expect(
+		withheldRun.providers.find((p) => p.providerId === "novita")?.metrics.length,
+	).toBeGreaterThan(0);
 	const recoveryFile = join(directory, "cleanup-recovery.json");
 	writeImmutableJson(recoveryFile, recovery);
 	expect(invoke("aggregate-experiment", args).exitCode).toBe(0);
-	const candidate = join(f.candidate, "runs", `${f.runId}.json`);
 	const run = parseRun(JSON.parse(readFileSync(candidate, "utf8")));
 	expect(run.experiment?.cleanupRecoveries).toEqual([recovery]);
 	expect(run.experiment?.partial?.cells.find((c) => c.id === id)).toMatchObject({
@@ -683,5 +726,7 @@ test("later cleanup evidence unblocks partial promotion without restoring failed
 		expect(verified).toThrow(/^cleanup recovery /);
 	}
 	rmSync(recoveryFile);
-	expect(verified().run).toBeUndefined();
+	expect(verified().withheldProviders).toEqual([
+		{ provider: "e2b", reasons: [`unresolved cleanup: ${id}`] },
+	]);
 }, 20_000);

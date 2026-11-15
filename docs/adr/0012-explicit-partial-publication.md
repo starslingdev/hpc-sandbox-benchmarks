@@ -8,6 +8,8 @@ The CPU workflow default is refined by [ADR-0013](./0013-cpu-partial-publication
 The CLI and standalone backfill defaults and all verification requirements remain unchanged.
 Later cleanup evidence may resolve the ownership gate under
 [ADR-0014](./0014-post-run-cleanup-recovery.md); recovered attempts still contribute no measurements.
+Evidence gates are scoped to the provider that owns them by
+[ADR-0026](./0026-provider-scoped-publication-gates.md).
 
 ## Context
 

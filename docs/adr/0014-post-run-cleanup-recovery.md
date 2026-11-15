@@ -5,6 +5,7 @@ status: accepted
 # Post-run cleanup recovery for partial publication
 
 Identity evidence for pre-execution failures is refined by [ADR-0017](./0017-retained-allocation-cleanup-recovery.md).
+An unresolved cleanup withholds only its own provider under [ADR-0026](./0026-provider-scoped-publication-gates.md).
 
 ## Context
 
