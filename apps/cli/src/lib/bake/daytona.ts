@@ -460,13 +460,18 @@ export async function bakeDaytonaSnapshot(
 	throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: lastErr });
 }
 
+/** A v2 image lives in one narrow region (Daytona refuses a broad one such as `us`). Zen 5, the only
+ *  amd64 CPU type the org's catalog offers, is in us-east-ash-1, and a create in `us` from an image
+ *  here lands there (n=8, 2026-11-15). */
+const DAYTONA_V2_IMAGE_REGION = "us-east-ash-1";
+
 /** Bake the daytona-vm artifact `name`: v2 has no snapshot registration, so the public toolchain image
- *  is imported as a named v2 image in the daytona-vm region. An identical named import returns the
+ *  is imported as a named v2 image in {@link DAYTONA_V2_IMAGE_REGION}. An identical named import returns the
  *  existing image; a name held by other content is deleted and imported again, and a failure after
  *  that delete reports the name destroyed, as the v0 bake does. */
 export async function bakeDaytonaVmSnapshot(name: string, image: string, log: Log): Promise<void> {
 	const { images } = new Daytona({ apiKey: config.daytonaVm.apiKey }).v2;
-	const options = { name, region: config.daytonaVm.target, timeoutSeconds: 15 * 60 };
+	const options = { name, region: DAYTONA_V2_IMAGE_REGION, timeoutSeconds: 15 * 60 };
 	log(`>>> daytona v2 image pull ${image} as ${name} (region ${options.region})`);
 	try {
 		await images.pull(image, options);
