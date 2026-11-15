@@ -85,6 +85,9 @@ order and the emphasis are editorial, and they follow this document's argument:
 - **Everything else stays expanded.** `lifecycle` and `control-plane` are harness-measured timings of
   the provider's own API — a spawn a user waits on, not a synthetic load — and `economics` is the
   provider's published price. None is a microbenchmark, so none is hidden.
+- **Measured cost follows `economics`, as its own section.** It is the provider's bill for what each
+  sandbox used, not a published price, so it is never ranked in the same table — see
+  [Measured cost on the board](#measured-cost-on-the-board).
 
 The header links each identifier to its primary source: the run id to the `bench-matrix` workflow run
 that produced the measurements, the commit to the tree they were measured against, and the dataset link
@@ -237,6 +240,44 @@ after delete and often later than the hook budget allows; a bill that has not ap
 `calculated_from_provider_usage`: `/sandboxes/{id}/usage/history` reports measured core-seconds and
 memory byte-seconds per minute but no price, so each bucket is priced at the greater of the measured
 use and the guarantee, at Daytona's dated list rates, which the evidence names with their sources.
+
+### Measured cost on the board
+
+The leaderboard renders `costEvidence` in a **Measured cost** section after `economics`, derived from
+the Run alone (`packages/results/src/lib/measured-cost.ts`); nothing about it is stored as a Metric.
+
+- **What the figure is.** One observed record is one sandbox's whole bill as the provider reported it
+  after teardown. For Modal that is CPU and memory, burst above the request included: a sandbox kept
+  busy on more cores than it requested is billed for them, which is exactly what the catalog
+  reservation price cannot show. The `Source` column says whether the provider reported the amount or
+  it was calculated from provider-reported usage.
+- **How it is scoped.** Every Modal benchmark sandbox carries a `sandbox-benchmarks-marker=<marker>`
+  tag, and the stats query filters on that tag, so the figure covers that sandbox and nothing else on
+  the shared account.
+- **How it is summarised.** Per provider and suite: the median across measured sandboxes (one
+  sandbox, one figure, like every other board value), the lowest and highest bill, and how many of
+  the suite's sandboxes were measured. The realworld suites run their pipeline once per sandbox, so
+  their figure is the measured cost of one pipeline run. A total — per suite, and across the
+  provider's whole Run — is `providerCostTotal` over the expected cells, so it is printed only when
+  every one of them has an observed record.
+- **Which sandboxes are expected.** Every cell with a cost record, plus every cell the Run attributes
+  measurements to through `artifactEvidence`. A sandbox that ran and left no cost record is counted
+  as `no_cost_record`, so it cannot disappear from the denominator.
+- **When it is absent.** A `missing` record (unsupported API, not sandbox-scoped, a provider API error
+  such as a throttled stats query, an invalid response, or unconfirmed teardown) or no record at all
+  makes that sandbox **unmeasured**: it is listed by reason and never enters a median or a total as
+  zero. Providers without a cost hook record nothing and do not appear in the section; their only
+  cost figures are the catalog economics above it.
+- **How it is drawn.** Each realworld suite with at least one measured pipeline run gets a chart
+  (`docs/figures/measured-cost-<suite>.webp`) in the same section: one bar per provider at its median
+  bill per pipeline run, the whisker from its lowest to its highest bill, cheapest first, and no
+  "best" badge. Providers with cost evidence but no observed bill for that suite are listed under the
+  bars as unmeasured with their reasons. The synthetic suites stay table-only: their per-sandbox bill
+  depends on how long the harness kept sampling, not on a fixed workload. The charts go through the
+  same document → Chrome → WebP pipeline and artifact gate as every other chart.
+- **Why it is not ranked.** Only providers with a sandbox-scoped billing API can appear, and a usage
+  bill and a reservation price answer different questions. Putting Modal's bill in the `economics`
+  table would rank it against catalog prices that assume an idle-or-full reservation.
 
 Run v6 separately retains `artifactEvidence` for every benchmark sandbox cell. The host writes the
 requested provider artifact before probing the sandbox. Canonical release refs are upgraded to

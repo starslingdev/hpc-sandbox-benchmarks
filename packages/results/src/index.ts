@@ -49,6 +49,7 @@ export {
 	LEADERBOARD_FIGURE_DIR,
 	leaderboardFigures,
 	leaderboardMetricFigures,
+	measuredCostFigureId,
 	metricFigureFile,
 	metricFigureModelOf,
 	metricFigureNote,
@@ -82,6 +83,7 @@ export {
 	type LeaderboardMetric,
 	type LeaderboardMetricFigure,
 	type LeaderboardRow,
+	MEASURED_COST_FIGURE_DIMENSION,
 	POOLED_BOARD_HEADING,
 	type ProviderRosterEntry,
 	REPO_URL,
@@ -94,6 +96,13 @@ export {
 	type DatasetCell,
 	type LeaderboardDataset,
 } from "./lib/leaderboard-datasets.ts";
+// Measured (provider-reported) cost, reachable from `Leaderboard.measuredCost`.
+export type {
+	MeasuredCostProvider,
+	MeasuredCostSuite,
+	MeasuredCostTally,
+	UnmeasuredReason,
+} from "./lib/measured-cost.ts";
 export { type NormalizeInput, normalizeResultsTree } from "./lib/normalize-tree.ts";
 export {
 	buildObservedMixtures,

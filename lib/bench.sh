@@ -485,6 +485,9 @@ _pts_install_diagnostics() {
 	echo "resolved pts_user_dir=${pts_dir}"
 	echo "resolved pts_install_root=$(pts_install_root)"
 	echo "resolved pts_config_file=$(pts_config_file)"
+	# An install that hit ENOSPC cannot even write its install-failed.log, so show free space here.
+	echo "  free space (df -Ph, HOME / install root / tmp):"
+	df -Ph "$HOME" "$(pts_install_root)" "${TMPDIR:-/tmp}" 2>/dev/null | sed 's/^/    /' || true
 	for d in "${data_dirs[@]}"; do
 		[ -e "$d/core.pt2so" ] && echo "  core.pt2so present in: $d"
 	done

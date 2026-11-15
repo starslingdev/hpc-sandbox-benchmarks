@@ -477,3 +477,72 @@ describe("comparison figures", () => {
 		expect(() => renderComparisonFigureHtml(older(), older())).toThrow(/with itself/);
 	});
 });
+
+describe("measured cost figures", () => {
+	type CostRecord = NonNullable<ProviderRun["costEvidence"]>[number];
+	const record = (
+		providerId: "modal-vm" | "daytona-vm",
+		index: number,
+		amount?: number,
+	): CostRecord => {
+		const base = {
+			cell: {
+				runId: "run-1",
+				providerId,
+				suite: "realworld-mastra" as const,
+				replicateIndex: index,
+			},
+			subject: { kind: "sandbox" as const, sandboxId: `${providerId}-${index}` },
+			capturedAt: "2026-11-14T00:00:00.000Z",
+			sdk: { packageName: "vendor", version: "1.0.0" },
+		};
+		return amount === undefined
+			? { ...base, kind: "missing", reason: "provider_api_error", detail: "Throttled." }
+			: {
+					...base,
+					kind: "observed",
+					apiOperation: "stats",
+					usage: [{ resource: "cpu", quantity: 1, unit: "CPU-seconds" }],
+					amount,
+					currency: "USD",
+					source: "provider_reported",
+					responseJson: "{}",
+				};
+	};
+	const costRun = () =>
+		run([
+			provider("modal-vm", [metric(CLONE, [1, 2]), metric(INSTALL, [3, 4])], {
+				costEvidence: [record("modal-vm", 0, 0.3), record("modal-vm", 1, 0.5)],
+			}),
+			provider("daytona-vm", [metric(CLONE, [1, 2]), metric(INSTALL, [3, 4])], {
+				costEvidence: [record("daytona-vm", 0)],
+			}),
+		]);
+	const measuredOf = (r: Run) =>
+		metricFigureModelOf(r, buildLeaderboard(r)).metrics.filter((figure) => figure.measured);
+
+	it("charts one realworld suite per measured pipeline run, unranked, with unmeasured providers disclosed", () => {
+		const [figure, ...rest] = measuredOf(costRun());
+		expect(rest).toEqual([]);
+		expect(figure?.id).toBe("measured-cost-realworld-mastra");
+		expect(figure?.unit).toBe("USD");
+		expect(figure?.rows.map((row) => [row.provider, row.value, row.lo, row.hi])).toEqual([
+			["modal-vm", 0.4, 0.3, 0.5],
+		]);
+		expect(figure?.unmeasured).toEqual([
+			{
+				provider: "daytona-vm",
+				outcome: "unmeasured",
+				reason: "No observed bill for any of 1 sandboxes: 1 × provider_api_error.",
+			},
+		]);
+	});
+
+	it("draws nothing when no provider has an observed bill", () => {
+		const r = costRun();
+		const modal = r.providers[0];
+		if (!modal) throw new Error("fixture");
+		modal.costEvidence = [record("modal-vm", 0)];
+		expect(measuredOf(r)).toEqual([]);
+	});
+});

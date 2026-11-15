@@ -52,11 +52,14 @@ export function modalAllocate(
 				timeoutMs: LEAK_EXPIRY_MS,
 				// Reserve CPU for the workload and let Modal provide burst capacity above it.
 				cpu: spec.vcpus,
-				// The SDK requires a request alongside a limit; use Modal's 128 MiB default.
-				memoryMiB: 128,
+				// The SDK requires a request alongside a limit. gVisor bursts from Modal's 128 MiB
+				// default up to the limit. A VM boots with only about the request as MemTotal
+				// (run 43646674451: 1.08 GB), so STREAM and mastra's install were OOM-killed;
+				// reserve the full ceiling there.
+				memoryMiB: provider === "modal-vm" ? spec.memoryGb * 1024 : 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB: spec.memoryGb * 1024,
-				// VM MemTotal grows with demand; size the runner's guard from the configured ceiling.
+				// Size the runner's guard from the configured ceiling.
 				env: { REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)), ...env },
 				// Pin CPU placement to Modal's low-variance instance pool
 				// (https://modal.com/docs/guide/performance-sensitive-sandboxes). GPU creates
