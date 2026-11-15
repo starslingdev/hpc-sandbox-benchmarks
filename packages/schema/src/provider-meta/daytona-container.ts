@@ -14,7 +14,7 @@ export default defineProviderMeta("daytona-container", {
 		{
 			name: "DAYTONA_CONTAINER_TARGET",
 			source: { kind: "variable" },
-			default: "us-west-2",
+			default: "us",
 		},
 		{ name: "DAYTONA_CONTAINER_SNAPSHOT", source: { kind: "variable" }, required: false },
 	],
@@ -22,7 +22,7 @@ export default defineProviderMeta("daytona-container", {
 		class: "container",
 		technology: "container (Sysbox/OCI)",
 		notes:
-			"Boots its own snapshot baked with SandboxClass.CONTAINER on Daytona's container runners in region us-west-2 (Daytona's default class uses Sysbox-based OCI containers, not gVisor). Separate snapshot from daytona-vm because the sandbox class is fixed at snapshot-bake time, not per-create.",
+			"Boots its own snapshot baked with SandboxClass.CONTAINER on Daytona's v0 container runners in region us (Daytona's default class uses Sysbox-based OCI containers, not gVisor). Separate snapshot from daytona-vm because the sandbox class is fixed at snapshot-bake time, not per-create.",
 	},
 	pricing: daytonaPricing,
 	maturity: {

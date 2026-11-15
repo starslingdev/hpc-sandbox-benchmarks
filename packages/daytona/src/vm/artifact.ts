@@ -1,5 +1,5 @@
 // daytona-vm's artifact builder: a LINUX_VM-class snapshot in the region DAYTONA_TARGET names.
-import { SandboxClass } from "@daytona/sdk";
+import { SandboxClass } from "@daytona/sdk/v0";
 import { daytonaArtifactBuilder } from "../snapshot-build.ts";
 
 export default daytonaArtifactBuilder("daytona-vm", {

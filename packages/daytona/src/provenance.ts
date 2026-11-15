@@ -3,5 +3,5 @@
 
 export const DAYTONA_PROVENANCE = Object.freeze({
 	packageName: "@daytona/sdk",
-	version: "0.211.2",
+	version: "2.0.0-alpha.13",
 });

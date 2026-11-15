@@ -1,2 +1,2 @@
-import { defineDaytonaDriver } from "./shared.ts";
-export default defineDaytonaDriver("daytona-vm");
+import { defineDaytonaVmDriver } from "./shared.ts";
+export default defineDaytonaVmDriver();

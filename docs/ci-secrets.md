@@ -293,9 +293,9 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | Variable | Used by | Default |
    | --- | --- | --- |
    | `E2B_TEMPLATE` | E2B | — |
-   | `DAYTONA_TARGET` | Daytona (VM) | <code>us-west-2</code> |
+   | `DAYTONA_TARGET` | Daytona (VM) | <code>us-east-ash-1</code> |
    | `DAYTONA_SNAPSHOT` | Daytona (VM) | — |
-   | `DAYTONA_CONTAINER_TARGET` | Daytona (container) | <code>us-west-2</code> |
+   | `DAYTONA_CONTAINER_TARGET` | Daytona (container) | <code>us</code> |
    | `DAYTONA_CONTAINER_SNAPSHOT` | Daytona (container) | — |
    | `MSB_API_URL` | Microsandbox Cloud | — |
    | `NOVITA_TEMPLATE` | Novita | — |

@@ -10,8 +10,15 @@
 
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import type { Daytona, Sandbox } from "@daytona/sdk";
-import { DaytonaError, DaytonaNotFoundError, DaytonaRateLimitError } from "@daytona/sdk";
+import type { DaytonaV2Client } from "@daytona/sdk";
+import type { RootOnlyClientV0 as Daytona, Sandbox } from "@daytona/sdk/v0";
+import { DaytonaError, DaytonaNotFoundError, DaytonaRateLimitError } from "@daytona/sdk/v0";
+import {
+	DISABLED,
+	DaytonaError as V2DaytonaError,
+	NotFoundError as V2NotFoundError,
+	RateLimitError as V2RateLimitError,
+} from "@daytona/sdk/v2";
 import type { DriverContext, ExecOptions } from "@sandbox-benchmarks/driver";
 import { shellQuote } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
@@ -20,7 +27,8 @@ import { instanceOfAny, isMintedMarker } from "@sandbox-benchmarks/driver/vendor
 import { type } from "arktype";
 
 export type DaytonaId = "daytona-vm" | "daytona-container";
-export const DAYTONA_SANDBOX_ID = type("string.uuid");
+/** v0 ids are UUIDs; v2 ids are `sbx_<id>-<region>`. */
+export const DAYTONA_SANDBOX_ID = type("string.uuid | /^sbx_[A-Za-z0-9-]+$/");
 /** The bound on one SDK request. */
 export const DAYTONA_CONTROL_TIMEOUT_MS = 10_000;
 /**
@@ -285,6 +293,145 @@ export function daytonaVendor(
 				}
 			},
 			delete: (name) => client.snapshot.delete(name),
+		},
+	};
+}
+
+type V2Sandbox = import("@daytona/sdk/v2").Sandbox;
+/** The v2 client surface the VM adapter translates (`new Daytona(...).v2`). */
+export type DaytonaV2 = Pick<
+	DaytonaV2Client,
+	"create" | "get" | "findByName" | "list" | "delete" | "images"
+>;
+
+function v2Phase(state: V2Sandbox["state"]): Phase {
+	if (state === "started") return "ready";
+	if (state === "destroyed") return "gone";
+	if (state === "destroying") return "deleting";
+	return state === "error" ? "failed" : "pending";
+}
+
+function v2Record(sandbox: V2Sandbox): VendorRecord<V2Sandbox> {
+	const marker = isMintedMarker(sandbox.name ?? "") ? sandbox.name : undefined;
+	return {
+		id: sandbox.id,
+		phase: v2Phase(sandbox.state),
+		...(marker && { marker }),
+		...(sandbox.state === "destroying" && { stopped: true }),
+		...(sandbox.error && { detail: sandbox.error }),
+		raw: sandbox,
+	};
+}
+
+/**
+ * daytona-vm over the v2 control plane, where every Linux sandbox is a VM. The request's CPU and
+ * memory are pinned at create (request = limit, so nothing bursts); the boot image is the v2 image
+ * the bake imported under the artifact name, in `region`.
+ */
+export function daytonaV2Vendor(
+	{ resolvedArtifact }: Pick<DriverContext<DaytonaId>, "resolvedArtifact">,
+	region: string,
+	client: DaytonaV2,
+): Vendor<V2Sandbox, V2Sandbox> {
+	const run = async (sandbox: V2Sandbox, command: string, options?: ExecOptions) => {
+		options?.signal?.throwIfAborted();
+		const result = await sandbox.process.run(`bash -lc ${shellQuote(command)}`, {
+			timeoutSeconds: 60,
+		});
+		return {
+			...(result.exitCode !== undefined && { exitCode: result.exitCode }),
+			stdout: result.stdout,
+			stderr: result.stderr,
+		};
+	};
+	return {
+		control: {
+			create: async ({ marker, request: { spec } }) => {
+				const cores = spec.vcpus / 2;
+				return v2Record(
+					await client.create(resolvedArtifact.ref, {
+						name: marker,
+						region,
+						resources: {
+							cpu: cores,
+							cpuMax: cores,
+							memory: spec.memoryGb,
+							memoryMax: spec.memoryGb,
+							...(spec.diskGb !== undefined && { disk: spec.diskGb }),
+						},
+						lifecyclePolicy: { idleExpirySeconds: DISABLED },
+						createTimeoutSeconds: CREATE_TIMEOUT_SECS,
+					}),
+				);
+			},
+			// Recovery looks a lost create up by its marker, which v2 resolves only through its name index.
+			get: async (idOrName) =>
+				v2Record(
+					idOrName.startsWith("sbx_")
+						? await client.get(idOrName)
+						: ((await client.findByName(idOrName, { region }))[0] ?? (await client.get(idOrName))),
+				),
+			remove: async (id) => {
+				await client.delete(id, { timeoutSeconds: DELETE_TIMEOUT_SECS });
+				return "removed";
+			},
+			absent: instanceOfAny(V2NotFoundError),
+			page: async (cursor) => {
+				const page = await client.list({ ...(cursor && { cursor }), limit: 100 });
+				return {
+					records: page.items.map(v2Record),
+					...(page.nextCursor && { next: page.nextCursor }),
+				};
+			},
+			refused: (error) =>
+				matchesAnyCause(
+					error,
+					(cause) =>
+						cause instanceof V2DaytonaError &&
+						[400, 401, 403, 422, 429].includes(cause.statusCode ?? 0),
+				)
+					? { retryable: matchesAnyCause(error, (cause) => cause instanceof V2RateLimitError) }
+					: undefined,
+		},
+		data: {
+			attach: ({ raw }) => raw,
+			// The create response omits resources; a fresh read reports what the VM was given.
+			prepare: async ({ native }, { spec }) => {
+				await native.refreshData();
+				const cores = native.cpuMax ?? native.cpu ?? 0;
+				const memory = native.memoryMax ?? native.memory;
+				return native.sandboxClass === "linux" &&
+					cores * 2 === spec.vcpus &&
+					memory === spec.memoryGb &&
+					(spec.diskGb === undefined || (native.disk ?? 0) >= spec.diskGb)
+					? { status: "honored" }
+					: {
+							status: "unsupported",
+							detail: `Daytona allocated ${native.sandboxClass} ${cores} cores/${memory} GiB/${native.disk} GiB`,
+						};
+			},
+			exec: run,
+			launch: async (sandbox, command, options) => {
+				options?.signal?.throwIfAborted();
+				await sandbox.process.start(`bash -lc ${shellQuote(command)}`);
+			},
+			files: {
+				read: (native, path) => native.fs.readText(path),
+				exists: async (native, path) => {
+					try {
+						await native.fs.stat(path);
+						return true;
+					} catch (error) {
+						if (error instanceof V2NotFoundError) return false;
+						throw error;
+					}
+				},
+				write: (native, path, text) => native.fs.writeText(path, text),
+			},
+		},
+		snapshots: {
+			create: async ({ native }) => ({ snapshotId: (await native.captureImage()).id }),
+			delete: (id) => client.images.delete(id),
 		},
 	};
 }
