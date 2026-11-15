@@ -48,8 +48,8 @@ interface Instance {
 }
 
 /**
- * A whole Namespace account behind the real generated clients: creates start CREATING, describes
- * advance them to RUNNING, a destroy is acknowledged as DESTROYING and observed DESTROYED, and
+ * A whole Namespace account behind the real generated clients: creates start CREATING but are
+ * acknowledged with STATUS_UNKNOWN (the live API's create answer), describes advance them to RUNNING, a destroy is acknowledged as DESTROYING and observed DESTROYED, and
  * listings page by a byte cursor. Only service behaviour is replaced.
  */
 function namespaceWorld(
@@ -90,7 +90,7 @@ function namespaceWorld(
 					throw new ConnectError("response lost", Code.Unavailable);
 				}
 				return {
-					metadata: instances.get(id)?.metadata,
+					metadata: metadata(id, input.documentedPurpose, Status.STATUS_UNKNOWN),
 					extendedMetadata: { commandServiceEndpoint: `https://commands.example/${id}` },
 				};
 			},
@@ -100,7 +100,10 @@ function namespaceWorld(
 				if (!found) throw new ConnectError("not found", Code.NotFound);
 				found.describes += 1;
 				const status = found.metadata.status;
-				if (status === Status.CREATING && found.describes >= (options.readyAfterDescribes ?? 1))
+				if (
+					(status === Status.CREATING || status === Status.STATUS_UNKNOWN) &&
+					found.describes >= (options.readyAfterDescribes ?? 1)
+				)
 					set(found, Status.RUNNING);
 				if (
 					status === Status.DESTROYING &&
@@ -205,6 +208,21 @@ describe("Namespace end to end through its module", () => {
 		await session.destroy();
 		expect(await driver.probes?.observe(session.sandboxRef)).toEqual({ state: "absent" });
 		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 1 });
+	});
+
+	test("an instance whose status is not yet reported is owned, awaited, and destroyed", async () => {
+		const world = namespaceWorld({ readyAfterDescribes: 3 });
+		const driver = driverOver(world);
+		const id = world.allocate(`${NAMESPACE_PURPOSE_PREFIX}unreported`, Status.STATUS_UNKNOWN);
+		const vendor = namespaceVendor(context, world.client);
+		const { signal } = new AbortController();
+		expect(await vendor.control.get(id, { signal })).toMatchObject({ phase: "pending" });
+		expect(await driver.inventory?.list()).toEqual({
+			owned: [{ provider: "namespace", id }],
+			foreignCount: 0,
+		});
+		await driver.destroyById?.({ provider: "namespace", id });
+		expect(await driver.inventory?.list()).toEqual({ owned: [], foreignCount: 0 });
 	});
 
 	test("a lost create remains owned until its late allocation is found and removed", async () => {

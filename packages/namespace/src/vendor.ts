@@ -76,10 +76,13 @@ interface NamespaceNative {
 
 /**
  * Suspended and errored instances remain account resources (failed: owned and destroyed, never
- * released); only DESTROYED proves absence. An unknown status fails closed.
+ * released); only DESTROYED proves absence. STATUS_UNKNOWN (the proto zero value) is an instance
+ * whose status Namespace has not reported yet: it still holds resources, so it reads as pending —
+ * readiness keeps polling, cleanup still destroys it. A status outside the enum fails closed.
  */
 function phaseOf(status: Status): Phase {
 	switch (status) {
+		case Status.STATUS_UNKNOWN:
 		case Status.PENDING:
 		case Status.CREATING:
 			return "pending";
@@ -125,11 +128,14 @@ export function namespaceVendor(
 	client: NamespaceClient,
 ): Vendor<NamespaceRow, NamespaceNative> {
 	const control = (signal: AbortSignal) => ({ timeoutMs: NAMESPACE_CONTROL_TIMEOUT_MS, signal });
-	const record = (row: NamespaceRow): VendorRecord<NamespaceRow> => {
+	const record = (
+		row: NamespaceRow,
+		phase: Phase = phaseOf(row.instance.status),
+	): VendorRecord<NamespaceRow> => {
 		const marker = NAMESPACE_PURPOSE.fromVendor(row.instance.documentedPurpose);
 		return {
 			id: row.instance.instanceId,
-			phase: phaseOf(row.instance.status),
+			phase,
 			...(marker !== undefined && { marker }),
 			raw: row,
 		};
@@ -165,7 +171,9 @@ export function namespaceVendor(
 				const commandEndpoint = extendedMetadata?.commandServiceEndpoint;
 				if (!metadata?.instanceId || !commandEndpoint)
 					throw new Error("Namespace create omitted instance identity or command endpoint");
-				return { ...record({ instance: metadata, commandEndpoint }), phase: "pending" };
+				// The acknowledgement's status is never classified: Namespace answers a create with
+				// STATUS_UNKNOWN, and classifying it first threw before this pending override applied.
+				return record({ instance: metadata, commandEndpoint }, "pending");
 			},
 			get: async (instanceId, { signal }) => {
 				const { metadata, extendedMetadata } = await client.compute.describeInstance(
