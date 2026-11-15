@@ -7,7 +7,7 @@ import { evidenceDigest } from "@sandbox-benchmarks/results";
 import type { ExperimentAttempt } from "@sandbox-benchmarks/schema";
 import type { AccountRecord } from "./account-journal.ts";
 import { rawTreeDigest } from "./experiment-artifacts.ts";
-import { recoverRejectedCreate } from "./rejected-create-recovery.ts";
+import { CREATEOS_REVIEWED_REJECTION, recoverRejectedCreate } from "./rejected-create-recovery.ts";
 
 const SOURCE = "b".repeat(40);
 const directories: string[] = [];
@@ -15,7 +15,7 @@ afterEach(() => {
 	for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function fixture(provider: "tama" | "runcloud" = "tama") {
+function fixture(provider: "tama" | "runcloud" | "createos" = "tama") {
 	const directory = mkdtempSync(join(tmpdir(), "rejected-create-"));
 	directories.push(directory);
 	const raw = join(directory, "raw");
@@ -36,10 +36,24 @@ function fixture(provider: "tama" | "runcloud" = "tama") {
 			cause: { kind: "sandbox-create-failed", detail: "bench-1 failed to provision" },
 		}),
 	);
+	const reviewed = CREATEOS_REVIEWED_REJECTION;
+	if (provider === "createos")
+		writeFileSync(
+			marker,
+			JSON.stringify({
+				provider,
+				suite: "realworld-openclaw",
+				outcome: "failed",
+				reason: `Failed to create sandbox: ${reviewed.detail}`,
+				cause: { kind: "sandbox-create-failed", detail: reviewed.detail },
+			}),
+		);
+	const source = provider === "createos" ? reviewed.sourceSha : SOURCE;
+	const workflowRun = provider === "createos" ? reviewed.workflowRun : "456";
 	const run = {
 		schemaVersion: "6",
-		runId: "456",
-		sha: SOURCE,
+		runId: workflowRun,
+		sha: source,
 		generatedAt: "2026-09-12T00:00:00Z",
 		targetSpec: { vcpus: 4, memoryGb: 8 },
 		providers: [],
@@ -47,15 +61,15 @@ function fixture(provider: "tama" | "runcloud" = "tama") {
 	writeFileSync(join(directory, "run.json"), JSON.stringify(run));
 	const evidence: ExperimentAttempt = {
 		schemaVersion: "1",
-		id: "attempt-1",
-		cellId: `${provider}-realworld-openclaw-r4`,
+		id: provider === "createos" ? reviewed.attemptId : "attempt-1",
+		cellId: provider === "createos" ? reviewed.cellId : `${provider}-realworld-openclaw-r4`,
 		planDigest: `sha256:${"a".repeat(64)}`,
-		sha: SOURCE,
+		sha: source,
 		workloadRevision: "realworld-openclaw",
 		environmentRevision: "env",
 		artifactIdentity: "image",
 		passes: 1,
-		workflowRun: "456",
+		workflowRun,
 		workflowAttempt: 1,
 		job: "bench",
 		sequence: 0,
@@ -66,6 +80,9 @@ function fixture(provider: "tama" | "runcloud" = "tama") {
 		completion: "unknown",
 		runDigest: evidenceDigest(run),
 		rawDigest: rawTreeDigest(raw),
+		...(provider === "createos" && {
+			diagnostic: `Suite "realworld-openclaw" failed on createos — recorded as a failed gap in run.json: ${reviewed.detail}`,
+		}),
 	};
 	const save = () => writeFileSync(join(directory, "attempt.json"), JSON.stringify(evidence));
 	save();
@@ -127,7 +144,67 @@ function fixture(provider: "tama" | "runcloud" = "tama") {
 		},
 	};
 }
-type SandboxRefList = { provider: "tama" | "runcloud"; id: string }[];
+type SandboxRefList = { provider: "tama" | "runcloud" | "createos"; id: string }[];
+
+test("the reviewed CreateOS 503 rejection releases its intent after two empty inventories", async () => {
+	const f = fixture("createos");
+	const original = readFileSync(join(f.options.directory, "attempt.json"), "utf8");
+	expect(await recoverRejectedCreate(f.options)).toBe(CREATEOS_REVIEWED_REJECTION.attemptId);
+	expect(f.events).toEqual(["quiescent", "inventory", "quiescent", "inventory", "release"]);
+	expect(f.records.at(-1)).toMatchObject({
+		kind: "released",
+		outcome: "not-allocated",
+		account: "createos",
+		attempt: CREATEOS_REVIEWED_REJECTION.attemptId,
+		cellId: CREATEOS_REVIEWED_REJECTION.cellId,
+	});
+	expect(readFileSync(join(f.options.directory, "attempt.json"), "utf8")).toBe(original);
+});
+
+test("the reviewed CreateOS rejection refuses while the account holds a benchmark sandbox", async () => {
+	const f = fixture("createos");
+	f.hold([{ provider: "createos", id: "sb-leftover" }]);
+	await expect(recoverRejectedCreate(f.options)).rejects.toThrow("still holds 1");
+	expect(f.records).toHaveLength(1);
+});
+
+for (const change of ["attempt", "detail", "source", "released", "no-journal"] as const) {
+	test(`the CreateOS exception does not stretch to a changed ${change}`, async () => {
+		const f = fixture("createos");
+		if (change === "attempt") {
+			f.evidence.id = "createos-realworld-openclaw-r7-a1-00000000-0000-0000-0000-000000000000";
+			f.save();
+		}
+		if (change === "source") {
+			f.evidence.sha = SOURCE;
+			f.save();
+		}
+		if (change === "detail") {
+			const marker = JSON.parse(readFileSync(f.marker, "utf8"));
+			marker.cause.detail = "computesdk create failed: gateway timeout";
+			marker.reason = `Failed to create sandbox: ${marker.cause.detail}`;
+			writeFileSync(f.marker, JSON.stringify(marker));
+			f.evidence.rawDigest = rawTreeDigest(join(f.options.directory, "raw"));
+			f.save();
+		}
+		if (change === "released")
+			f.records.push({
+				version: "1",
+				kind: "released",
+				outcome: "not-allocated",
+				account: "createos",
+				attempt: f.evidence.id,
+				cellId: f.evidence.cellId,
+				planDigest: f.evidence.planDigest,
+			});
+		const options = change === "no-journal" ? { ...f.options, journal: undefined } : f.options;
+		await expect(recoverRejectedCreate(options)).rejects.toThrow();
+		expect(f.records.filter((record) => record.kind === "released")).toHaveLength(
+			change === "released" ? 1 : 0,
+		);
+		if (change !== "released") expect(f.events).not.toContain("release");
+	});
+}
 
 test("legacy rejection prose cannot authorize an inventory-based release", async () => {
 	const f = fixture();
