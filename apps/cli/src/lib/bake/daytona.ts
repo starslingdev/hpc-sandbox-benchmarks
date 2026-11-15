@@ -1,4 +1,4 @@
-// Bake a Daytona Linux-VM snapshot by uploading the already-built local Docker image to Daytona's
+// daytona-vm bakes a v2 image (bakeDaytonaVmSnapshot, below). daytona-container bakes a v0 snapshot by uploading the already-built local Docker image to Daytona's
 // transient registry, then registering that private image through the SDK. Both public-GHCR paths are
 // broken for this valid image: the direct importer returns an opaque inspection error, while the
 // declarative builder cannot authenticate its FROM pull. Daytona's CLI local-image path successfully
@@ -25,7 +25,9 @@
 // are necessarily separate snapshots.
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi } from "@daytona/api-client";
-import { Daytona, SandboxClass } from "@daytona/sdk";
+import { Daytona } from "@daytona/sdk";
+import { RootOnlyClientV0, SandboxClass } from "@daytona/sdk/v0";
+import { ImageNameTakenError } from "@daytona/sdk/v2";
 import { withCleanupPreservingPrimaryError } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers/config";
 import type { Log } from "./types.ts";
@@ -55,11 +57,11 @@ function isNotFound(err: unknown): boolean {
  *  `total`: an absent or mid-iteration-changed `total` would make `Math.ceil(total / LIMIT)` NaN, and
  *  the loop would silently scan only the first page — the exact failure this sweep exists to avoid. */
 async function listSnapshotsByName(
-	daytona: Daytona,
+	daytona: RootOnlyClientV0,
 	name: string,
-): Promise<Awaited<ReturnType<Daytona["snapshot"]["list"]>>["items"]> {
+): Promise<Awaited<ReturnType<RootOnlyClientV0["snapshot"]["list"]>>["items"]> {
 	const LIMIT = 100;
-	const matches: Awaited<ReturnType<Daytona["snapshot"]["list"]>>["items"] = [];
+	const matches: Awaited<ReturnType<RootOnlyClientV0["snapshot"]["list"]>>["items"] = [];
 	for (let page = 1; ; page++) {
 		const { items } = await daytona.snapshot.list(page, LIMIT);
 		matches.push(...items.filter((s) => s.name === name));
@@ -77,7 +79,11 @@ async function listSnapshotsByName(
  *  destroyed what held it: from here to a successful `create`, `name` does not resolve. Callers use
  *  this to distinguish "create failed, nothing was there anyway" from "create failed and the
  *  pre-existing snapshot is gone". Throwing leaves the name intact (the delete never completed). */
-async function deleteExistingSnapshots(daytona: Daytona, name: string, log: Log): Promise<number> {
+async function deleteExistingSnapshots(
+	daytona: RootOnlyClientV0,
+	name: string,
+	log: Log,
+): Promise<number> {
 	const matches = await listSnapshotsByName(daytona, name);
 	for (const snap of matches) {
 		// A snapshot already mid-removal (a cancelled or concurrent bake) needs no second delete, and
@@ -281,7 +287,7 @@ const CREATE_ATTEMPTS = 5;
  *  landed — "absent" vs an `error`-state snapshot (with its richer `errorReason`) distinguishes a failed
  *  registry inspect from a failed build. Best-effort: never throws (it runs on an error path). */
 async function logCreateFailure(
-	daytona: Daytona,
+	daytona: RootOnlyClientV0,
 	name: string,
 	err: unknown,
 	log: Log,
@@ -336,7 +342,7 @@ export async function bakeDaytonaSnapshot(
 	const { targetSpec } = config;
 	const apiKey = opts.apiKey;
 	if (!apiKey) throw new Error("DAYTONA_API_KEY is required to bake a Daytona snapshot");
-	const daytona = new Daytona({
+	const daytona = new RootOnlyClientV0({
 		apiKey,
 		...(opts.target ? { target: opts.target } : {}),
 	});
@@ -454,14 +460,25 @@ export async function bakeDaytonaSnapshot(
 	throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: lastErr });
 }
 
-/** Bake the daytona-vm snapshot `name`: LINUX_VM class in the daytona-vm region (us-west-2). Binds the
- *  variant's config + class so callers (bake/promote) don't import SandboxClass. */
-export function bakeDaytonaVmSnapshot(name: string, image: string, log: Log): Promise<void> {
-	return bakeDaytonaSnapshot(name, image, log, {
-		apiKey: config.daytonaVm.apiKey,
-		target: config.daytonaVm.target,
-		sandboxClass: SandboxClass.LINUX_VM,
-	});
+/** Bake the daytona-vm artifact `name`: v2 has no snapshot registration, so the public toolchain image
+ *  is imported as a named v2 image in the daytona-vm region. An identical named import returns the
+ *  existing image; a name held by other content is deleted and imported again, and a failure after
+ *  that delete reports the name destroyed, as the v0 bake does. */
+export async function bakeDaytonaVmSnapshot(name: string, image: string, log: Log): Promise<void> {
+	const { images } = new Daytona({ apiKey: config.daytonaVm.apiKey }).v2;
+	const options = { name, region: config.daytonaVm.target, timeoutSeconds: 15 * 60 };
+	log(`>>> daytona v2 image pull ${image} as ${name} (region ${options.region})`);
+	try {
+		await images.pull(image, options);
+	} catch (error) {
+		if (!(error instanceof ImageNameTakenError)) throw error;
+		log(`    ${name} holds other content; deleting it and importing again`);
+		await images.delete((await images.get(name)).id);
+		await images.pull(image, options).catch((retry: unknown) => {
+			throw new Error(snapshotDestroyedMessage(name, 1, String(retry)), { cause: retry });
+		});
+	}
+	log(`<<< daytona v2 image ${name} ready`);
 }
 
 /** Bake the daytona-container snapshot `name`: CONTAINER class in the daytona-container region (us-west-2). */

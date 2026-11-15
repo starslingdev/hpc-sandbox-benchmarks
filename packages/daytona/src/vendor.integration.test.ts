@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { DaytonaError, Sandbox } from "@daytona/sdk";
-import { DaytonaNotFoundError } from "@daytona/sdk";
+import type { DaytonaError, Sandbox } from "@daytona/sdk/v0";
+import { DaytonaNotFoundError } from "@daytona/sdk/v0";
 import type { CreateRequest, DriverContext } from "@sandbox-benchmarks/driver";
 import { isFailedCreateCleanupError, isRetryableDriverCreate } from "@sandbox-benchmarks/driver";
 import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/testing";
@@ -143,13 +143,13 @@ const vendorOver = (org: ReturnType<typeof daytonaOrg>, sandboxClass = "linux-vm
 /** Each variant's own module, lowered over a fake org instead of the real SDK. */
 function driverOver(org: ReturnType<typeof daytonaOrg>, module: typeof vm | typeof container = vm) {
 	const sandboxClass = module === vm ? "linux-vm" : "container";
-	return vendorDriver(module as typeof vm, context, {
+	return vendorDriver<"daytona-vm", Sandbox, Sandbox>(module as never, context, {
 		vendor: daytonaVendor(context, sandboxClass, org.client),
 		timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
 	});
 }
 
-vendorContract("daytona adapter", vm, () => vendorOver(daytonaOrg()));
+vendorContract("daytona adapter", container, () => vendorOver(daytonaOrg()));
 
 describe("Daytona end to end through each variant's module", () => {
 	test("cleanup stays owned until a lost create becomes visible", async () => {

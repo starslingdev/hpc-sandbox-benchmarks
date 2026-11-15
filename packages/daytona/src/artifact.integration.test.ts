@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { SnapshotState } from "@daytona/api-client";
-import { SandboxClass } from "@daytona/sdk";
+import { SandboxClass } from "@daytona/sdk/v0";
 import type { DaytonaBuildTransport } from "./snapshot-build.ts";
 import { daytonaArtifactBuilder } from "./snapshot-build.ts";
 

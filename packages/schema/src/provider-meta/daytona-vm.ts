@@ -11,14 +11,14 @@ export default defineProviderMeta("daytona-vm", {
 	artifact: { kind: "baked" },
 	inputs: [
 		"DAYTONA_API_KEY",
-		{ name: "DAYTONA_TARGET", source: { kind: "variable" }, default: "us-west-2" },
+		{ name: "DAYTONA_TARGET", source: { kind: "variable" }, default: "us-east-ash-1" },
 		{ name: "DAYTONA_SNAPSHOT", source: { kind: "variable" }, required: false },
 	],
 	isolation: {
 		class: "microVM",
 		technology: "microVM (Linux VM)",
 		notes:
-			"Boots a snapshot baked with SandboxClass.LINUX_VM on Daytona's Linux-VM runners (region us-west-2, via DAYTONA_TARGET). Snapshot-based images; orgs locked to a dedicated region need their own snapshot (DAYTONA_SNAPSHOT). The prior single `daytona` entry mislabeled this as a container — the baked class has always been a microVM.",
+			"Boots the toolchain image (imported by the bake as a v2 image) on Daytona's v2 control plane, where every Linux sandbox is a VM; region us-east-ash-1 (DAYTONA_TARGET), whose hosts are AMD EPYC Zen 5. CPU and memory are pinned at create (request = limit).",
 	},
 	pricing: daytonaPricing,
 	maturity: {

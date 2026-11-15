@@ -1,2 +1,2 @@
-import { defineDaytonaDriver } from "./shared.ts";
-export default defineDaytonaDriver("daytona-container");
+import { defineDaytonaContainerDriver } from "./shared.ts";
+export default defineDaytonaContainerDriver();

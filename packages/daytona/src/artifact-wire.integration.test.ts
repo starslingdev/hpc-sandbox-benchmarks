@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SandboxClass } from "@daytona/sdk";
+import { SandboxClass } from "@daytona/sdk/v0";
 import { daytonaArtifactBuilder, daytonaBuildTransport } from "./snapshot-build.ts";
 
 test("Daytona release over the real API pins imageName and reclaims accepted cancellation", async () => {

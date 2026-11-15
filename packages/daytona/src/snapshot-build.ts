@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import type { RegistryPushAccessDto } from "@daytona/api-client";
 import { Configuration, DockerRegistryApi, SnapshotsApi } from "@daytona/api-client";
-import type { DaytonaConfig, SandboxClass } from "@daytona/sdk";
+import type { RootOnlyConfigV0 as DaytonaConfig, SandboxClass } from "@daytona/sdk/v0";
 
 import type { EnvOf } from "@sandbox-benchmarks/driver";
 import type { BuildCommandRunner, OciArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";

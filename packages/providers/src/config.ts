@@ -17,9 +17,8 @@ import {
 import { type } from "arktype";
 
 // 1. Env schema — only the variables this app reads, validated at the boundary. All optional; an
-//    explicitly-set but empty value is a misconfiguration and is rejected. Both Daytona variants
-//    live in us-west-2 (DAYTONA_TARGET / DAYTONA_CONTAINER_TARGET override the region per variant;
-//    the account's default region has no runners or snapshots, so the defaults below always pin it).
+//    explicitly-set but empty value is a misconfiguration and is rejected. DAYTONA_TARGET /
+//    DAYTONA_CONTAINER_TARGET override each variant's region; the defaults below always pin one.
 const envSchema = type({
 	"FREESTYLE_SNAPSHOT_ID?": "string >= 1",
 	"FREESTYLE_BASE_SNAPSHOT_ID?": "string >= 1",
@@ -184,21 +183,19 @@ export const config = {
 	/** Candidate daytona-container snapshot name the bake creates while iterating. */
 	daytonaContainerSnapshotCandidate,
 	/** The daytona-vm account/target the adapter boots from: API key, runner target
-	 *  (`DAYTONA_TARGET` override, else `us-west-2` — where the LINUX_VM snapshot lives; symmetric with
-	 *  daytona-container's default so a boot with the env unset doesn't fall back to the account
-	 *  default region, which has no LINUX_VM runners), and the LINUX_VM snapshot to boot
+	 *  (`DAYTONA_TARGET` override, else the v2 Zen 5 region `us-east-ash-1`), and the v2 image to boot
 	 *  (`DAYTONA_SNAPSHOT` override, else the version-scoped default). */
 	daytonaVm: {
 		apiKey: env.DAYTONA_API_KEY,
-		target: env.DAYTONA_TARGET ?? "us-west-2",
+		target: env.DAYTONA_TARGET ?? "us-east-ash-1",
 		snapshot: env.DAYTONA_SNAPSHOT ?? daytonaSnapshotDefault,
 	} satisfies DaytonaConfig,
-	/** The daytona-container account/target: the SAME API key and us-west-2 region as daytona-vm
-	 *  (`DAYTONA_CONTAINER_TARGET` override, else `us-west-2`), and the container-class snapshot to
+	/** The daytona-container account/target: the SAME API key as daytona-vm, on the v0 plane
+	 *  (`DAYTONA_CONTAINER_TARGET` override, else `us`), and the container-class snapshot to
 	 *  boot (`DAYTONA_CONTAINER_SNAPSHOT` override, else the version-scoped `-container` default). */
 	daytonaContainer: {
 		apiKey: env.DAYTONA_API_KEY,
-		target: env.DAYTONA_CONTAINER_TARGET ?? "us-west-2",
+		target: env.DAYTONA_CONTAINER_TARGET ?? "us",
 		snapshot: env.DAYTONA_CONTAINER_SNAPSHOT ?? daytonaContainerSnapshotDefault,
 	} satisfies DaytonaConfig,
 	/** The novita template the sandbox boots from (on Novita's control plane); `NOVITA_TEMPLATE`
