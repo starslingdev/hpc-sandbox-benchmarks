@@ -1,9 +1,9 @@
 // Daytona's cost evidence: the bill for exactly one benchmark sandbox, read after teardown within
 // the harness's 30 s hook budget. A bill that has not settled by then is recorded as unmeasured.
 //
-//  - v0 (every existing cell): the analytics API reports each sandbox's billed USD, its allocation
+//  - v0 (daytona-container): the analytics API reports each sandbox's billed USD, its allocation
 //    times its wall clock, so v0 has no burst. Recorded as `provider_reported`.
-//  - v2 (burstable): usage history reports measured core-seconds and memory byte-seconds but no
+//  - v2 (daytona-vm, burstable): usage history reports measured core-seconds and memory byte-seconds but no
 //    price, so the bill is `calculated_from_provider_usage` at the dated list rates.
 
 import type { ModelsUsagePeriod } from "@daytona/analytics-api-client";
@@ -24,15 +24,7 @@ import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "@sandbox-benchmar
 import { type } from "arktype";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
-
-/**
- * The v2 burst create (`new Daytona({ apiKey }).v2.create(DAYTONA_V2_BURST)`): a 2-core / 0.5 GiB
- * guarantee bursting to a 4-core / 8 GiB ceiling, pinned to Zen 5. Its guarantee is the billing floor.
- */
-export const DAYTONA_V2_BURST = {
-	cpuType: "zen5",
-	resources: { cpu: 2, cpuMax: 4, memory: 0.5, memoryMax: 8, disk: 40 },
-} as const satisfies CreateSandboxOptions;
+import { DAYTONA_V2_BURST } from "./vendor.ts";
 
 // On-demand list rates; a `cpuType` multiplies CPU only, and ephemeral disk is free:
 // https://www.daytona.com/docs/billing#pricing-dimensions
@@ -244,9 +236,9 @@ async function capture<T>(
 		: { ...base, kind: "missing", reason: "provider_api_error", detail: bill.unsettled(value) };
 }
 
-/** The cost hook for a Daytona cell: v0 for every existing cell, v2 given the sandbox's create options. */
+/** The cost hook for a Daytona cell: daytona-vm prices v2 usage history, daytona-container reads v0. */
 export function daytonaCostEvidence(
-	v2Create?: CreateSandboxOptions,
+	provider: DaytonaId,
 ): ProviderCostEvidenceCapability<DaytonaId> {
 	return {
 		sdk: DAYTONA_PROVENANCE,
@@ -266,8 +258,8 @@ export function daytonaCostEvidence(
 					detail: "Sandbox teardown was not confirmed; no provider usage was considered.",
 				};
 			}
-			return v2Create
-				? capture(v2Bill(input, env, v2Create), record)
+			return provider === "daytona-vm"
+				? capture(v2Bill(input, env, DAYTONA_V2_BURST), record)
 				: capture(await v0Bill(input, env), record);
 		},
 	};

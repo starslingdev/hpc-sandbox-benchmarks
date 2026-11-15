@@ -49,7 +49,7 @@ describe("parseDriverEnv", () => {
 	test("applies registry defaults while leaving genuinely optional inputs absent", () => {
 		expect(parseDriverEnv("daytona-vm", { DAYTONA_API_KEY: "key" })).toEqual({
 			DAYTONA_API_KEY: "key",
-			DAYTONA_TARGET: "us-west-2",
+			DAYTONA_TARGET: "us-east-ash-1",
 		});
 	});
 
@@ -81,7 +81,7 @@ describe("parseDriverEnv", () => {
 				DAYTONA_API_KEY: "key",
 				E2B_API_KEY: "must-not-escape",
 			}),
-		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_TARGET: "us-west-2" });
+		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_TARGET: "us-east-ash-1" });
 	});
 
 	test("the direct schema exposes distinct raw input and resolved output types", () => {

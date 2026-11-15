@@ -127,7 +127,7 @@ describe("provider metadata authoring", () => {
 			name: "DAYTONA_CONTAINER_TARGET",
 			source: { kind: "variable" },
 			required: false,
-			default: "us-west-2",
+			default: "us",
 		});
 		expect(PROVIDERS.find((provider) => provider.id === "namespace")?.inputs).toEqual([
 			{

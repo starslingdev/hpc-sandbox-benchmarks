@@ -507,9 +507,9 @@ jobs:
           E2B_API_KEY: ${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}
           E2B_TEMPLATE: ${{ matrix.provider == 'e2b' && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}
-          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_TARGET: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-east-ash-1') || '' }}
           DAYTONA_SNAPSHOT: ${{ matrix.provider == 'daytona-vm' && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
           DAYTONA_CONTAINER_SNAPSHOT: ${{ matrix.provider == 'daytona-container' && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
           BL_API_KEY: ${{ matrix.provider == 'blaxel' && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ matrix.provider == 'blaxel' && secrets.BL_WORKSPACE || '' }}
@@ -708,9 +708,9 @@ jobs:
           E2B_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && secrets.E2B_API_KEY || '' }}
           E2B_TEMPLATE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'e2b') && (env.E2B_TEMPLATE || vars.E2B_TEMPLATE || secrets.E2B_TEMPLATE) || '' }}
           DAYTONA_API_KEY: ${{ (contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container')) && secrets.DAYTONA_API_KEY || '' }}
-          DAYTONA_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-west-2') || '' }}
+          DAYTONA_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_TARGET || vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET || 'us-east-ash-1') || '' }}
           DAYTONA_SNAPSHOT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-vm') && (env.DAYTONA_SNAPSHOT || vars.DAYTONA_SNAPSHOT || secrets.DAYTONA_SNAPSHOT) || '' }}
-          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us-west-2') || '' }}
+          DAYTONA_CONTAINER_TARGET: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET || vars.DAYTONA_CONTAINER_TARGET || secrets.DAYTONA_CONTAINER_TARGET || 'us') || '' }}
           DAYTONA_CONTAINER_SNAPSHOT: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'daytona-container') && (env.DAYTONA_CONTAINER_SNAPSHOT || vars.DAYTONA_CONTAINER_SNAPSHOT || secrets.DAYTONA_CONTAINER_SNAPSHOT) || '' }}
           BL_API_KEY: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel') && secrets.BL_API_KEY || '' }}
           BL_WORKSPACE: ${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'blaxel') && secrets.BL_WORKSPACE || '' }}

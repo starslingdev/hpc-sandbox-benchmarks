@@ -232,10 +232,11 @@ figure. run.cloud records `not_sandbox_scoped`:
 its public usage API is organization-wide cumulative usage and is not called or delta-attributed to
 one sandbox.
 
-Daytona's v0 cells record `provider_reported` USD from the analytics API (allocation × wall clock,
-no burst). A v2 burst sandbox (`DAYTONA_V2_BURST`, Zen 5) records `calculated_from_provider_usage`:
-each usage-history minute is priced at max(measured, guarantee) at the dated list rates, CPU at the
-Zen 5 multiplier. A bill not settled within the hook budget is recorded `missing`, never zero.
+Daytona's daytona-container cell (v0) records `provider_reported` USD from the analytics API
+(allocation × wall clock, no burst). daytona-vm (v2, `DAYTONA_V2_BURST`, Zen 5) records
+`calculated_from_provider_usage`: each usage-history minute is priced at max(measured, guarantee) at
+the dated list rates, CPU at the Zen 5 multiplier. A bill not settled within the hook budget is
+recorded `missing`, never zero.
 
 ### Measured cost on the board
 
