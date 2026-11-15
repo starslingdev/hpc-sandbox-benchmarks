@@ -35,3 +35,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0023](./0023-unstarted-recovery-batches.md) | Audited partial publication for recovery batches that never executed |
 | [0024](./0024-provider-packages-behind-a-vendor-port.md) | Provider packages behind a vendor port |
 | [0025](./0025-runcloud-named-cleanup-recovery.md) | Runcloud cleanup from a retained unique create name |
+| [0026](./0026-provider-scoped-publication-gates.md) | Provider-scoped publication gates |

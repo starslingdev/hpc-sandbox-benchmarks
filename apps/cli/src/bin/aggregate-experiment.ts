@@ -25,6 +25,9 @@ if (import.meta.main) {
 		);
 		process.exitCode = 1;
 	} else {
+		// Withheld providers publish as gaps; say so loudly so a partial Run never reads as whole.
+		for (const { provider, reasons } of aggregation.withheldProviders ?? [])
+			console.warn(`::warning::publication withheld for ${provider}: ${reasons.join("; ")}`);
 		writeRunDocument(run, join(output, "runs", `${run.runId}.json`), join(output, "index.json"));
 	}
 }

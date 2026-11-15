@@ -542,10 +542,22 @@ export function evaluateExperiment(
 	return report;
 }
 
+/** A provider whose evidence cannot back any measurement; its cells publish as gaps, never scores. */
+export interface WithheldProvider {
+	provider: string;
+	reasons: string[];
+}
+
 export interface ExperimentAggregation {
 	coverage: CoverageReport;
 	/** Why an incomplete experiment cannot be published even partially; absent when nothing blocks. */
 	publicationBlockers?: string[];
+	/**
+	 * Providers whose own evidence is unresolved (cleanup, missing Run or raw digest, missing
+	 * attempts). Partial publication withholds every measurement from these providers and publishes
+	 * the rest; strict publication still refuses the incomplete experiment.
+	 */
+	withheldProviders?: WithheldProvider[];
 	/** Verified complete publication, or explicitly requested partial publication with frozen coverage. */
 	run?: Run;
 }
@@ -568,41 +580,110 @@ function isUnallocatedFailureWithoutRun(attempt: AttemptWithRun): boolean {
 export function describeIncompleteExperiment({
 	coverage,
 	publicationBlockers = [],
+	withheldProviders = [],
 }: ExperimentAggregation): string[] {
 	return [
 		...publicationBlockers.map((reason) => `publication blocked: ${reason}`),
+		...withheldProviders.map(
+			({ provider, reasons }) => `publication withheld for ${provider}: ${reasons.join("; ")}`,
+		),
 		...describeCoverageShortfall(coverage),
 	];
 }
 
+interface PublicationGates {
+	/** Experiment-wide: nothing can be published while any remains. */
+	blockers: string[];
+	/** Provider-scoped: that provider's measurements are withheld; the rest may still publish. */
+	withheld: WithheldProvider[];
+}
+
 /**
- * Partial publication relaxes metric completeness only. Missing evidence, conflicting provenance
- * and unresolved allocations still cannot be published.
+ * Partial publication relaxes metric completeness only, and scopes evidence gaps to the provider
+ * that owns them (ADR-0026). Conflicting evidence and provenance still block the whole experiment.
+ * Unresolved cleanup, a missing Run or raw digest, and missing attempts are one provider's
+ * unresolved evidence: they withhold that provider's measurements without holding back verified
+ * measurements from providers whose evidence is whole.
  */
-function partialPublicationBlockers(
+function publicationGates(
+	plan: ExperimentPlan,
 	coverage: CoverageReport,
 	attempts: readonly AttemptWithRun[],
 	unstarted = new Set<string>(),
-): string[] {
+): PublicationGates {
 	// Conflicts and missing cells are counted: the coverage shortfall already names them, bounded.
 	const blockers: string[] = [];
-	const missing = coverage.cells.filter(
-		(cell) => cell.status === "missing" && !unstarted.has(cell.id),
-	).length;
+	const withheld = new Map<string, string[]>();
+	const providerOf = new Map(plan.cells.map((cell) => [cell.id, cell.provider]));
+	const withhold = (cellId: string, reason: string) => {
+		const provider = providerOf.get(cellId);
+		// An attempt naming no planned cell is a provenance conflict, which already blocks below.
+		if (provider === undefined) return;
+		withheld.set(provider, [...(withheld.get(provider) ?? []), reason]);
+	};
 	if (coverage.conflicts.length > 0)
 		blockers.push(`conflicting evidence: ${coverage.conflicts.length} conflict(s)`);
-	if (missing > 0) blockers.push(`missing attempts: ${missing} cell(s)`);
-	for (const attempt of attempts) {
-		const { id, rawDigest, cleanup } = attempt.evidence;
-		if (!attempt.run && !isUnallocatedFailureWithoutRun(attempt))
-			blockers.push(`missing Run: ${id}`);
-		if (!rawDigest) blockers.push(`missing raw digest: ${id}`);
-		if (cleanup === "unresolved" && !attempt.cleanupRecovery)
-			blockers.push(`unresolved cleanup: ${id}`);
+	const missing = new Map<string, number>();
+	for (const cell of coverage.cells) {
+		const provider = providerOf.get(cell.id);
+		if (cell.status !== "missing" || unstarted.has(cell.id) || provider === undefined) continue;
+		missing.set(provider, (missing.get(provider) ?? 0) + 1);
 	}
-	if (!coverage.cells.some((cell) => (cell.retainedMetrics?.length ?? 0) > 0))
+	for (const [provider, count] of missing)
+		withheld.set(provider, [
+			...(withheld.get(provider) ?? []),
+			`missing attempts: ${count} cell(s)`,
+		]);
+	for (const attempt of attempts) {
+		const { id, cellId, rawDigest, cleanup } = attempt.evidence;
+		if (!attempt.run && !isUnallocatedFailureWithoutRun(attempt))
+			withhold(cellId, `missing Run: ${id}`);
+		if (!rawDigest) withhold(cellId, `missing raw digest: ${id}`);
+		if (cleanup === "unresolved" && !attempt.cleanupRecovery)
+			withhold(cellId, `unresolved cleanup: ${id}`);
+	}
+	if (
+		!coverage.cells.some(
+			(cell) =>
+				(cell.retainedMetrics?.length ?? 0) > 0 && !withheld.has(providerOf.get(cell.id) ?? ""),
+		)
+	)
 		blockers.push("no verified measurements");
-	return blockers;
+	return {
+		blockers,
+		withheld: [...withheld]
+			.map(([provider, reasons]) => ({ provider, reasons }))
+			.toSorted((a, b) => a.provider.localeCompare(b.provider)),
+	};
+}
+
+/** A withheld provider's cells keep their attempts but retain nothing and never count as complete. */
+function withholdCoverage(
+	plan: ExperimentPlan,
+	coverage: CoverageReport,
+	withheld: readonly WithheldProvider[],
+): CoverageReport {
+	if (withheld.length === 0) return coverage;
+	const providers = new Set(withheld.map((entry) => entry.provider));
+	const cells = coverage.cells.map((cell) => {
+		const planned = plan.cells.find((entry) => entry.id === cell.id);
+		if (!planned || !providers.has(planned.provider) || cell.status === "excluded") return cell;
+		const eligible = planned.metrics.filter((id) => !cell.excludedMetrics.includes(id));
+		return {
+			...cell,
+			status: cell.status === "complete" ? ("failed" as const) : cell.status,
+			missingMetrics: eligible,
+			retainedMetrics: [],
+		};
+	});
+	return {
+		...coverage,
+		complete: false,
+		cells,
+		selectedAttempts: cells
+			.filter((cell) => cell.status === "complete")
+			.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : [])),
+	};
 }
 
 /**
@@ -634,9 +715,16 @@ export function aggregateExperiment(
 	const partial = !coverage.complete && options.allowPartial === true;
 	if (!coverage.complete) {
 		// Reported for every incomplete experiment: they say whether --allow-partial could publish.
-		const publicationBlockers = partialPublicationBlockers(coverage, attempts);
-		if (!partial || publicationBlockers.length > 0)
-			return { coverage, ...(publicationBlockers.length > 0 ? { publicationBlockers } : {}) };
+		const { blockers, withheld } = publicationGates(plan, coverage, attempts);
+		const gates = {
+			...(blockers.length > 0 ? { publicationBlockers: blockers } : {}),
+			...(withheld.length > 0 ? { withheldProviders: withheld } : {}),
+		};
+		if (!partial || blockers.length > 0) return { coverage, ...gates };
+		return {
+			...renderExperiment(plan, attempts, coverage, partial, undefined, [], withheld),
+			...gates,
+		};
 	}
 	return renderExperiment(plan, attempts, coverage, partial);
 }
@@ -644,11 +732,20 @@ export function aggregateExperiment(
 function renderExperiment(
 	plan: ExperimentPlan,
 	attempts: readonly AttemptWithRun[],
-	coverage: CoverageReport,
+	verifiedCoverage: CoverageReport,
 	partial: boolean,
 	repair?: ExperimentRepair,
 	unstartedBatches: readonly UnstartedBatch[] = [],
+	withheld: readonly WithheldProvider[] = [],
 ): ExperimentAggregation {
+	if (!partial && withheld.length > 0)
+		throw new Error("only partial publication can withhold a provider's measurements");
+	const coverage = withholdCoverage(plan, verifiedCoverage, withheld);
+	const withheldProviders = new Set(withheld.map((entry) => entry.provider));
+	const isWithheld = (attempt: AttemptWithRun) =>
+		withheldProviders.has(
+			plan.cells.find((entry) => entry.id === attempt.evidence.cellId)?.provider ?? "",
+		);
 	const selectedIds = partial
 		? coverage.cells.flatMap((cell) => (cell.attemptId ? [cell.attemptId] : []))
 		: coverage.selectedAttempts;
@@ -657,7 +754,9 @@ function renderExperiment(
 		.filter(({ evidence }) => selected.has(evidence.id))
 		.toSorted((a, b) => a.evidence.cellId.localeCompare(b.evidence.cellId));
 	const runs = selectedAttempts
-		.filter((attempt) => !(partial && isUnallocatedFailureWithoutRun(attempt)))
+		.filter(
+			(attempt) => !(partial && (isUnallocatedFailureWithoutRun(attempt) || isWithheld(attempt))),
+		)
 		.map(({ run, evidence }) => {
 			if (!run || Number(run.schemaVersion) < 6)
 				throw new Error("experiment publication requires artifact-attributed shards");
@@ -711,15 +810,11 @@ function renderExperiment(
 			};
 		});
 	const merged = aggregateRuns(runs);
-	// Preserve failures that never produced a Run in the published coverage and provider gaps,
-	// without fabricating a historical shard or contributing any numerical observations.
-	for (const attempt of selectedAttempts.filter(isUnallocatedFailureWithoutRun)) {
-		const cell = plan.cells.find((entry) => entry.id === attempt.evidence.cellId);
-		if (!cell) throw new Error(`attempt cell missing from plan: ${attempt.evidence.cellId}`);
-		let provider = merged.providers.find((entry) => entry.providerId === cell.provider);
+	const providerEntry = (providerId: string) => {
+		let provider = merged.providers.find((entry) => entry.providerId === providerId);
 		if (!provider) {
 			provider = {
-				providerId: cell.provider,
+				providerId,
 				validationStatus: "pending",
 				observedSpecs: {},
 				metrics: [],
@@ -731,12 +826,33 @@ function renderExperiment(
 			};
 			merged.providers.push(provider);
 		}
-		provider.gaps.push({
+		return provider;
+	};
+	// Preserve failures that never produced a Run in the published coverage and provider gaps,
+	// without fabricating a historical shard or contributing any numerical observations.
+	for (const attempt of selectedAttempts.filter(
+		(entry) => isUnallocatedFailureWithoutRun(entry) && !isWithheld(entry),
+	)) {
+		const cell = plan.cells.find((entry) => entry.id === attempt.evidence.cellId);
+		if (!cell) throw new Error(`attempt cell missing from plan: ${attempt.evidence.cellId}`);
+		providerEntry(cell.provider).gaps.push({
 			scope: "suite",
 			id: cell.suite,
 			outcome: "failed",
 			reason: `${cell.id}: ${attempt.evidence.diagnostic ?? "Admission failed before allocation; no measurements were produced."}`,
 		});
+	}
+	// A withheld provider publishes no measurement at all: one gap per planned suite says why, so the
+	// board shows the provider as withheld rather than silently absent or scored on a subset.
+	for (const { provider, reasons } of withheld) {
+		const shown = reasons.slice(0, 5).join("; ");
+		const reason = `Publication withheld for ${provider}: ${shown}${reasons.length > 5 ? `; and ${reasons.length - 5} more` : ""}`;
+		const suites = [
+			...new Set(plan.cells.filter((c) => c.provider === provider).map((c) => c.suite)),
+		];
+		const entry = providerEntry(provider);
+		for (const suite of suites.toSorted())
+			entry.gaps.push({ scope: "suite", id: suite, outcome: "failed", reason });
 	}
 	merged.providers.sort((a, b) => a.providerId.localeCompare(b.providerId));
 	const cohorts = [
@@ -940,11 +1056,15 @@ export function repairableCoverage(
 	attempts: readonly AttemptWithRun[],
 ): CoverageReport {
 	const result = aggregateExperiment(plan, attempts, { allowPartial: true });
-	const blockers = (result.publicationBlockers ?? []).filter(
-		(b) => !b.startsWith("missing attempts:") && b !== "no verified measurements",
-	);
+	// Repair still requires every original allocation resolved: a provider-scoped withholding that
+	// publication tolerates (unresolved cleanup, missing Run or raw digest) blocks a repair, whose
+	// replacements would otherwise run beside an allocation nobody has confirmed gone.
+	const blockers = [
+		...(result.publicationBlockers ?? []),
+		...(result.withheldProviders ?? []).flatMap((entry) => entry.reasons),
+	].filter((b) => !b.startsWith("missing attempts:") && b !== "no verified measurements");
 	if (blockers.length) throw new Error(`repair blocked: ${blockers.join("; ")}`);
-	return result.coverage;
+	return evaluateExperiment(plan, attempts);
 }
 
 /** Reject lost executor evidence; only a verified failed Vercel prerequisite qualifies. */
@@ -1060,21 +1180,17 @@ export function aggregateRepairedExperiment(
 	);
 	const result = aggregateExperiment(recovery, replacements, { allowPartial: true });
 	// No verified recovery metric is okay when every replacement failed; original successes may remain.
+	// Replacement evidence gaps are provider-scoped like any other; the final gates below withhold
+	// them over the merged coverage. Only experiment-wide blockers stop a repair here.
 	const blockers = (result.publicationBlockers ?? []).filter(
-		(b) =>
-			b !== "no verified measurements" &&
-			!(
-				b.startsWith("missing attempts:") &&
-				result.coverage.cells
-					.filter((c) => c.status === "missing")
-					.every((c) => unstarted.cells.has(c.id))
-			),
+		(b) => b !== "no verified measurements",
 	);
-	if (blockers.length) return { ...result, run: undefined, publicationBlockers: blockers };
+	if (blockers.length) return { coverage: result.coverage, publicationBlockers: blockers };
 	const replaced = new Set(repair.cells.map((c) => c.id));
+	const recoveryCoverage = evaluateExperiment(recovery, replacements);
 	const cells = originalCoverage.cells.map((c) => {
 		if (!replaced.has(c.id)) return c;
-		const replacement = result.coverage.cells.find((n) => n.id === c.id);
+		const replacement = recoveryCoverage.cells.find((n) => n.id === c.id);
 		if (!replacement) throw new Error(`recovery coverage missing cell: ${c.id}`);
 		return replacement;
 	});
@@ -1088,15 +1204,25 @@ export function aggregateRepairedExperiment(
 		complete: cells.every((c) => ["complete", "excluded"].includes(c.status)),
 	};
 	const selected = [...originals.filter((a) => !replaced.has(a.evidence.cellId)), ...replacements];
-	const finalBlockers = partialPublicationBlockers(coverage, selected, unstarted.cells);
+	const { blockers: finalBlockers, withheld } = coverage.complete
+		? { blockers: [], withheld: [] }
+		: publicationGates(source, coverage, selected, unstarted.cells);
+	const gates = {
+		...(finalBlockers.length > 0 ? { publicationBlockers: finalBlockers } : {}),
+		...(withheld.length > 0 ? { withheldProviders: withheld } : {}),
+	};
 	if (finalBlockers.length || (!coverage.complete && !options.allowPartial))
-		return { coverage, publicationBlockers: finalBlockers };
-	return renderExperiment(
-		source,
-		selected,
-		coverage,
-		!coverage.complete,
-		repair,
-		unstarted.receipts,
-	);
+		return { coverage, ...gates };
+	return {
+		...renderExperiment(
+			source,
+			selected,
+			coverage,
+			!coverage.complete,
+			repair,
+			unstarted.receipts,
+			withheld,
+		),
+		...gates,
+	};
 }

@@ -58,8 +58,13 @@ bun apps/cli/src/bin/promote.ts candidate/runs/RUN_ID.json data/dataset plan.jso
 
 Run v8 preserves every planned cell and its shortfalls under `experiment.partial`, marks the dataset
 partial and makes the leaderboard show an incomplete-results banner. The option does not bypass
-raw evidence, provenance, fixed trial counts or resolved cleanup. See
+raw evidence, provenance or fixed trial counts. See
 [ADR-0012](../../docs/adr/0012-explicit-partial-publication.md).
+
+Evidence gaps are scoped to their provider ([ADR-0026](../../docs/adr/0026-provider-scoped-publication-gates.md)).
+Unresolved cleanup, a missing Run or raw digest, or missing attempts withhold that provider's
+measurements: it publishes as a gap with the reason, and `aggregate-experiment` warns about it.
+Every other provider still publishes. Conflicting evidence still blocks the whole experiment.
 
 In CI the same opt-in is the `allow_partial` input of the `commit-dataset` workflow (backfill a
 run with **Actions → Commit dataset → Run workflow**, or `scripts/backfill-dataset.sh <run-id>
@@ -71,7 +76,7 @@ Standalone backfills and CLI commands remain strict by default. See
 
 ### Post-run cleanup recovery
 
-When an otherwise retained experiment is blocked by unresolved cleanup, stop local account writers
+When a provider is withheld for unresolved cleanup (its account admission also stays fenced), stop local account writers
 and use `recover-experiment-cleanup --exclusive-account <plan.json> <attempts-root>
 <original-attempt-directory>` with provider credentials, `GITHUB_REPOSITORY`, journal-write `GH_TOKEN`
 and `GITHUB_ACTOR`. The command requires a completed source workflow and checks workflow quiescence

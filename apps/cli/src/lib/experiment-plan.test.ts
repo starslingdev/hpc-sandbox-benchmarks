@@ -929,7 +929,10 @@ test("missing replacement artifacts, stale originals and forged binding block re
 		allowPartial: true,
 	});
 	expect(missing.run).toBeUndefined();
-	expect(missing.publicationBlockers).toContain("missing attempts: 1 cell(s)");
+	expect(missing.withheldProviders?.flatMap((entry) => entry.reasons)).toContain(
+		"missing attempts: 1 cell(s)",
+	);
+	expect(missing.publicationBlockers).toContain("no verified measurements");
 	const forged = { ...repair, reason: "changed after approval" };
 	expect(() =>
 		aggregateRepairedExperiment(plan(), [original], recovery, [replacementFor(recovery)], forged),
@@ -1203,11 +1206,23 @@ test("verified authentication failure publishes partial repair with missing cell
 			unstartedBatches: receipts,
 		}).run,
 	).toBeUndefined();
+	// Without verified unstarted receipts the missing replacements are unexplained: Vercel is
+	// withheld as a whole and published only as a gap, while the verified original still publishes.
+	const unexplained = aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {
+		allowPartial: true,
+	});
+	expect(unexplained.withheldProviders).toEqual([
+		{ provider: "vercel", reasons: ["missing attempts: 1 cell(s)"] },
+	]);
+	expect(unexplained.run?.experiment?.unstartedBatches).toBeUndefined();
+	expect(unexplained.run?.experiment?.attemptIds).toEqual([f.good.evidence.id]);
 	expect(
-		aggregateRepairedExperiment(f.source, [f.good], f.recovery, [], f.repair, {
-			allowPartial: true,
-		}).run,
-	).toBeUndefined();
+		unexplained.run?.providers.find((p) => p.providerId === "vercel")?.gaps.at(-1)?.reason,
+	).toStartWith("Publication withheld for vercel: missing attempts");
+	if (!unexplained.run) throw new Error("withheld fixture Run");
+	expect(renderLeaderboardMarkdown(buildLeaderboard(unexplained.run), [])).toContain(
+		"Publication withheld for vercel",
+	);
 	const unrelated = unstartedFixture(true);
 	expect(
 		aggregateRepairedExperiment(
