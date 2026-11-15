@@ -301,12 +301,14 @@ export function daytonaVendor(
 type V2Sandbox = import("@daytona/sdk/v2").Sandbox;
 
 /**
- * daytona-vm's create shape: a 2-core / 0.5 GiB guarantee bursting to a 4-core / 8 GiB ceiling,
- * pinned to Zen 5. The guarantee is the billing floor the cost hook prices against.
+ * daytona-vm's create shape: a 2-core guarantee bursting to a 4-core ceiling, 8 GiB, pinned to Zen 5.
+ * The guarantee is the billing floor the cost hook prices against. Memory is reserved at the ceiling:
+ * the VM boots with about the guarantee + 1 GiB as MemTotal and hotplugs the rest too slowly, so a
+ * 0.5 GiB guarantee had STREAM's first trial global-OOM-killed at 3 GB RSS (run 43769189560).
  */
 export const DAYTONA_V2_BURST = {
 	cpuType: "zen5",
-	resources: { cpu: 2, cpuMax: 4, memory: 0.5, memoryMax: 8, disk: 40 },
+	resources: { cpu: 2, cpuMax: 4, memory: 8, memoryMax: 8, disk: 40 },
 } as const satisfies CreateSandboxOptions;
 /** The v2 client surface the VM adapter translates (`new Daytona(...).v2`). */
 export type DaytonaV2 = Pick<
