@@ -69,7 +69,16 @@ function recordOf(
 	};
 }
 
-const http = httpClassifiers(httpStatus(CreateosSandboxApiError, (error) => error.statusCode));
+const statusOf = httpStatus(CreateosSandboxApiError, (error) => error.statusCode);
+const http = httpClassifiers(statusOf);
+/**
+ * The SDK's own contract (`isRetryableStatus` in its http client): 429 and 503 mean the server
+ * explicitly did not process the request, for any method. So a create answered 503 allocated
+ * nothing — a retryable refusal, not an ambiguous create. Left ambiguous, it had no allocation
+ * verdict (CreateOS cannot prove absence by lookup) and fenced the account (CPU run 43646674451).
+ */
+const refused = (error: unknown) =>
+	http.refused(error) ?? (statusOf(error) === 503 ? { retryable: true } : undefined);
 const network = instanceOfAny(CreateosSandboxConnectionError, CreateosSandboxTimeoutError);
 
 async function exec(
@@ -103,7 +112,9 @@ export function createosVendor(client: CreateosSandboxClient): Vendor<SandboxVie
 						envs: { [CREATEOS_MARKER.toVendor(marker)]: marker },
 						egress: ["*"],
 					},
-					{ signal, timeoutMs: BOOT_TIMEOUT_MS, retry: false },
+					// The client's retry policy applies: the SDK retries a POST only on 429/503 (never on a
+					// network error), the statuses its server guarantees it did not process.
+					{ signal, timeoutMs: BOOT_TIMEOUT_MS },
 				);
 				// The create response omits `envs`, so the marker is stated rather than read back.
 				return recordOf(sandbox.data, marker);
@@ -122,7 +133,7 @@ export function createosVendor(client: CreateosSandboxClient): Vendor<SandboxVie
 				records: (await client.listSandboxes({ signal })).map((sandbox) => recordOf(sandbox.data)),
 			}),
 			absent: http.absent,
-			refused: http.refused,
+			refused,
 			transient: (error) => network(error) || http.transient(error),
 		},
 		data: {

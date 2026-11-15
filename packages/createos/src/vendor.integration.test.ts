@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import type { SandboxView } from "@nodeops-createos/sandbox";
+import type { RetryOptions, SandboxView } from "@nodeops-createos/sandbox";
 import { CreateosSandboxClient } from "@nodeops-createos/sandbox";
+import { isFailedCreateCleanupError } from "@sandbox-benchmarks/driver";
 import {
 	restStub,
 	testContext,
@@ -15,10 +16,24 @@ const request = { spec: TARGET_SPEC, artifact: { kind: "none" }, deadlineMs: 300
 const missing = () => Response.json({ error: "not found" }, { status: 404 });
 const ok = (data: unknown) => Response.json({ status: "success", data });
 
-function account(preflight: { exit_code: number; error?: string } = { exit_code: 0 }) {
+const unavailable = () => Response.json({ error: "service unavailable" }, { status: 503 });
+
+function account(
+	preflight: { exit_code: number; error?: string } = { exit_code: 0 },
+	options: {
+		/** Creates answered 503 before the account accepts one (Infinity: never). */
+		readonly unavailableCreates?: number;
+		readonly retry?: RetryOptions;
+	} = {},
+) {
+	let unavailable503 = options.unavailableCreates ?? 0;
 	const stub = restStub<SandboxView>(
 		{
 			"POST /v1/sandboxes": ({ body, add }) => {
+				if (unavailable503 > 0) {
+					unavailable503 -= 1;
+					return unavailable();
+				}
 				const row = add({
 					name: body.name,
 					envs: Object.keys(body.envs),
@@ -60,7 +75,7 @@ function account(preflight: { exit_code: number; error?: string } = { exit_code:
 			apiKey: "test",
 			baseUrl: "https://createos.invalid",
 			fetch: stub.fetch,
-			retry: false,
+			retry: options.retry ?? false,
 		}),
 	);
 	const driver = vendorDriver(createos, testContext("createos"), {
@@ -100,4 +115,28 @@ test.each([
 	await expect(a.driver.create(request)).rejects.toThrow("python preflight failed");
 	expect(a.calls.filter((call) => call.method === "DELETE")).toHaveLength(1);
 	expect([...a.rows.values()].every((row) => row.status === "destroyed")).toBe(true);
+});
+
+test("a create answered 503 is a refusal that allocated nothing, never an unresolved create", async () => {
+	const a = account(undefined, { unavailableCreates: Number.POSITIVE_INFINITY });
+	const failure = await a.driver.create(request).catch((error: unknown) => error);
+	expect(failure).toBeInstanceOf(Error);
+	// An ambiguous create would surface as a failed-create cleanup with no allocation verdict.
+	expect(isFailedCreateCleanupError(failure)).toBe(false);
+	expect(String(failure)).not.toContain("no allocation verdict");
+	expect(a.rows.size).toBe(0);
+	expect(await a.driver.inventory?.list()).toEqual({ owned: [], foreignCount: 0 });
+});
+
+test("the SDK retries a create answered 503 and the account allocates exactly once", async () => {
+	const a = account(undefined, {
+		unavailableCreates: 1,
+		retry: { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 1 },
+	});
+	const session = await a.driver.create(request);
+	expect(
+		a.calls.filter((call) => call.method === "POST" && call.path === "/v1/sandboxes"),
+	).toHaveLength(2);
+	expect(a.rows.size).toBe(1);
+	await session.destroy();
 });
