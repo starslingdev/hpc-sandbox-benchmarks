@@ -39,10 +39,11 @@ export default defineVendorDriver("createos", {
 	recovery: { provesAbsence: false },
 	vendor: ({ env }) =>
 		createosVendor(
-			// Create opts out per request: a retried POST must not obscure whether an earlier attempt
-			// allocated a VM. Every other call keeps the SDK's retry, which repeats a non-idempotent
-			// request only on 429/503 (the server says it did not process it) and honors Retry-After.
-			// Run 43646674451 lost exec, launch and destroy calls to bare 429s when this was off.
+			// Every call, create included, uses the SDK's retry: it repeats a non-idempotent request
+			// only on 429/503 (the server says it did not process it, so no VM was allocated) and
+			// honors Retry-After; it never retries a POST on a network error, which stays ambiguous.
+			// Run 43646674451 lost exec, launch and destroy calls to bare 429s when this was off, and a
+			// single create 503 fenced the account.
 			new CreateosSandboxClient({
 				apiKey: env.CREATEOS_API_KEY,
 				timeoutMs: 30_000,
