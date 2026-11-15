@@ -191,7 +191,7 @@ describe("Modal benchmark resource configuration", () => {
 	it.each([
 		"modal-gvisor",
 		"modal-vm",
-	] as const)("%s permits CPU bursting and uses the default memory request", async (provider) => {
+	] as const)("%s permits CPU bursting and requests its runtime's memory floor", async (provider) => {
 		const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
 		const app = new App("ap-prepared", MODAL_APP_NAME);
 		const image = new Image(client, "im-prepared", "");
@@ -244,7 +244,8 @@ describe("Modal benchmark resource configuration", () => {
 					resources: {
 						milliCpu: 4000,
 						milliCpuMax: 0,
-						memoryMb: 128,
+						// A VM boots with about its request as MemTotal, so it reserves the ceiling.
+						memoryMb: provider === "modal-vm" ? 8192 : 128,
 						memoryMbMax: 8192,
 					},
 					runtime: provider === "modal-vm" ? "vm" : "gvisor",
