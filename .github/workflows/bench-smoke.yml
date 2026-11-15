@@ -64,8 +64,11 @@ on:
 permissions:
   contents: read
 
+# Per run: repeated dispatches never queue behind each other here. Sandbox work on one vendor account
+# is still serialized by bench-suite's `benchmark-account-<domain>` job group, because each batch
+# reconciles (tears down) every benchmark sandbox it finds on the account at admission.
 concurrency:
-  group: bench-smoke-${{ github.ref }}-${{ inputs.provider }}-${{ inputs.suite }}
+  group: bench-smoke-${{ github.ref }}-${{ inputs.provider }}-${{ inputs.suite }}-${{ github.run_id }}
   cancel-in-progress: false
   queue: max
 
