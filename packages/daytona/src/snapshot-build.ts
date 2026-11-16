@@ -9,6 +9,7 @@ import type { RootOnlyConfigV0 as DaytonaConfig, SandboxClass } from "@daytona/s
 import type { EnvOf } from "@sandbox-benchmarks/driver";
 import type { BuildCommandRunner, OciArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
 import { defineArtifactBuilder, runBuildCommand } from "@sandbox-benchmarks/driver/artifact";
+import { DAYTONA_CONTAINER_DISK_GB } from "./container-disk.ts";
 import type { DaytonaId } from "./shared.ts";
 
 type Log = (line: string) => void;
@@ -414,8 +415,8 @@ export function daytonaArtifactBuilder<P extends DaytonaId>(
 
 		const deleted = await deleteExistingSnapshots(daytona, name, request.replace, sleep, log);
 		try {
-			// Containers in this org reject disk above 10GB (toolchain bake 43780173359).
-			const diskGb = variant.sandboxClass === "container" ? 10 : spec.diskGb;
+			// Containers in this org reject disk above DAYTONA_CONTAINER_DISK_GB (toolchain bake 43780173359).
+			const diskGb = variant.sandboxClass === "container" ? DAYTONA_CONTAINER_DISK_GB : spec.diskGb;
 			const params = {
 				name,
 				image: transientRef,

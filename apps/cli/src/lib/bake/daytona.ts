@@ -341,7 +341,9 @@ export async function bakeDaytonaSnapshot(
 ): Promise<void> {
 	const { targetSpec } = config;
 	// Containers in this org reject disk above 10GB ("Disk request 40GB exceeds maximum allowed
-	// per sandbox (10GB)", toolchain bake 43780173359). VM snapshots keep the 40GB target spec.
+	// per sandbox (10GB)", toolchain bake 43780173359). Must match DAYTONA_CONTAINER_DISK_GB in
+	// packages/daytona/src/container-disk.ts (cli does not depend on that package directly).
+	// VM snapshots keep the 40GB target spec.
 	const diskGb = opts.sandboxClass === SandboxClass.CONTAINER ? 10 : targetSpec.diskGb;
 	const apiKey = opts.apiKey;
 	if (!apiKey) throw new Error("DAYTONA_API_KEY is required to bake a Daytona snapshot");

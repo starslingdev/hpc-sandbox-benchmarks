@@ -26,6 +26,7 @@ import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import { instanceOfAny, isMintedMarker } from "@sandbox-benchmarks/driver/vendor";
 import { type } from "arktype";
+import { DAYTONA_CONTAINER_DISK_GB } from "./container-disk.ts";
 
 export type DaytonaId = "daytona-vm" | "daytona-container";
 /** v0 ids are UUIDs; v2 ids are `sbx_<id>-<region>`. */
@@ -234,11 +235,14 @@ export function daytonaVendor(
 						status: "unsupported",
 						detail: "Daytona snapshot resources differ from the requested CPU or memory",
 					};
-				return spec.diskGb === undefined || native.disk >= spec.diskGb
+				// Container-class disk is this org's 10 GiB ceiling, not TARGET_SPEC.diskGb (40).
+				const requiredDiskGb =
+					sandboxClass === "container" ? DAYTONA_CONTAINER_DISK_GB : spec.diskGb;
+				return requiredDiskGb === undefined || native.disk >= requiredDiskGb
 					? { status: "honored" }
 					: {
 							status: "unsupported",
-							detail: `requested ${spec.diskGb} GiB but snapshot allocates ${native.disk} GiB`,
+							detail: `requested ${requiredDiskGb} GiB but snapshot allocates ${native.disk} GiB`,
 						};
 			},
 			exec: (native, command, options) => commands.exec(native, command, options),
