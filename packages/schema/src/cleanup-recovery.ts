@@ -50,7 +50,8 @@ export type CleanupRecovery = typeof cleanupRecoverySchema.infer;
 // Reviewed nativeModalCompute revision: preparation failed AFTER create returned in this App.
 export const MODAL_CREATED_REQUEST_REVISION = "845a0f19b3aa3bda32f0ec988c1d1c188c9e260f";
 
-// Reviewed run.cloud revision: a unique name and idempotency key were chosen before POST.
+// Historical reviewed run.cloud revision: a unique name and idempotency key were chosen before POST.
+// Later revisions are recovered when they emit the same named ambiguous-create diagnostic contract.
 export const RUNCLOUD_AMBIGUOUS_CREATE_REVISION = "f571eec3dc1378680f223a365d586f61a4fc6658";
 
 /** Provenance every account-journal record carries: the owning account and the frozen attempt. */

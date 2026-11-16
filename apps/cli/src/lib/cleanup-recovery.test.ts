@@ -342,7 +342,16 @@ test("publication re-verifies the reviewed Runcloud source and exact diagnostic 
 	const recovery = await recoverExperimentCleanup(f.options);
 	const attempt = readExperimentAttempt(f.directory);
 	expect(() => verifyCleanupRecovery(f.plan, attempt)).not.toThrow();
-	expect(runcloudAmbiguousCreateName({ ...f.plan, sha: "b".repeat(40) }, attempt)).toBeUndefined();
+	expect(
+		runcloudAmbiguousCreateName(
+			{ ...f.plan, sha: "b".repeat(40) },
+			{ ...attempt, evidence: { ...attempt.evidence, sha: "b".repeat(40) } },
+		),
+	).toBe(
+		recovery.observation.kind === "runcloud-named-sandbox"
+			? recovery.observation.sandboxName
+			: undefined,
+	);
 	expect(() =>
 		verifyCleanupRecovery(f.plan, {
 			...attempt,
