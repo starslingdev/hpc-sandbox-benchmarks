@@ -6,13 +6,7 @@ import { Daytona } from "@daytona/sdk";
 import { RootOnlyClientV0 } from "@daytona/sdk/v0";
 import type { DriverContext } from "@sandbox-benchmarks/driver";
 import type { Vendor } from "@sandbox-benchmarks/driver/vendor";
-import {
-	coverage,
-	defineVendorDriver,
-	pinned,
-	VERBATIM_MARKER,
-} from "@sandbox-benchmarks/driver/vendor";
-import { DAYTONA_CONTAINER_DISK_GB } from "./container-disk.ts";
+import { defineVendorDriver, pinned, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
 import { daytonaCostEvidence } from "./cost.ts";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
@@ -30,14 +24,14 @@ export { DAYTONA_SANDBOX_ID };
 function defineDaytonaDriver<P extends DaytonaId, Raw, Native>(
 	id: P,
 	vendor: (context: DriverContext<P>) => Vendor<Raw, Native>,
-	driverCoverage: ReturnType<typeof pinned> = pinned(4, 8),
 ) {
 	return defineVendorDriver(id, {
 		provenance: DAYTONA_PROVENANCE,
 		sandboxId: DAYTONA_SANDBOX_ID,
 		// The cell's CPU and memory (v2: guarantee and ceiling at create; v0: the snapshot); `prepare` proves them.
-		// daytona-container also pins disk at the org's 10 GiB ceiling (not TARGET_SPEC 40).
-		coverage: driverCoverage,
+		// Disk is reported, not requested: daytona-container's snapshot is this org's 10 GiB ceiling,
+		// not TARGET_SPEC.diskGb (40). v0 prepare() honors that ceiling; observed disk is recorded.
+		coverage: pinned(4, 8),
 		diskProof: "reported",
 		// Daytona returns HTTP 408 on a multi-minute synchronous executeCommand while the process
 		// keeps running (docs/evidence/daytona-exec-transport.md). The threshold is unmeasured, so
@@ -70,22 +64,15 @@ export const defineDaytonaVmDriver = () =>
 
 /** v2 has no container class, so daytona-container stays on the v0 control plane. */
 export const defineDaytonaContainerDriver = () =>
-	defineDaytonaDriver(
-		"daytona-container",
-		({ env, resolvedArtifact }) =>
-			daytonaVendor(
-				{ resolvedArtifact },
-				"container",
-				new RootOnlyClientV0({
-					apiKey: env.DAYTONA_API_KEY,
-					apiUrl: "https://app.daytona.io/api",
-					target: env.DAYTONA_CONTAINER_TARGET,
-					requestTimeoutMs: DAYTONA_CONTROL_TIMEOUT_MS,
-				}),
-			),
-		coverage({
-			vcpus: { artifact: 4 },
-			memoryGb: { artifact: 8 },
-			diskGb: { artifact: DAYTONA_CONTAINER_DISK_GB },
-		}),
+	defineDaytonaDriver("daytona-container", ({ env, resolvedArtifact }) =>
+		daytonaVendor(
+			{ resolvedArtifact },
+			"container",
+			new RootOnlyClientV0({
+				apiKey: env.DAYTONA_API_KEY,
+				apiUrl: "https://app.daytona.io/api",
+				target: env.DAYTONA_CONTAINER_TARGET,
+				requestTimeoutMs: DAYTONA_CONTROL_TIMEOUT_MS,
+			}),
+		),
 	);
