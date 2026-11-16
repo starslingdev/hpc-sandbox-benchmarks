@@ -76,11 +76,11 @@ const artifactEvidence = (
 	sandboxId: string,
 	suite: SuiteName = "cpu-node",
 ): ProviderArtifactEvidence => ({
-	cell: { runId: "run-1", providerId: "daytona-vm", suite, replicateIndex },
+	cell: { runId: "run-1", providerId: "e2b", suite, replicateIndex },
 	sandboxId,
 	provenance: {
 		source: "request-fallback",
-		requested: { kind: "baked", ref: bakedArtifactName("daytona-vm", "version") },
+		requested: { kind: "baked", ref: bakedArtifactName("e2b", "version") },
 	},
 });
 
@@ -89,7 +89,7 @@ function attributedShard(
 	sandboxId: string,
 	overrides: Partial<ProviderRun> = {},
 ): Run {
-	const entry = provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+	const entry = provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]);
 	entry.costEvidence = [];
 	entry.artifactEvidence = [artifactEvidence(replicateIndex, sandboxId)];
 	Object.assign(entry, overrides);
@@ -112,7 +112,7 @@ describe("aggregateRuns", () => {
 		const unknown = metric("node_web_tooling_runs_per_s", [12]);
 		const merged = aggregateRuns(
 			[raw, headline, unknown].map((entry, index) =>
-				shard([provider("daytona-vm", [entry])], undefined, index),
+				shard([provider("e2b", [entry])], undefined, index),
 			),
 		);
 		const entry = merged.providers[0]?.metrics.find((value) => value.metricId === raw.metricId);
@@ -156,10 +156,7 @@ describe("aggregateRuns", () => {
 		const reused = attributedShard(1, "sb-0");
 		expect(() => aggregateRuns([one, reused])).toThrow(/artifact sandbox sb-0 is reused/);
 		expect(() =>
-			aggregateRuns([
-				one,
-				shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [11])])]),
-			]),
+			aggregateRuns([one, shard([provider("e2b", [metric("node_web_tooling_runs_per_s", [11])])])]),
 		).toThrow(/cannot mix v6 artifact-attributed shards with older shards/);
 	});
 
@@ -196,13 +193,11 @@ describe("aggregateRuns", () => {
 		).toThrow(/reused across cells/);
 	});
 	it("unions a provider's measured metrics across per-suite shards", () => {
-		const cpuShard = shard([
-			provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10, 11])]),
-		]);
-		const sysShard = shard([provider("daytona-vm", [metric("pybench_milliseconds", [900, 910])])]);
+		const cpuShard = shard([provider("e2b", [metric("node_web_tooling_runs_per_s", [10, 11])])]);
+		const sysShard = shard([provider("e2b", [metric("pybench_milliseconds", [900, 910])])]);
 
 		const merged = aggregateRuns([cpuShard, sysShard]);
-		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = merged.providers.find((p) => p.providerId === "e2b");
 		const ids = daytona?.metrics.map((m) => m.metricId) ?? [];
 		expect(ids).toContain("node_web_tooling_runs_per_s");
 		expect(ids).toContain("pybench_milliseconds");
@@ -211,19 +206,19 @@ describe("aggregateRuns", () => {
 
 	it("folds ≥2 replicate shards of one suite into a replicate breakdown with pooled samples", () => {
 		const r0 = shard(
-			[provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10, 11])])],
+			[provider("e2b", [metric("node_web_tooling_runs_per_s", [10, 11])])],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
 		const r1 = shard(
-			[provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [20, 21])])],
+			[provider("e2b", [metric("node_web_tooling_runs_per_s", [20, 21])])],
 			"2026-06-01T00:00:00.000Z",
 			1,
 		);
 
 		const merged = aggregateRuns([r0, r1]);
 		const node = merged.providers
-			.find((p) => p.providerId === "daytona-vm")
+			.find((p) => p.providerId === "e2b")
 			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		// Two replicates, indexed and ordered; the pooled samples are their union; aggregates recomputed.
 		expect(node?.replicates).toEqual([
@@ -238,12 +233,12 @@ describe("aggregateRuns", () => {
 
 	it("keeps a single-replicate metric verbatim — no replicates field at R = 1", () => {
 		const only = shard(
-			[provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10, 11])])],
+			[provider("e2b", [metric("node_web_tooling_runs_per_s", [10, 11])])],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
 		const node = aggregateRuns([only])
-			.providers.find((p) => p.providerId === "daytona-vm")
+			.providers.find((p) => p.providerId === "e2b")
 			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		expect(node?.replicates).toBeUndefined();
 		expect(node?.samples).toEqual([10, 11]);
@@ -253,17 +248,17 @@ describe("aggregateRuns", () => {
 		// Same replicate index, same metric id, divergent samples — a contaminated composite, not a
 		// second sandbox. Keep the first and never build a replicate breakdown from it.
 		const a = shard(
-			[provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10, 11])])],
+			[provider("e2b", [metric("node_web_tooling_runs_per_s", [10, 11])])],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
 		const b = shard(
-			[provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [99, 99])])],
+			[provider("e2b", [metric("node_web_tooling_runs_per_s", [99, 99])])],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
 		const node = aggregateRuns([a, b])
-			.providers.find((p) => p.providerId === "daytona-vm")
+			.providers.find((p) => p.providerId === "e2b")
 			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		expect(node?.replicates).toBeUndefined();
 		expect(node?.samples).toEqual([10, 11]);
@@ -271,15 +266,15 @@ describe("aggregateRuns", () => {
 
 	it("merges different providers' shards into one Run", () => {
 		const a = shard([
-			provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+			provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]),
 			provider("e2b", []),
 		]);
 		const b = shard([
-			provider("daytona-vm", []),
+			provider("e2b", []),
 			provider("e2b", [metric("node_web_tooling_runs_per_s", [9])]),
 		]);
 		const merged = aggregateRuns([a, b]);
-		expect(merged.providers.find((p) => p.providerId === "daytona-vm")?.validationStatus).toBe(
+		expect(merged.providers.find((p) => p.providerId === "e2b")?.validationStatus).toBe(
 			"validated",
 		);
 		expect(merged.providers.find((p) => p.providerId === "e2b")?.validationStatus).toBe(
@@ -289,18 +284,18 @@ describe("aggregateRuns", () => {
 
 	it("RE-derives economics from the merged measured set (stale shard economics dropped)", () => {
 		const targetSpec = { vcpus: 2, memoryGb: 8, diskGb: 20 };
-		const hourly = hourlyCostAtTargetSpec(getProvider("daytona-vm"), targetSpec) ?? Number.NaN;
+		const hourly = hourlyCostAtTargetSpec(getProvider("e2b"), targetSpec) ?? Number.NaN;
 		// Shard carries a deliberately-wrong usd_per_hour; aggregate must recompute it from pricing.
 		const lifecycleShard = shard([
-			provider("daytona-vm", [
+			provider("e2b", [
 				metric(HARNESS_METRIC_IDS.spawn, [1000]),
 				metric(ECONOMICS_METRIC_IDS.usdPerHour, [999.99]),
 			]),
 		]);
-		const cpuShard = shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]);
+		const cpuShard = shard([provider("e2b", [metric("node_web_tooling_runs_per_s", [10])])]);
 
 		const merged = aggregateRuns([lifecycleShard, cpuShard]);
-		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = merged.providers.find((p) => p.providerId === "e2b");
 		const usdPerHour = daytona?.metrics.find((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerHour);
 		const usdPerLifecycle = daytona?.metrics.find(
 			(m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerLifecycle,
@@ -313,10 +308,10 @@ describe("aggregateRuns", () => {
 
 	it("re-derives economics against a historical 2-vCPU shard target", () => {
 		const merged = aggregateRuns([
-			shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]),
+			shard([provider("e2b", [metric("node_web_tooling_runs_per_s", [10])])]),
 		]);
 		const hourly = merged.providers
-			.find((entry) => entry.providerId === "daytona-vm")
+			.find((entry) => entry.providerId === "e2b")
 			?.metrics.find((entry) => entry.metricId === ECONOMICS_METRIC_IDS.usdPerHour);
 		expect(merged.targetSpec).toEqual({ vcpus: 2, memoryGb: 8, diskGb: 20 });
 		expect(hourly?.samples).toEqual([0.2304]);
@@ -348,13 +343,10 @@ describe("aggregateRuns", () => {
 	it("takes the latest generatedAt across shards", () => {
 		const merged = aggregateRuns([
 			shard(
-				[provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])],
+				[provider("e2b", [metric("node_web_tooling_runs_per_s", [10])])],
 				"2026-06-01T00:00:00.000Z",
 			),
-			shard(
-				[provider("daytona-vm", [metric("pybench_milliseconds", [900])])],
-				"2026-06-02T00:00:00.000Z",
-			),
+			shard([provider("e2b", [metric("pybench_milliseconds", [900])])], "2026-06-02T00:00:00.000Z"),
 		]);
 		expect(merged.generatedAt).toBe("2026-06-02T00:00:00.000Z");
 	});
@@ -364,17 +356,17 @@ describe("aggregateRuns", () => {
 		// sandboxes each covered, and nothing ever read it — the mixtures answer both.
 		const a = shard([
 			{
-				...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+				...provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]),
 				observedSpecs: { cpuModel: "AMD EPYC 9R14", cpuMicroarch: "Zen 4 (Genoa)" },
 			},
 		]);
 		const b = shard([
 			{
-				...provider("daytona-vm", [metric("pybench_milliseconds", [900])]),
+				...provider("e2b", [metric("pybench_milliseconds", [900])]),
 				observedSpecs: { cpuModel: "AMD EPYC 9R45", cpuMicroarch: "Zen 5 (Turin)" },
 			},
 		]);
-		const daytona = aggregateRuns([a, b]).providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = aggregateRuns([a, b]).providers.find((p) => p.providerId === "e2b");
 		// Sorted by name for the assertion only: both counts are 1, so the map's own order is the id
 		// tie-break, which is deliberately not alphabetical.
 		expect(
@@ -413,7 +405,7 @@ describe("aggregateRuns", () => {
 			shard(
 				[
 					{
-						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
 						observedSpecs: { ...specs, publicIp: ip },
 					},
 				],
@@ -426,7 +418,7 @@ describe("aggregateRuns", () => {
 			sandbox({ ...turin, ...ashburn }, 2, "203.0.113.3"),
 			sandbox({ ...genoa, ...frankfurt }, 3, "198.51.100.4"),
 		]);
-		const mixtures = merged.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures;
+		const mixtures = merged.providers.find((p) => p.providerId === "e2b")?.observedMixtures;
 
 		// The denominator, and the two counts — no inference required to read the heterogeneity off this.
 		expect(mixtures?.sandboxes).toBe(4);
@@ -450,7 +442,7 @@ describe("aggregateRuns", () => {
 			shard(
 				[
 					{
-						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
 						observedSpecs: specs,
 					},
 				],
@@ -460,7 +452,7 @@ describe("aggregateRuns", () => {
 		const forward = aggregateRuns([sandbox(0), sandbox(1)]);
 		const reversed = aggregateRuns([sandbox(1), sandbox(0)]);
 		const of = (run: typeof forward) =>
-			run.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures;
+			run.providers.find((p) => p.providerId === "e2b")?.observedMixtures;
 		// Byte-identical, so the committed dataset diff reflects real change rather than merge order — and
 		// an id can be compared across runs to ask "same machine shape as last week?".
 		expect(JSON.stringify(of(forward))).toBe(JSON.stringify(of(reversed)));
@@ -476,7 +468,7 @@ describe("aggregateRuns", () => {
 			shard(
 				[
 					{
-						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
 						observedSpecs: { cpuModel: "AMD EPYC 9R45" },
 					},
 					provider("daytona-container", []),
@@ -485,9 +477,9 @@ describe("aggregateRuns", () => {
 				index,
 			);
 		const merged = aggregateRuns([measured(0), measured(1)]);
-		expect(
-			merged.providers.find((p) => p.providerId === "daytona-vm")?.observedMixtures?.sandboxes,
-		).toBe(2);
+		expect(merged.providers.find((p) => p.providerId === "e2b")?.observedMixtures?.sandboxes).toBe(
+			2,
+		);
 		expect(
 			merged.providers.find((p) => p.providerId === "daytona-container")?.observedMixtures,
 		).toBeUndefined();
@@ -500,7 +492,7 @@ describe("aggregateRuns", () => {
 			shard(
 				[
 					{
-						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
 						observedSpecs: specs,
 					},
 				],
@@ -508,7 +500,7 @@ describe("aggregateRuns", () => {
 				index,
 			);
 		const merged = aggregateRuns([sandbox(genoa, 0), sandbox(xeon, 1), sandbox(genoa, 2)]);
-		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = merged.providers.find((p) => p.providerId === "e2b");
 		const replicates =
 			daytona?.metrics.find((m) => m.metricId === "pybench_milliseconds")?.replicates ?? [];
 		expect(replicates).toHaveLength(3);
@@ -539,7 +531,7 @@ describe("aggregateRuns", () => {
 		const cpu = shard(
 			[
 				{
-					...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+					...provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]),
 					observedSpecs: genoa,
 				},
 			],
@@ -549,14 +541,14 @@ describe("aggregateRuns", () => {
 		const sys = shard(
 			[
 				{
-					...provider("daytona-vm", [metric("pybench_milliseconds", [900])]),
+					...provider("e2b", [metric("pybench_milliseconds", [900])]),
 					observedSpecs: turin,
 				},
 			],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
-		const daytona = aggregateRuns([cpu, sys]).providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = aggregateRuns([cpu, sys]).providers.find((p) => p.providerId === "e2b");
 		const idFor = (metricId: string) =>
 			daytona?.metrics.find((m) => m.metricId === metricId)?.hostHardwareId;
 		const specsFor = (metricId: string) => {
@@ -578,7 +570,7 @@ describe("aggregateRuns", () => {
 		const r0 = shard(
 			[
 				{
-					...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+					...provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]),
 					observedSpecs: { cpuModel: "AMD EPYC 9R14" },
 				},
 			],
@@ -588,7 +580,7 @@ describe("aggregateRuns", () => {
 		const r1 = shard(
 			[
 				{
-					...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [20])]),
+					...provider("e2b", [metric("node_web_tooling_runs_per_s", [20])]),
 					observedSpecs: { cpuModel: "AMD EPYC 9R45" },
 				},
 			],
@@ -596,7 +588,7 @@ describe("aggregateRuns", () => {
 			1,
 		);
 		const node = aggregateRuns([r0, r1])
-			.providers.find((p) => p.providerId === "daytona-vm")
+			.providers.find((p) => p.providerId === "e2b")
 			?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		expect(node?.hostHardwareId).toBeUndefined();
 		expect(node?.replicates?.every((r) => r.hostHardwareId !== undefined)).toBe(true);
@@ -612,7 +604,7 @@ describe("aggregateRuns", () => {
 			shard(
 				[
 					{
-						...provider("daytona-vm", [metric(metricId, [900 + index])]),
+						...provider("e2b", [metric(metricId, [900 + index])]),
 						observedSpecs: specs,
 					},
 				],
@@ -625,7 +617,7 @@ describe("aggregateRuns", () => {
 			cell("node_web_tooling_runs_per_s", xeon, 0),
 			cell("node_web_tooling_runs_per_s", xeon, 1),
 		]);
-		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = merged.providers.find((p) => p.providerId === "e2b");
 		const hardware = daytona?.observedMixtures?.hostHardware ?? {};
 		const cpuOf = (metricId: string, index: number) => {
 			const id = daytona?.metrics
@@ -646,7 +638,7 @@ describe("aggregateRuns", () => {
 			shard(
 				[
 					{
-						...provider("daytona-vm", [metric("pybench_milliseconds", [900 + index])]),
+						...provider("e2b", [metric("pybench_milliseconds", [900 + index])]),
 						observedSpecs: specs,
 					},
 				],
@@ -660,7 +652,7 @@ describe("aggregateRuns", () => {
 			sandbox(common, 2),
 			sandbox(common, 3),
 		]);
-		const daytona = merged.providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = merged.providers.find((p) => p.providerId === "e2b");
 		expect(daytona?.observedSpecs.cpuModel).toBe("Intel Xeon Platinum 8358");
 		// Both machines stay fully disclosed; only the single-value summary moved.
 		expect(Object.keys(daytona?.observedMixtures?.hostHardware ?? {})).toHaveLength(2);
@@ -673,7 +665,7 @@ describe("aggregateRuns", () => {
 		const withGap = shard(
 			[
 				{
-					...provider("daytona-vm", []),
+					...provider("e2b", []),
 					gaps: [
 						{
 							scope: "suite" as const,
@@ -690,7 +682,7 @@ describe("aggregateRuns", () => {
 		const measured = shard(
 			[
 				{
-					...provider("daytona-vm", [metric("pybench_milliseconds", [900])]),
+					...provider("e2b", [metric("pybench_milliseconds", [900])]),
 					observedSpecs: { cpuModel: "AMD EPYC 9R45" },
 				},
 			],
@@ -698,7 +690,7 @@ describe("aggregateRuns", () => {
 			1,
 		);
 		const mixtures = aggregateRuns([withGap, measured]).providers.find(
-			(p) => p.providerId === "daytona-vm",
+			(p) => p.providerId === "e2b",
 		)?.observedMixtures;
 		expect(mixtures?.sandboxes).toBe(2);
 		// Two sandboxes, but only one disclosed hardware — the shortfall is readable from the counts.
@@ -721,13 +713,13 @@ describe("aggregateRuns", () => {
 		};
 		const a = shard([
 			{
-				...provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+				...provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]),
 				hostMetadata: [record],
 			},
 		]);
 		const b = shard([
 			{
-				...provider("daytona-vm", [metric("pybench_milliseconds", [900])]),
+				...provider("e2b", [metric("pybench_milliseconds", [900])]),
 				hostMetadata: [
 					record,
 					{
@@ -740,7 +732,7 @@ describe("aggregateRuns", () => {
 		]);
 
 		const metadata = aggregateRuns([a, b]).providers.find(
-			(p) => p.providerId === "daytona-vm",
+			(p) => p.providerId === "e2b",
 		)?.hostMetadata;
 		expect(metadata).toHaveLength(2);
 		expect(metadata?.map((m) => m.source)).toEqual([
@@ -752,7 +744,7 @@ describe("aggregateRuns", () => {
 	});
 
 	it("throws on shard identity/target mismatches and on empty input", () => {
-		const a = shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]);
+		const a = shard([provider("e2b", [metric("node_web_tooling_runs_per_s", [10])])]);
 		const b: Run = { ...a, sha: "different" };
 		expect(() => aggregateRuns([a, b])).toThrow(/identity mismatch/);
 		const differentTarget: Run = { ...a, targetSpec: { vcpus: 4, memoryGb: 8, diskGb: 20 } };
@@ -762,10 +754,10 @@ describe("aggregateRuns", () => {
 
 	it("disqualifies a provider whose specMatched fold has any mismatched shard, regardless of order", () => {
 		// A verdict must ride on observations (schema narrow), as the real probe always produces.
-		const matched = provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+		const matched = provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]);
 		matched.observedSpecs = { vcpus: 2, memoryGb: 8 };
 		matched.specMatched = true;
-		const mismatched = provider("daytona-vm", [metric("pybench_milliseconds", [900])]);
+		const mismatched = provider("e2b", [metric("pybench_milliseconds", [900])]);
 		mismatched.observedSpecs = { vcpus: 1, memoryGb: 8 };
 		mismatched.specMatched = false;
 
@@ -774,24 +766,23 @@ describe("aggregateRuns", () => {
 			[shard([matched]), shard([mismatched])],
 			[shard([mismatched]), shard([matched])],
 		]) {
-			const daytona = aggregateRuns(order).providers.find((p) => p.providerId === "daytona-vm");
+			const daytona = aggregateRuns(order).providers.find((p) => p.providerId === "e2b");
 			expect(daytona?.specMatched).toBe(false);
 		}
 	});
 
 	it("keeps specMatched undefined when no shard observed the spec, and true when only matches did", () => {
-		const noProbe = shard([provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])])]);
+		const noProbe = shard([provider("e2b", [metric("node_web_tooling_runs_per_s", [10])])]);
 		expect(
-			aggregateRuns([noProbe]).providers.find((p) => p.providerId === "daytona-vm")?.specMatched,
+			aggregateRuns([noProbe]).providers.find((p) => p.providerId === "e2b")?.specMatched,
 		).toBeUndefined();
 
-		const matchOnly = provider("daytona-vm", [metric("pybench_milliseconds", [900])]);
+		const matchOnly = provider("e2b", [metric("pybench_milliseconds", [900])]);
 		matchOnly.observedSpecs = { vcpus: TARGET_SPEC.vcpus, memoryGb: TARGET_SPEC.memoryGb };
 		matchOnly.specMatched = true;
 		expect(
-			aggregateRuns([noProbe, shard([matchOnly])]).providers.find(
-				(p) => p.providerId === "daytona-vm",
-			)?.specMatched,
+			aggregateRuns([noProbe, shard([matchOnly])]).providers.find((p) => p.providerId === "e2b")
+				?.specMatched,
 		).toBe(true);
 	});
 });
@@ -810,16 +801,16 @@ describe("aggregateRuns suite-shortfall gap folding", () => {
 
 	it("folds byte-identical shortfall gaps across replicate shards into one", () => {
 		const r0 = shard(
-			[{ ...provider("daytona-vm", []), gaps: [shortfall(reason)] }],
+			[{ ...provider("e2b", []), gaps: [shortfall(reason)] }],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
 		const r1 = shard(
-			[{ ...provider("daytona-vm", []), gaps: [shortfall(reason)] }],
+			[{ ...provider("e2b", []), gaps: [shortfall(reason)] }],
 			"2026-06-01T00:00:00.000Z",
 			1,
 		);
-		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "e2b");
 		expect(daytona?.gaps).toEqual([shortfall(reason)]);
 	});
 
@@ -829,16 +820,16 @@ describe("aggregateRuns suite-shortfall gap folding", () => {
 		const other =
 			"PTS ran but every trial failed for 1 of 4 declared metrics: stream_type_add (memory/pts_stream.xml) — attempted, no value recorded";
 		const r0 = shard(
-			[{ ...provider("daytona-vm", []), gaps: [shortfall(reason)] }],
+			[{ ...provider("e2b", []), gaps: [shortfall(reason)] }],
 			"2026-06-01T00:00:00.000Z",
 			0,
 		);
 		const r1 = shard(
-			[{ ...provider("daytona-vm", []), gaps: [shortfall(other)] }],
+			[{ ...provider("e2b", []), gaps: [shortfall(other)] }],
 			"2026-06-01T00:00:00.000Z",
 			1,
 		);
-		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "daytona-vm");
+		const daytona = aggregateRuns([r0, r1]).providers.find((p) => p.providerId === "e2b");
 		expect(daytona?.gaps).toEqual([shortfall(reason), shortfall(other)]);
 	});
 });
@@ -878,9 +869,9 @@ describe("aggregateRuns derived-metric marking", () => {
 		// The guarantee the schema deliberately does NOT enforce (a published Run's validity must not track
 		// the live catalog) is pinned here instead, on the producer that owns catalog knowledge.
 		const merged = aggregateRuns([
-			shard([provider("daytona-vm", [metric(HARNESS_METRIC_IDS.spawn, [1000])])]),
+			shard([provider("e2b", [metric(HARNESS_METRIC_IDS.spawn, [1000])])]),
 		]);
-		const metrics = merged.providers.find((p) => p.providerId === "daytona-vm")?.metrics ?? [];
+		const metrics = merged.providers.find((p) => p.providerId === "e2b")?.metrics ?? [];
 		const economics = metrics.filter((m) => m.metricId.startsWith("usd_"));
 		expect(economics.length).toBeGreaterThan(0);
 		for (const row of economics) expect(row.derived).toBe(true);
@@ -891,7 +882,7 @@ describe("aggregateRuns derived-metric marking", () => {
 	it("drops a shard's stale economics row even when the catalog no longer knows the id", () => {
 		// isDerivedMetric prefers the document's marker: a marked row is never re-admitted as a measurement
 		// and pooled into a ranking, which a catalog-only test would do for a renamed or retired id.
-		const stale = provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [10])]);
+		const stale = provider("e2b", [metric("node_web_tooling_runs_per_s", [10])]);
 		stale.metrics.push({
 			metricId: "usd_per_retired_thing",
 			samples: [42],
@@ -900,8 +891,7 @@ describe("aggregateRuns derived-metric marking", () => {
 		});
 		const merged = aggregateRuns([shard([stale])]);
 		const ids =
-			merged.providers.find((p) => p.providerId === "daytona-vm")?.metrics.map((m) => m.metricId) ??
-			[];
+			merged.providers.find((p) => p.providerId === "e2b")?.metrics.map((m) => m.metricId) ?? [];
 		expect(ids).not.toContain("usd_per_retired_thing");
 		expect(ids).toContain("node_web_tooling_runs_per_s");
 	});

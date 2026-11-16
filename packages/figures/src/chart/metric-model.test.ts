@@ -137,9 +137,9 @@ describe("buildMetricChartModel for a measured bill", () => {
 
 	it("badges no row and says it is not a ranking", () => {
 		expect(measured.bars.every((bar) => !bar.best)).toBe(true);
-		expect(measured.summary).toContain("provider-reported, not ranked");
+		expect(measured.summary).toContain("billed or estimated · not ranked");
 		expect(measured.legendNote).toStartWith("sorted cheapest first · not a ranking");
-		expect(measured.legend[0]?.label).toBe("median billed per sandbox");
+		expect(measured.legend[0]?.label).toBe("median cost per run");
 	});
 
 	it("scales to the highest bill, so no whisker is cut at the chart edge", () => {

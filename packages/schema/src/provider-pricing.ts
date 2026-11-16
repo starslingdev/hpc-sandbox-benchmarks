@@ -107,6 +107,8 @@ export const publishedProviderPricingSchema = type({
 	components: pricingComponentSchema.array().atLeastLength(1),
 	"adjustments?": pricingAdjustmentSchema.array(),
 	targetHourlyCost: targetHourlyCostSchema,
+	/** The components in the full hourly price, when not every one applies to a running sandbox. */
+	"fullPriceComponentIds?": nonemptyStringSchema.array(),
 	notes: nonemptyStringSchema,
 	sources: pricingSourceSchema.array().atLeastLength(1),
 })
@@ -118,6 +120,9 @@ export const publishedProviderPricingSchema = type({
 				return ctx.mustBe("published pricing whose component ids are unique");
 			}
 			componentIds.add(component.id);
+		}
+		if (pricing.fullPriceComponentIds?.some((id) => !componentIds.has(id))) {
+			return ctx.mustBe("published pricing whose full-price components are known components");
 		}
 		if (pricing.targetHourlyCost.kind === "exact") {
 			const exactIds = new Set<string>();

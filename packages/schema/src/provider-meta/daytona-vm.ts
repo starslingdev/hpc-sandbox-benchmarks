@@ -1,5 +1,5 @@
 import { defineProviderMeta } from "../provider-meta.ts";
-import { daytonaPricing, daytonaTransport } from "./_daytona.ts";
+import { daytonaTransport, daytonaV2Pricing } from "./_daytona.ts";
 
 export default defineProviderMeta("daytona-vm", {
 	displayName: "Daytona (VM)",
@@ -20,7 +20,7 @@ export default defineProviderMeta("daytona-vm", {
 		notes:
 			"Boots the toolchain image (imported by the bake as a v2 image) on Daytona's v2 control plane, where every Linux sandbox is a VM; region us-east-ash-1 (DAYTONA_TARGET), whose hosts are AMD EPYC Zen 5. CPU and memory are pinned at create (request = limit).",
 	},
-	pricing: daytonaPricing,
+	pricing: daytonaV2Pricing,
 	maturity: {
 		status: "ga",
 		notes: "The validated reference provider for this harness (pre-baked toolchain snapshot).",

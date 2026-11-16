@@ -49,12 +49,12 @@ export default defineProviderMeta("tangle", {
 			{
 				label: "Tangle Sandbox rate card",
 				url: "https://sandbox.tangle.tools/v1/pricing/sandboxes",
-				checkedAt: "2026-10-13",
+				checkedAt: "2026-11-16",
 			},
 			{
 				label: "Tangle subscription plans",
 				url: "https://id.tangle.tools/api/v1/plans",
-				checkedAt: "2026-10-13",
+				checkedAt: "2026-11-16",
 			},
 		],
 		adjustments: [

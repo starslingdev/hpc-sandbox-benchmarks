@@ -22,7 +22,7 @@ export default defineProviderMeta("brezel", {
 		model: "unavailable",
 		reason: "self_hosted",
 		notes:
-			"Brezel is self-hosted, so cost depends on the operator's host, storage, and network rather than a published per-sandbox rate.",
+			"Brezel is self-hosted, so cost depends on the operator's host, storage, and network rather than a published per-sandbox rate. A hosted Brezel service (InferCrane) lists $0.30 per active hour for 4 vCPU / 8 GiB / 40 GiB, but the benchmarked deployment is not that service, so its rate is not applied.",
 	},
 	maturity: {
 		status: "beta",

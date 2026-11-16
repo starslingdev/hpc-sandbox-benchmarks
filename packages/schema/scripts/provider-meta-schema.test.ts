@@ -273,10 +273,10 @@ describe("Tier-3 provider metadata schema", () => {
 	test("requires isolation variants to share pricing by object identity", () => {
 		expect(() =>
 			validateProviderModules(
-				meta("daytona-container", {
-					pricing: structuredClone(REGISTRY["daytona-container"].pricing),
+				meta("modal-vm", {
+					pricing: structuredClone(REGISTRY["modal-vm"].pricing),
 				}),
 			),
-		).toThrow(/daytona-vm\/daytona-container: isolation variants must share one pricing object/);
+		).toThrow(/modal-gvisor\/modal-vm: isolation variants must share one pricing object/);
 	});
 });

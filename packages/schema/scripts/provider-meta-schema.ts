@@ -176,10 +176,9 @@ type StepProvidedInput = Omit<NormalizedProviderInput, "source"> & {
 	>;
 };
 
-const SHARED_VARIANT_GROUPS = [
-	["daytona-vm", "daytona-container"],
-	["modal-gvisor", "modal-vm"],
-] as const;
+// Isolation variants billed from one rate card. Daytona's are not: daytona-container runs on the v0
+// control plane (per-vCPU rates) and daytona-vm on v2 (per-core rates by CPU generation).
+const SHARED_VARIANT_GROUPS = [["modal-gvisor", "modal-vm"]] as const;
 
 export function assertProviderIdSyntax(ids: readonly string[] = PROVIDER_IDS): void {
 	for (const id of ids) {

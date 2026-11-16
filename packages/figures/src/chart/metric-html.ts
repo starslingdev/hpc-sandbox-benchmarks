@@ -49,7 +49,8 @@ export function metricChartHtml(model: MetricChartModel): string {
 				`<span class="cap" style="left: ${px(bar.interval.lo * TRACK_WIDTH)}; background: ${whiskerColor};"></span>` +
 				`<span class="cap" style="left: ${px(bar.interval.hi * TRACK_WIDTH - 2)}; background: ${whiskerColor};"></span>`
 			: "";
-		const badge = bar.best ? `<span class="badge">best</span>` : "";
+		const text = bar.badge ?? (bar.best ? "best" : undefined);
+		const badge = text ? `<span class="badge">${escapeHtml(text)}</span>` : "";
 		return (
 			`<div class="row">${providerMarkup(bar.label, bar.isolation)}` +
 			`<div class="bar"><div class="lane" style="width: ${px(TRACK_WIDTH)};">` +

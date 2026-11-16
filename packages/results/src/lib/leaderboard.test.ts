@@ -501,12 +501,12 @@ describe("buildLeaderboard statistical ranking", () => {
 		// A three-way tie at rank 1: the takeaway must list all three, not silently drop the third.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [0.1])]),
+				provider("e2b", [metric("node_web_tooling_runs_per_s", [0.1])]),
+				provider("modal-gvisor", [metric("node_web_tooling_runs_per_s", [0.1])]),
 			]),
 		);
-		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => r.rank)).toEqual([1, 1, 1]);
 		const md = render(board);
 		// All three display names appear in the "share the top" takeaway, joined as a list.
@@ -783,11 +783,11 @@ describe("underpowered comparisons", () => {
 	it("marks a shared rank between untested (n<2) rows with equal values as equal, not tied", () => {
 		const board = buildLeaderboard(
 			run([
-				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
-				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.2])]),
+				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [0.2])]),
+				provider("modal-gvisor", [metric("node_web_tooling_runs_per_s", [0.2])]),
 			]),
 		);
-		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => [r.rank, r.verdict, r.tiedWithAbove])).toEqual([
 			[1, null, null],
 			[1, "untested", "identical-value"],
@@ -796,15 +796,15 @@ describe("underpowered comparisons", () => {
 	});
 
 	it("names every co-leader when three or more providers share the top rank", () => {
-		// Three providers at identical prices share rank 1; the takeaway must list all three, not just two.
+		// Three providers at identical scores share rank 1; the takeaway must list all three, not just two.
 		const board = buildLeaderboard(
 			run([
-				provider("daytona-vm", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("e2b", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
-				provider("modal-gvisor", [metric(ECONOMICS_METRIC_IDS.usdPerHour, [0.1])]),
+				provider("daytona-vm", [metric("node_web_tooling_runs_per_s", [0.1])]),
+				provider("e2b", [metric("node_web_tooling_runs_per_s", [0.1])]),
+				provider("modal-gvisor", [metric("node_web_tooling_runs_per_s", [0.1])]),
 			]),
 		);
-		const rows = board.dimensions.find((d) => d.dimension === "economics")?.rows ?? [];
+		const rows = board.dimensions.find((d) => d.dimension === "cpu")?.rows ?? [];
 		expect(rows.map((r) => r.rank)).toEqual([1, 1, 1]);
 		const md = render(board);
 		// Match the common phrasing across branches (the takeaway says "…this headline" here and
@@ -1423,7 +1423,7 @@ describe("document order: realworld leads, synthetics collapse", () => {
 		expect(dimensionHeadings(render(board))).toEqual(["realworld", "cpu", "memory", "economics"]);
 	});
 
-	it("wraps only the synthetic sections in <details>, leaving realworld and economics expanded", () => {
+	it("wraps only the synthetic sections in <details>, leaving realworld expanded", () => {
 		const md = dimensionBody(render(buildLeaderboard(mixed())));
 		const sectionOf = (dimension: string): string =>
 			(md.split(`\n## ${dimension}\n`)[1] ?? "").split("\n## ")[0] as string;
@@ -1432,11 +1432,9 @@ describe("document order: realworld leads, synthetics collapse", () => {
 			expect(sectionOf(dimension), dimension).toContain("<details>");
 			expect(sectionOf(dimension), dimension).toContain("</details>");
 		}
-		for (const dimension of ["realworld", "economics"]) {
-			// Neither is a microbenchmark: realworld is the point of the board, economics is a published
-			// price. Hiding either behind a triangle would be an editorial claim the data doesn't make.
-			expect(sectionOf(dimension), dimension).not.toContain("<details>");
-		}
+		// Realworld is the point of the board; hiding it behind a triangle would be an editorial claim.
+		// (Economics shows cost charts in the open and folds only their receipts.)
+		expect(sectionOf("realworld")).not.toContain("<details>");
 	});
 
 	it("names the metric count and headline in the summary, so a shut section still says what it holds", () => {
@@ -1712,14 +1710,12 @@ describe("measured cost section", () => {
 		expect(complete).toContain("| Modal (gVisor) | 2 of 2 | 0.4 USD | — |");
 		expect(complete).toContain("realworld-mastra _(per pipeline run)_ | 0.2 USD | 0.1 – 0.3 |");
 		const partial = md([record(0, 0.1), record(1)]);
-		expect(partial).toContain(
-			"| Modal (gVisor) | 1 of 2 | unmeasured | 1 × `provider_api_error` |",
-		);
+		expect(partial).toContain("| Modal (gVisor) | 1 of 2 | — | 1 × `provider_api_error` |");
 	});
 
 	it("leaves the per-suite table out when nothing was measured", () => {
 		const none = md([record(0), record(1)]);
-		expect(none).toContain("| 0 of 2 | unmeasured |");
-		expect(none).not.toContain("Measured cost per suite");
+		expect(none).toContain("| 0 of 2 | — |");
+		expect(none).not.toContain("Provider bills per suite");
 	});
 });

@@ -347,6 +347,32 @@ export function hourlyCostAtTargetSpec(
 	}, 0);
 }
 
+/**
+ * Every per-sandbox charge for one sandbox-hour at the target, disk included: `at_most` when a
+ * component bills only while busy, `at_least` when one bills usage above the reservation.
+ */
+export function fullHourlyPrice(
+	meta: ProviderMeta,
+	targetSpec: TargetSpec = TARGET_SPEC,
+): { usdPerHour: number; accuracy: "exact" | "at_most" | "at_least" } | null {
+	const pricing = meta.pricing;
+	if (pricing.model !== "published") return null;
+	const ids = pricing.fullPriceComponentIds;
+	const components = pricing.components.filter((c) => ids === undefined || ids.includes(c.id));
+	const bases = new Set(components.map((c) => c.billingBasis));
+	return {
+		usdPerHour: components.reduce(
+			(total, c) => total + c.usdPerUnitHour * pricingQuantityAtTargetSpec(c, targetSpec),
+			0,
+		),
+		accuracy: bases.has("active")
+			? "at_most"
+			: bases.has("max_request_or_usage") || bases.has("provisioned_plus_burst")
+				? "at_least"
+				: "exact",
+	};
+}
+
 /** Where a provider's driver module lives, derived from its id unless it is an isolation variant. */
 export interface ProviderPackage {
 	/** `packages/<directory>`; isolation variants of one vendor share it. */

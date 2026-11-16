@@ -166,7 +166,9 @@ describe("renderLeaderboardFigureHtml", () => {
 	});
 
 	it("returns one self-contained document per chartable suite, paired with its figure", () => {
-		const rendered = renderLeaderboardFigureHtml(chartableRun());
+		const rendered = renderLeaderboardFigureHtml(chartableRun()).filter(
+			({ figure }) => !("dimension" in figure && figure.dimension === "cost per pipeline run"),
+		);
 		expect(
 			rendered.map(({ figure }) => ("suiteId" in figure ? figure.suiteId : figure.metricId)),
 		).toEqual(["realworld-mastra"]);
@@ -300,7 +302,9 @@ describe("metric figures", () => {
 	});
 
 	it("charts every synthetic metric with at least two ranked environments, never a realworld task", () => {
-		const model = modelOf(rankedRun());
+		const all = modelOf(rankedRun());
+		// Cost charts are covered under "pipeline cost figures".
+		const model = { ...all, metrics: all.metrics.filter((entry) => !entry.measured) };
 		expect(model.metrics.map((entry) => entry.id)).toEqual([CPU]);
 		expect(leaderboardMetricFigures(model)).toEqual([
 			{
@@ -334,23 +338,11 @@ describe("metric figures", () => {
 		]);
 	});
 
-	it("lists no unmeasured environment for a derived metric — a missing price is not a gap", () => {
-		const priced = run([
-			provider("daytona-vm", [metric("usd_per_hour", [0.3])], { suitesCovered: [] }),
-			provider("modal-vm", [metric("usd_per_hour", [0.5])], { suitesCovered: [] }),
-			provider("e2b", [metric(INSTALL, [30, 32])]),
-		]);
-		const figure = modelOf(priced).metrics.find((entry) => entry.id === "usd_per_hour");
-		expect(figure?.derived).toBe(true);
-		expect(figure?.unmeasured).toEqual([]);
-		expect(metricFigureNote(figure as NonNullable<typeof figure>)).toContain(
-			"only environments with a published price are charted",
-		);
-	});
-
 	it("renders the metric charts after the suite charts, each paired with its figure", () => {
 		const r = rankedRun();
-		const rendered = renderLeaderboardFigureHtml(r, buildLeaderboard(r));
+		const rendered = renderLeaderboardFigureHtml(r, buildLeaderboard(r)).filter(
+			({ figure }) => !("dimension" in figure && figure.dimension === "cost per pipeline run"),
+		);
 		expect(rendered.map(({ figure }) => figure.file)).toEqual([
 			`${LEADERBOARD_FIGURE_DIR}/${CPU}.webp`,
 		]);
@@ -478,71 +470,54 @@ describe("comparison figures", () => {
 	});
 });
 
-describe("measured cost figures", () => {
-	type CostRecord = NonNullable<ProviderRun["costEvidence"]>[number];
-	const record = (
-		providerId: "modal-vm" | "daytona-vm",
+describe("pipeline cost figures", () => {
+	const bill = (
 		index: number,
-		amount?: number,
-	): CostRecord => {
-		const base = {
-			cell: {
-				runId: "run-1",
-				providerId,
-				suite: "realworld-mastra" as const,
-				replicateIndex: index,
-			},
-			subject: { kind: "sandbox" as const, sandboxId: `${providerId}-${index}` },
-			capturedAt: "2026-11-14T00:00:00.000Z",
-			sdk: { packageName: "vendor", version: "1.0.0" },
-		};
-		return amount === undefined
-			? { ...base, kind: "missing", reason: "provider_api_error", detail: "Throttled." }
-			: {
-					...base,
-					kind: "observed",
-					apiOperation: "stats",
-					usage: [{ resource: "cpu", quantity: 1, unit: "CPU-seconds" }],
-					amount,
-					currency: "USD",
-					source: "provider_reported",
-					responseJson: "{}",
-				};
-	};
+		amount: number,
+	): NonNullable<ProviderRun["costEvidence"]>[number] => ({
+		cell: {
+			runId: "run-1",
+			providerId: "modal-vm",
+			suite: "realworld-mastra",
+			replicateIndex: index,
+		},
+		subject: { kind: "sandbox", sandboxId: `modal-vm-${index}` },
+		capturedAt: "2026-11-14T00:00:00.000Z",
+		sdk: { packageName: "vendor", version: "1.0.0" },
+		kind: "observed",
+		apiOperation: "stats",
+		usage: [{ resource: "cpu", quantity: 1, unit: "CPU-seconds" }],
+		amount,
+		currency: "USD",
+		source: "provider_reported",
+		responseJson: "{}",
+	});
+	// One completed sandbox each: clone (median 1.5 s) + install (3.5 s) = 5 s of timed tasks.
+	const pipeline = () => [metric(CLONE, [1, 2]), metric(INSTALL, [3, 4])];
 	const costRun = () =>
 		run([
-			provider("modal-vm", [metric(CLONE, [1, 2]), metric(INSTALL, [3, 4])], {
-				costEvidence: [record("modal-vm", 0, 0.3), record("modal-vm", 1, 0.5)],
-			}),
-			provider("daytona-vm", [metric(CLONE, [1, 2]), metric(INSTALL, [3, 4])], {
-				costEvidence: [record("daytona-vm", 0)],
-			}),
+			provider("modal-vm", pipeline(), { costEvidence: [bill(0, 0.3), bill(1, 0.5)] }),
+			provider("daytona-vm", pipeline()),
+			provider("brezel", pipeline()),
 		]);
-	const measuredOf = (r: Run) =>
+	const costOf = (r: Run) =>
 		metricFigureModelOf(r, buildLeaderboard(r)).metrics.filter((figure) => figure.measured);
+	// daytona-vm at the fixture's 2 vCPU / 8 GiB target: one Zen 5 core plus memory.
+	const RATE = 0.235 + 8 * 0.0162;
 
-	it("charts one realworld suite per measured pipeline run, unranked, with unmeasured providers disclosed", () => {
-		const [figure, ...rest] = measuredOf(costRun());
+	it("charts each realworld suite's billed and estimated costs, unranked, skipping the unpriced", () => {
+		const [figure, ...rest] = costOf(costRun());
 		expect(rest).toEqual([]);
-		expect(figure?.id).toBe("measured-cost-realworld-mastra");
-		expect(figure?.unit).toBe("USD");
-		expect(figure?.rows.map((row) => [row.provider, row.value, row.lo, row.hi])).toEqual([
-			["modal-vm", 0.4, 0.3, 0.5],
+		expect(figure?.id).toBe("pipeline-cost-realworld-mastra");
+		expect(figure?.rows.map((row) => [row.provider, row.badge])).toEqual([
+			["daytona-vm", "estimated"],
+			["modal-vm", "billed"],
 		]);
-		expect(figure?.unmeasured).toEqual([
-			{
-				provider: "daytona-vm",
-				outcome: "unmeasured",
-				reason: "No observed bill for any of 1 sandboxes: 1 × provider_api_error.",
-			},
-		]);
+		expect(figure?.rows[0]?.value).toBeCloseTo((RATE * 5) / 3600, 12);
+		expect(figure?.rows[1]).toMatchObject({ value: 0.4, lo: 0.3, hi: 0.5 });
 	});
 
-	it("draws nothing when no provider has an observed bill", () => {
-		const r = costRun();
-		const modal = r.providers[0];
-		if (!modal) throw new Error("fixture");
-		modal.costEvidence = [record("modal-vm", 0)];
-		expect(measuredOf(r)).toEqual([]);
+	it("draws nothing when no provider has a bill or a published rate", () => {
+		expect(costOf(run([provider("brezel", pipeline())]))).toEqual([]);
 	});
 });

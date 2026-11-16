@@ -44,3 +44,19 @@ provenance; it never selects measurements based on scores or adds logical replic
 Platform evidence that a recovery batch failed authentication before its allocation step, with no
 attempt artifacts or account ownership records. It permits explicit partial publication while
 preserving those cells as missing; it contributes no execution attempt or measurement.
+
+**Cost per pipeline run**:
+What one run of a realworld pipeline costs on a provider: the median across its sandboxes. Either a
+billed cost or an estimated cost, never ranked.
+
+**Billed cost**:
+What the provider's own billing API charged for one sandbox. No bill is never counted as zero.
+
+**Estimated cost**:
+The provider's published per-sandbox prices (disk included, plan fees excluded) × pipeline time. _At
+most_ the bill when some charges apply only while in use; _at least_ when usage above the reservation
+costs extra.
+
+**Three-pipeline total**:
+One environment's cost, or time, for one run each of Mastra, Better-Auth and OpenClaw: the three
+medians added up.

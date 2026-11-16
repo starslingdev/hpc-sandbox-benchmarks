@@ -33,7 +33,7 @@ export default defineProviderMeta("namespace", {
 				id: "prepaid",
 				resource: "cpu_memory",
 				billingBasis: "provisioned",
-				vendorUnit: "compute-unit minute",
+				vendorUnit: "compute unit (1 vCPU / 2 GB)",
 				usdPerUnitHour: 0.06,
 				quantityRule: namespaceComputeUnitQuantityRule,
 				tier: "prepaid",
@@ -43,7 +43,7 @@ export default defineProviderMeta("namespace", {
 				id: "overage",
 				resource: "cpu_memory",
 				billingBasis: "provisioned",
-				vendorUnit: "compute-unit minute",
+				vendorUnit: "compute unit (1 vCPU / 2 GB)",
 				usdPerUnitHour: 0.09,
 				quantityRule: namespaceComputeUnitQuantityRule,
 				tier: "overage",
@@ -68,6 +68,7 @@ export default defineProviderMeta("namespace", {
 				scope: "monthly",
 			},
 		],
+		fullPriceComponentIds: ["prepaid"],
 		targetHourlyCost: {
 			kind: "plan_dependent",
 			reason:
@@ -78,12 +79,12 @@ export default defineProviderMeta("namespace", {
 			{
 				label: "Namespace pricing",
 				url: "https://namespace.so/pricing",
-				checkedAt: "2026-08-08",
+				checkedAt: "2026-11-16",
 			},
 			{
 				label: "Billing and limits",
 				url: "https://namespace.so/docs/workspaces/billing-and-limits",
-				checkedAt: "2026-08-08",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

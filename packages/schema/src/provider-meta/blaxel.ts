@@ -34,11 +34,11 @@ export default defineProviderMeta("blaxel", {
 		},
 		notes: "Memory-sized bundled CPU is billed only while active.",
 		sources: [
-			{ label: "Blaxel pricing", url: "https://blaxel.ai/pricing", checkedAt: "2026-08-08" },
+			{ label: "Blaxel pricing", url: "https://blaxel.ai/pricing", checkedAt: "2026-11-16" },
 			{
 				label: "Sandbox billing behavior",
 				url: "https://docs.blaxel.ai/Sandboxes/Overview",
-				checkedAt: "2026-08-08",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

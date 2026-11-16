@@ -59,7 +59,7 @@ describe("deriveEconomics", () => {
 	});
 
 	it("derives against an explicit historical target spec while defaulting to TARGET_SPEC", () => {
-		const meta = getProvider("daytona-vm");
+		const meta = getProvider("e2b");
 		const measured = [{ metricId: "node_web_tooling_runs_per_s", mean: 10.5 }];
 		const historical = deriveEconomics(meta, measured, undefined, {
 			vcpus: 2,
@@ -71,7 +71,7 @@ describe("deriveEconomics", () => {
 	});
 
 	it("adds usd_per_lifecycle = hourly × summed lifecycle ms when lifecycle Metrics are present", () => {
-		const meta = getProvider("daytona-vm");
+		const meta = getProvider("e2b");
 		const hourly = hourlyCostAtTargetSpec(meta) ?? Number.NaN;
 		const measured = [
 			{ metricId: HARNESS_METRIC_IDS.spawn, mean: 1000 },
@@ -95,7 +95,7 @@ describe("deriveEconomics", () => {
 	});
 
 	it("adds usd_per_compute_run = hourly × runtime when a positive runtimeMs is supplied", () => {
-		const meta = getProvider("daytona-vm");
+		const meta = getProvider("e2b");
 		const hourly = hourlyCostAtTargetSpec(meta) ?? Number.NaN;
 		const runtimeMs = 90_000; // a 90s compute pipeline
 		const econ = deriveEconomics(
@@ -132,7 +132,7 @@ describe("deriveEconomics", () => {
 			unpriced,
 			getProvider("blaxel"),
 			getProvider("runcloud"),
-			getProvider("microsandbox-cloud"),
+			getProvider("baseten"),
 		]) {
 			expect(
 				deriveEconomics(meta, [{ metricId: HARNESS_METRIC_IDS.spawn, mean: 1000 }], 5000),
@@ -149,7 +149,7 @@ describe("deriveEconomics", () => {
 
 	it("keeps every lifecycle harness Metric in the lifecycle sum", () => {
 		// Guards the LIFECYCLE_METRIC_IDS set: each lifecycle-dimension harness Metric contributes.
-		const meta = getProvider("daytona-vm");
+		const meta = getProvider("e2b");
 		const hourly = hourlyCostAtTargetSpec(meta) ?? Number.NaN;
 		const lifecycleIds = Object.values(HARNESS_METRIC_IDS).filter(
 			(id) => getMetric(id)?.dimension === "lifecycle",

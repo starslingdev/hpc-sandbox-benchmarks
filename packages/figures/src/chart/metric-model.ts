@@ -45,6 +45,8 @@ export interface MetricChartBar {
 	readonly interval: { readonly lo: number; readonly hi: number; readonly clipped: boolean } | null;
 	/** True on every row the board ranked first. */
 	readonly best: boolean;
+	/** The row's own label, if it names one. */
+	readonly badge?: string;
 	readonly rank: number;
 }
 
@@ -129,6 +131,7 @@ export function buildMetricChartModel(
 			scaleFraction: fraction(row.value),
 			interval,
 			best: row.rank === bestRank,
+			...(row.badge ? { badge: row.badge } : {}),
 			rank: row.rank,
 		};
 	});
@@ -142,13 +145,15 @@ export function buildMetricChartModel(
 		dimension: figure.dimension,
 		title: figure.label,
 		summary: measured
-			? `${figure.dimension} · ${figure.unit} · provider-reported, not ranked · ${environments}`
+			? `${figure.dimension} · ${figure.unit} · billed or estimated · not ranked · ${environments}`
 			: `${figure.dimension} · ${figure.unit} · ${better} · ${environments}${figure.headline ? " · headline" : ""}`,
 		note,
 		legend: measured
 			? [
-					{ label: "median billed per sandbox", color: METRIC_BAR_COLOR },
-					...(anyInterval ? [{ label: "lowest–highest bill", color: METRIC_WHISKER_COLOR }] : []),
+					{ label: "median cost per run", color: METRIC_BAR_COLOR },
+					...(anyInterval
+						? [{ label: "lowest to highest sandbox", color: METRIC_WHISKER_COLOR }]
+						: []),
 				]
 			: [
 					{
