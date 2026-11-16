@@ -39,8 +39,11 @@ export const RUNCLOUD_NAME = markerSpelling("sandbox-benchmarks-");
 /** Lifetime and idle-pause window, both the kit's leak expiry: above the longest suite, so a
  *  detached benchmark is never paused while the harness polls its done file. */
 const LIFETIME_SECS = LEAK_EXPIRY_MS / 1000;
-/** Bound each SDK call independently: a call that never settles must not suspend a create. */
+/** Bound each non-create SDK call independently: a call that never settles must not suspend a create. */
 export const RUNCLOUD_CONTROL_TIMEOUT_MS = 30_000;
+/** Create POST can stall under control-plane overload (run 43793708054 did not settle in 30s).
+ *  Lookups stay on the shorter bound so a failed reconcile does not wait 5× this long. */
+export const RUNCLOUD_CREATE_SETTLE_MS = 90_000;
 /** An allocation can take a moment to become visible to `list()`; an ambiguous create looks this
  *  many times before concluding nothing was allocated. Guessing "absent" early leaks a sandbox. */
 export const RUNCLOUD_RECONCILE_ATTEMPTS = 5;
@@ -115,14 +118,19 @@ const transient = (error: unknown) =>
  * One SDK call raced against its bound and the caller (the SDK's create and list take no signal).
  * The bound's own expiry is named, and so is never read as a network failure.
  */
-function settled<T>(label: string, work: () => Promise<T>, signal: AbortSignal): Promise<T> {
+function settled<T>(
+	label: string,
+	work: () => Promise<T>,
+	signal: AbortSignal,
+	timeoutMs = RUNCLOUD_CONTROL_TIMEOUT_MS,
+): Promise<T> {
 	let bound: AbortSignal | undefined;
-	return bounded(signal, RUNCLOUD_CONTROL_TIMEOUT_MS, (within) => {
+	return bounded(signal, timeoutMs, (within) => {
 		bound = within;
 		return work();
 	}).catch((error: unknown) => {
 		if (signal.aborted || error !== bound?.reason) throw error;
-		throw new Error(`run.cloud ${label} did not settle within ${RUNCLOUD_CONTROL_TIMEOUT_MS}ms`);
+		throw new Error(`run.cloud ${label} did not settle within ${timeoutMs}ms`);
 	});
 }
 
@@ -168,7 +176,14 @@ export function runcloudVendor(
 					timeoutSeconds: LIFETIME_SECS,
 				};
 				try {
-					return record(await settled("create", () => sandboxes.create(options), signal));
+					return record(
+						await settled(
+							"create",
+							() => sandboxes.create(options),
+							signal,
+							RUNCLOUD_CREATE_SETTLE_MS,
+						),
+					);
 				} catch (error) {
 					// Ask what the request did. A definitive 4xx gets one confirming look (a rejection can
 					// still sit on a real allocation); anything else the whole window. A create that
@@ -179,14 +194,23 @@ export function runcloudVendor(
 						signal,
 					);
 					if (found) return record(found);
+					if (signal.aborted) throw error;
 					// The SDK's typed status lets account admission tell a quota refusal from others.
-					if (!(error instanceof RunCloudError)) throw error;
-					throw new DriverError("create-failed", error.message, {
-						provider: "runcloud",
-						vendorHttpStatus: error.status,
-						vendorMessage: error.detail,
-						cause: error,
-					});
+					if (error instanceof RunCloudError && http.refused(error))
+						throw new DriverError("create-failed", error.message, {
+							provider: "runcloud",
+							vendorHttpStatus: error.status,
+							vendorMessage: error.detail,
+							cause: error,
+						});
+					// A timed-out or lost POST can still land after every lookup. The unique name was
+					// chosen before the request: emit it so post-run recovery can observe that name.
+					const detail = error instanceof Error ? error.message : "create failed";
+					throw new DriverError(
+						"create-failed",
+						`run.cloud create failed ambiguously (${detail}) and reconciliation could not establish its outcome (no allocation visible during reconciliation), so it is unknown whether a sandbox was allocated; if one was it carries the name ${name} and manual cleanup may be required`,
+						{ provider: "runcloud", cause: error },
+					);
 				}
 			},
 			get: async (id) => record(await sandboxes.get(id)),
