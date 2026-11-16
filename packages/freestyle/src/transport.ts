@@ -48,7 +48,9 @@ export function freestyleFetch(
 				signal: pollSignal,
 				poll: async () => {
 					const result = await fetchImpl(resultUrl, { method: "GET", headers, signal: pollSignal });
-					return result.status === 202 ? null : result;
+					// A 502 on the handle is not a verdict on the original operation (run 43793708054).
+					if (result.status === 202 || result.status === 502) return null;
+					return result;
 				},
 			}).catch((error: unknown) => {
 				// Readiness can expire before the composed timeout signal fires.
