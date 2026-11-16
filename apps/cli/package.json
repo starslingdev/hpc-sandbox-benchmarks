@@ -30,6 +30,7 @@
     "recover-allocated-intent": "./src/bin/recover-allocated-intent.ts",
     "recover-not-allocated-intent": "./src/bin/recover-not-allocated-intent.ts",
     "recover-experiment-cleanup": "./src/bin/recover-experiment-cleanup.ts",
+    "recover-ambiguous-create-inventory": "./src/bin/recover-ambiguous-create-inventory.ts",
     "audit-account-journals": "./src/bin/audit-account-journals.ts",
     "dataset-impact": "./src/bin/dataset-impact.ts",
     "workflow-repair": "./src/bin/workflow-repair.ts"
