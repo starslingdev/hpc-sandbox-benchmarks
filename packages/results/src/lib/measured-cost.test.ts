@@ -74,11 +74,8 @@ describe("buildMeasuredCost", () => {
 		]);
 		expect(modal?.total).toBeCloseTo(0.6);
 		expect(modal?.amounts).toHaveLength(3);
-		// Realworld leads, and its k = 1 suite is a per-pipeline-run figure.
-		expect(modal?.suites.map((suite) => [suite.suite, suite.perPipelineRun])).toEqual([
-			["realworld-mastra", true],
-			["cpu-node", false],
-		]);
+		// Realworld leads.
+		expect(modal?.suites.map((suite) => suite.suite)).toEqual(["realworld-mastra", "cpu-node"]);
 		const [mastra] = modal?.suites ?? [];
 		expect(mastra?.median).toBeCloseTo(0.15);
 		expect(mastra?.total).toBeCloseTo(0.3);

@@ -123,6 +123,22 @@ export const providerCostEvidenceSchema = observedProviderCostEvidenceSchema.or(
 );
 export type ProviderCostEvidence = typeof providerCostEvidenceSchema.infer;
 
+/**
+ * The usage quantity that says how long the provider billed the sandbox for: its billed lifetime,
+ * create to delete, in seconds. A bill covers that whole lifetime — boot, setup, untimed warm-ups —
+ * so pricing only part of it (one pipeline's timed steps) needs this denominator. Optional: a hook
+ * whose API reports money alone omits it, and its bill then cannot be split.
+ */
+export const BILLED_WALL_SECONDS = { resource: "wall_seconds", unit: "s" } as const;
+
+/** The record's {@link BILLED_WALL_SECONDS}, or undefined when it carries none (or a zero). */
+export function billedWallSeconds(record: ObservedProviderCostEvidence): number | undefined {
+	const usage = record.usage.find(
+		(u) => u.resource === BILLED_WALL_SECONDS.resource && u.unit === BILLED_WALL_SECONDS.unit,
+	);
+	return usage !== undefined && usage.quantity > 0 ? usage.quantity : undefined;
+}
+
 /** Deterministic identity of one Run/provider/suite/replicate cell. */
 export function providerCostCellKey(record: Pick<ProviderCostEvidence, "cell">): string {
 	const { runId, providerId, suite, replicateIndex } = record.cell;

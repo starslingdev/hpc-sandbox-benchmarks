@@ -136,7 +136,7 @@ export function valueScatterHtml(
 				`<p class="axis-title" style="margin: 26px 0 0 ${px(AXIS)};">cost (USD) · left is cheaper</p>`,
 		],
 		legendItems: [
-			`<li><span class="swatch" style="background: ${TEAL};"></span>billed: the provider's own bill</li>`,
+			T.legendItem("billed: the provider's bill rate × time", TEAL),
 			`<li><span class="swatch"></span>estimated: published prices × time</li>`,
 		],
 		legendNote: "log scales",

@@ -486,7 +486,8 @@ describe("pipeline cost figures", () => {
 		sdk: { packageName: "vendor", version: "1.0.0" },
 		kind: "observed",
 		apiOperation: "stats",
-		usage: [{ resource: "cpu", quantity: 1, unit: "CPU-seconds" }],
+		// Billed for 10 s; 5 of them are the timed pipeline (below), so half of each bill is charted.
+		usage: [{ resource: "wall_seconds", quantity: 10, unit: "s" }],
 		amount,
 		currency: "USD",
 		source: "provider_reported",
@@ -514,7 +515,9 @@ describe("pipeline cost figures", () => {
 			["modal-vm", "billed"],
 		]);
 		expect(figure?.rows[0]?.value).toBeCloseTo((RATE * 5) / 3600, 12);
-		expect(figure?.rows[1]).toMatchObject({ value: 0.4, lo: 0.3, hi: 0.5 });
+		// Only replicate 0 completed the pipeline, so only its bill is priced: half of $0.30. The other
+		// sandbox's bill covers no completed run and stays out.
+		expect(figure?.rows[1]).toMatchObject({ value: 0.15, lo: 0.15, hi: 0.15, sandboxes: 1 });
 	});
 
 	it("draws nothing when no provider has a bill or a published rate", () => {

@@ -58,14 +58,12 @@ export interface MeasuredCostTally {
 	sources: ObservedProviderCostEvidence["source"][];
 }
 
-/** One suite's measured cost for one provider. */
+/**
+ * One suite's measured cost for one provider. Each figure is a whole sandbox's bill — boot, setup and
+ * untimed warm-ups included — never one pipeline run's cost; that is `pipeline-cost.ts`'s share of it.
+ */
 export interface MeasuredCostSuite extends MeasuredCostTally {
 	suite: SuiteName;
-	/**
-	 * True when one sandbox runs this suite's pipeline exactly once (the realworld suites, k = 1), so
-	 * the per-sandbox figure IS the measured cost of one pipeline run.
-	 */
-	perPipelineRun: boolean;
 }
 
 /** One provider's measured cost: the whole-Run tally, and one per suite it ran. */
@@ -153,14 +151,7 @@ function measuredCostOf(provider: ProviderRun): MeasuredCostProvider | undefined
 			const suiteCells = cells.filter(([, cell]) => cell.suite === suite);
 			return suiteCells.length === 0
 				? []
-				: [
-						{
-							suite,
-							perPipelineRun:
-								SUITES[suite].wave === "realworld" && SUITES[suite].ptsTimesToRun === 1,
-							...tally(suiteCells, recordByCell, currency),
-						},
-					];
+				: [{ suite, ...tally(suiteCells, recordByCell, currency) }];
 		}),
 	};
 }

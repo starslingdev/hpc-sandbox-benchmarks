@@ -324,7 +324,8 @@ export function metricFigureNote(figure: MetricFigure): string {
 	if (figure.measured === true) {
 		return (
 			"Bar: median cost of one pipeline run. Line: lowest to highest sandbox. Label: **billed** is the " +
-			"provider's own bill; **estimated** is the published prices × pipeline time. Not ranked. " +
+			"provider's own bill rate × pipeline time; **estimated** is the published prices × pipeline " +
+			"time. Not ranked. " +
 			"The scale is this chart's own."
 		);
 	}

@@ -261,8 +261,10 @@ the Run alone (`packages/results/src/lib/measured-cost.ts`); nothing about it is
   the shared account.
 - **How it is summarised.** Per provider and suite: the median across measured sandboxes (one
   sandbox, one figure, like every other board value), the lowest and highest bill, and how many of
-  the suite's sandboxes were measured. The realworld suites run their pipeline once per sandbox, so
-  their figure is the measured cost of one pipeline run. A total — per suite, and across the
+  the suite's sandboxes were measured. A realworld sandbox runs its pipeline once, but its bill is
+  not the cost of one pipeline run: it covers the sandbox's whole billed lifetime — boot, toolchain
+  setup, the runner's untimed warm-up of every lint/typecheck/test task, result collection — about
+  2–4× the timed steps on run 43863642458. A total — per suite, and across the
   provider's whole Run — is `providerCostTotal` over the expected cells, so it is printed only when
   every one of them has an observed record.
 - **Which sandboxes are expected.** Every cell with a cost record, plus every cell the Run attributes
@@ -273,8 +275,9 @@ the Run alone (`packages/results/src/lib/measured-cost.ts`); nothing about it is
   makes that sandbox **unmeasured**: it is listed by reason and never enters a median or a total as
   zero. Providers without a cost hook record nothing and do not appear in the section; their only
   cost figures are the catalog economics above it.
-- **How it is drawn.** As the Billed bars of the cost-per-pipeline-run charts. The synthetic suites
-  stay table-only: their per-sandbox bill depends on how long the harness kept sampling.
+- **How it is drawn.** As the Billed bars of the cost-per-pipeline-run charts, each bill scaled to
+  its pipeline's timed share (below). The synthetic suites stay table-only: their per-sandbox bill
+  depends on how long the harness kept sampling.
 - **Why it is not ranked.** Only providers with a sandbox-scoped billing API can appear, and a usage
   bill and a reservation price answer different questions. Putting Modal's bill in the `economics`
   table would rank it against catalog prices that assume an idle-or-full reservation.
@@ -297,12 +300,22 @@ provider only after it produced at least one measured metric, so it never promot
 ### Cost per pipeline run
 
 `packages/results/src/lib/pipeline-cost.ts` prices one run of each realworld pipeline per provider:
-the median across sandboxes that completed it, lowest and highest beside it, never ranked. A row is
-**Billed** where provider bills cover the suite, else **Estimated**: every published per-sandbox
-on-demand component at the requested size, disk included (`fullHourlyPrice`, narrowed by
-`fullPriceComponentIds`), × the pipeline's timed steps. An estimate is _at most_ the bill when a
-component bills only while in use, _at least_ when one bills usage above the reservation. Plan fees
-are excluded. Terms are defined in [`packages/schema/CONTEXT.md`](../packages/schema/CONTEXT.md).
+the median across sandboxes that completed it, lowest and highest beside it, never ranked. Both
+kinds of row price the same window, the pipeline's timed steps:
+
+- **Billed** where every completed sandbox has a USD bill that records its billed seconds
+  (`BILLED_WALL_SECONDS`): each bill × the sandbox's timed seconds ÷ its billed seconds. That keeps
+  the provider's real billed rate — burst above the reservation included — while dropping the
+  boot, setup and untimed warm-ups the bill also covers. It assumes the rate was even across the
+  sandbox's life; a burst-billed sandbox idle during setup paid less there, so its pipeline share
+  is if anything understated. One bill that cannot be split sends the whole row to the estimate.
+- **Estimated** otherwise: every published per-sandbox on-demand component at the requested size,
+  disk included (`fullHourlyPrice`, narrowed by `fullPriceComponentIds`), × the timed steps. An
+  estimate is _at most_ the billed share when a component bills only while in use, _at least_ when
+  one bills usage above the reservation. Plan fees are excluded.
+
+Terms are defined in
+[`packages/schema/CONTEXT.md`](../packages/schema/CONTEXT.md).
 
 ## Host vs. effective specs (the host-fingerprint caveat)
 
