@@ -8,8 +8,8 @@ Only verified measurements are ranked. Missing trials and failed cells remain in
 
 Comparison cohort: `sha256:9b9e457d45b6f6285e9407f988ec38bd085838595a4f2504c58691174515a6a7`. Compare scores only with the same workload and eligible metric cohort.
 
-Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **841 metric records**
-backed by **18226 retained trial observations**, across **65 metrics** and
+Requested target for every provider: **4 vCPU · 8 GiB RAM · 40 GB disk**. This run contains **833 metric records**
+backed by **18218 retained trial observations**, across **64 metrics** and
 **15 providers**; every emitted, catalogued metric has a ranked table below
 (median across sandboxes), grouped by dimension with its headline first — some behind a disclosure triangle, none omitted.
 Generated from the published Run dataset — do not edit by hand. Methodology:
@@ -1624,67 +1624,94 @@ _Namespace leads · CreateOS is ~1.1× higher (lower is better)._
 
 ## economics
 
-<img src="docs/figures/usd_per_hour.webp" width="960" alt="Hourly cost: 8 environments ranked best-first, with 95% intervals">
+What one run of each realworld pipeline costs, in USD. Lower is better. Not ranked: the two
+kinds of cost are not directly comparable.
 
-### Hourly cost _(headline)_
+The first chart plots each environment's three-pipeline total: cost against time, bottom left
+best. The three after it show each pipeline's cost per run, the median across sandboxes.
 
-USD/hr · lower is better
+- **Billed**: the provider's own bill for the sandbox.
+- **Estimated**: the provider's published prices × pipeline time.
 
-_boat is cheapest · Tangle Sandbox is ~3.5× higher (lower is better)._
+<img src="docs/figures/pipeline-cost-value.webp" width="960" alt="Cost vs. time: all three pipelines: three-pipeline total cost against time for 12 environments, log scales, bottom left is faster and cheaper, solid dots billed and hollow dots estimated">
 
-| Rank | Provider | Hourly cost (USD/hr) | 95% bootstrap interval | Sandboxes | Trials | Note |
-| ---: | --- | ---: | ---: | ---: | ---: | --- |
-| 1 | boat | 0.036 | — | 1 | 1 | — |
-| 2 | Tangle Sandbox | 0.1276 | — | 1 | 1 | — |
-| 3 | Novita | 0.2333 | — | 1 | 1 | — |
-| 4 | CreateOS | 0.2437 | — | 1 | 1 | — |
-| 5 | DigitalOcean MicroVMs | 0.312 | — | 1 | 1 | — |
-| 6 | Daytona (container) | 0.3312 | — | 1 | 1 | — |
-| 6 | Daytona (VM) | 0.3312 | — | 1 | 1 | equal values |
-| 6 | E2B | 0.3312 | — | 1 | 1 | equal values |
+<img src="docs/figures/pipeline-cost-realworld-mastra.webp" width="960" alt="Cost per Mastra pipeline run: median USD for 12 environments, each labelled billed or estimated, lowest first, not ranked, with a line from the lowest to the highest sandbox">
 
-## Measured cost
+<img src="docs/figures/pipeline-cost-realworld-better-auth.webp" width="960" alt="Cost per Better-Auth pipeline run: median USD for 12 environments, each labelled billed or estimated, lowest first, not ranked, with a line from the lowest to the highest sandbox">
 
-**Billed by the provider, not priced from a catalog.** Each figure is what the provider's own
-billing API reported for one benchmark sandbox after teardown — every resource it billed, CPU
-burst above the request included — scoped to that sandbox alone. The `economics` section prices
-the requested 4 vCPU · 8 GiB reservation from published rates; these are bills for what
-each sandbox actually used, so the two are never ranked together. A sandbox without an observed
-record is **unmeasured**, never zero, and a total is printed only when every sandbox in its scope
-was measured.
+<img src="docs/figures/pipeline-cost-realworld-openclaw.webp" width="960" alt="Cost per OpenClaw pipeline run: median USD for 12 environments, each labelled billed or estimated, lowest first, not ranked, with a line from the lowest to the highest sandbox">
 
-| Provider | Measured sandboxes | Total billed | Unmeasured |
+<details>
+<summary>Cost per run table and provider bills</summary>
+
+| Pipeline | Provider | Cost | Median USD per run | Lowest – highest | Sandboxes |
+| --- | --- | --- | ---: | ---: | ---: |
+| Mastra | boat | Estimated | 0.01359 | 0.01076 – 0.02183 | 10 |
+| Mastra | Namespace | Estimated | 0.07698 | 0.07202 – 0.09872 | 12 |
+| Mastra | CreateOS | Estimated | 0.07701 | 0.07611 – 0.0791 | 12 |
+| Mastra | Microsandbox Cloud | Estimated | 0.07785 | 0.07406 – 0.08443 | 12 |
+| Mastra | Novita | Estimated | 0.08104 | 0.07917 – 0.08785 | 12 |
+| Mastra | DigitalOcean MicroVMs | Estimated | 0.1009 | 0.09864 – 0.1016 | 12 |
+| Mastra | Blaxel | Estimated (at most) | 0.1199 | 0.1186 – 0.123 | 12 |
+| Mastra | E2B | Estimated | 0.1671 | 0.1336 – 0.2025 | 12 |
+| Mastra | Daytona (VM) | Estimated (at least) | 0.1807 | 0.1792 – 0.1827 | 12 |
+| Mastra | Modal (gVisor) | **Billed** | 0.2984 | 0.2963 – 0.331 | 12 |
+| Mastra | Vercel Sandbox | Estimated (at most) | 0.3137 | 0.2967 – 0.4271 | 12 |
+| Mastra | Modal (VM) | **Billed** | 0.3448 | 0.3423 – 0.3776 | 11 |
+| Better-Auth | boat | Estimated | 0.001982 | 0.001716 – 0.003797 | 12 |
+| Better-Auth | Namespace | Estimated | 0.01182 | 0.01045 – 0.02041 | 12 |
+| Better-Auth | Novita | Estimated | 0.01246 | 0.01188 – 0.01298 | 12 |
+| Better-Auth | DigitalOcean MicroVMs | Estimated | 0.01289 | 0.01256 – 0.01541 | 12 |
+| Better-Auth | Microsandbox Cloud | Estimated | 0.01431 | 0.01231 – 0.01507 | 12 |
+| Better-Auth | CreateOS | Estimated | 0.01436 | 0.01103 – 0.01636 | 12 |
+| Better-Auth | Blaxel | Estimated (at most) | 0.01821 | 0.0173 – 0.01912 | 12 |
+| Better-Auth | Daytona (VM) | Estimated (at least) | 0.02022 | 0.01995 – 0.02049 | 12 |
+| Better-Auth | E2B | Estimated | 0.02919 | 0.02143 – 0.03418 | 12 |
+| Better-Auth | Vercel Sandbox | Estimated (at most) | 0.0522 | 0.05028 – 0.09697 | 12 |
+| Better-Auth | Modal (gVisor) | **Billed** | 0.1155 | 0.1139 – 0.1314 | 12 |
+| Better-Auth | Modal (VM) | **Billed** | 0.1309 | 0.1282 – 0.1524 | 12 |
+| OpenClaw | boat | Estimated | 0.006698 | 0.005252 – 0.0124 | 12 |
+| OpenClaw | Microsandbox Cloud | Estimated | 0.03745 | 0.03713 – 0.03955 | 3 |
+| OpenClaw | CreateOS | Estimated | 0.03866 | — | 1 |
+| OpenClaw | Namespace | Estimated | 0.04511 | 0.04134 – 0.06061 | 12 |
+| OpenClaw | Novita | Estimated | 0.0482 | 0.04493 – 0.05005 | 12 |
+| OpenClaw | Blaxel | Estimated (at most) | 0.06219 | 0.06107 – 0.06717 | 12 |
+| OpenClaw | Daytona (VM) | Estimated (at least) | 0.06689 | 0.0658 – 0.06882 | 12 |
+| OpenClaw | DigitalOcean MicroVMs | Estimated | 0.06913 | 0.06719 – 0.08139 | 12 |
+| OpenClaw | E2B | Estimated | 0.1084 | 0.08775 – 0.1468 | 12 |
+| OpenClaw | Vercel Sandbox | Estimated (at most) | 0.1568 | 0.1488 – 0.2896 | 12 |
+| OpenClaw | Modal (gVisor) | **Billed** | 0.4596 | 0.4435 – 0.6526 | 12 |
+| OpenClaw | Modal (VM) | **Billed** | 0.593 | 0.5852 – 0.7046 | 12 |
+
+#### Provider bills
+
+What each provider's billing API charged per sandbox, read after the sandbox was deleted.
+A sandbox with no bill shows why; it never counts as zero. A total appears only when every
+sandbox was billed.
+
+| Provider | Billed sandboxes | Total billed (USD) | No bill (reason) |
 | --- | ---: | ---: | --- |
-| Daytona (container) | 13 of 56 | unmeasured | 43 × `provider_api_error` |
-| Daytona (VM) | 0 of 56 | unmeasured | 56 × `provider_api_error` |
+| Daytona (container) | 13 of 56 | — | 43 × `provider_api_error` |
+| Daytona (VM) | 0 of 56 | — | 56 × `provider_api_error` |
 | Modal (gVisor) | 56 of 56 | 13.29 USD | — |
 | Modal (VM) | 55 of 55 | 15.48 USD | — |
 
-<img src="docs/figures/measured-cost-realworld-mastra.webp" width="960" alt="Measured cost per Mastra pipeline run: provider-reported billed cost for 2 environments, cheapest first and not ranked, 2 disclosed as unmeasured, whiskers spanning the lowest and highest bill">
+#### Provider bills per suite
 
-<img src="docs/figures/measured-cost-realworld-better-auth.webp" width="960" alt="Measured cost per Better-Auth pipeline run: provider-reported billed cost for 3 environments, cheapest first and not ranked, 1 disclosed as unmeasured, whiskers spanning the lowest and highest bill">
+Median and lowest – highest bill across the suite's billed sandboxes. A total appears only when
+every sandbox in the suite was billed.
 
-<img src="docs/figures/measured-cost-realworld-openclaw.webp" width="960" alt="Measured cost per OpenClaw pipeline run: provider-reported billed cost for 3 environments, cheapest first and not ranked, 1 disclosed as unmeasured, whiskers spanning the lowest and highest bill">
-
-<details>
-<summary>Measured cost per suite: median per sandbox (one realworld sandbox = one pipeline run)</summary>
-
-Each value is the median across the suite's measured sandboxes, and the range is their lowest and
-highest bill. A realworld sandbox runs its pipeline once, so its figure is the billed cost of one
-pipeline run. Where fewer sandboxes were measured than ran, the median rests on the measured ones
-only — read it beside the coverage column — and the suite total stays unmeasured.
-
-| Provider | Suite | Median per sandbox | Range | Measured sandboxes | Suite total | Unmeasured | Source |
+| Provider | Suite | Median bill | Lowest – highest | Billed sandboxes | Suite total | No bill (reason) | Source |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-| Daytona (container) | realworld-mastra _(per pipeline run)_ | unmeasured | — | 0 of 12 | unmeasured | 12 × `provider_api_error` | — |
-| Daytona (container) | realworld-better-auth _(per pipeline run)_ | 0.0003003 USD | 0.0002496 – 0.0005095 | 8 of 12 | unmeasured | 4 × `provider_api_error` | provider-reported |
-| Daytona (container) | realworld-openclaw _(per pipeline run)_ | 0.0004109 USD | 0.0003109 – 0.000511 | 2 of 12 | unmeasured | 10 × `provider_api_error` | provider-reported |
-| Daytona (container) | cpu-node | unmeasured | — | 0 of 5 | unmeasured | 5 × `provider_api_error` | — |
-| Daytona (container) | system | unmeasured | — | 0 of 3 | unmeasured | 3 × `provider_api_error` | — |
-| Daytona (container) | pgbench | unmeasured | — | 0 of 3 | unmeasured | 3 × `provider_api_error` | — |
+| Daytona (container) | realworld-mastra _(per pipeline run)_ | — | — | 0 of 12 | — | 12 × `provider_api_error` | — |
+| Daytona (container) | realworld-better-auth _(per pipeline run)_ | 0.0003003 USD | 0.0002496 – 0.0005095 | 8 of 12 | — | 4 × `provider_api_error` | provider-reported |
+| Daytona (container) | realworld-openclaw _(per pipeline run)_ | 0.0004109 USD | 0.0003109 – 0.000511 | 2 of 12 | — | 10 × `provider_api_error` | provider-reported |
+| Daytona (container) | cpu-node | — | — | 0 of 5 | — | 5 × `provider_api_error` | — |
+| Daytona (container) | system | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
+| Daytona (container) | pgbench | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
 | Daytona (container) | memory | 0.02663 USD | 0.02449 – 0.02988 | 3 of 3 | 0.08101 USD | — | provider-reported |
-| Daytona (container) | disk | unmeasured | — | 0 of 3 | unmeasured | 3 × `provider_api_error` | — |
-| Daytona (container) | network | unmeasured | — | 0 of 3 | unmeasured | 3 × `provider_api_error` | — |
+| Daytona (container) | disk | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
+| Daytona (container) | network | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
 | Modal (gVisor) | realworld-mastra _(per pipeline run)_ | 0.2984 USD | 0.2963 – 0.331 | 12 of 12 | 3.612 USD | — | provider-reported |
 | Modal (gVisor) | realworld-better-auth _(per pipeline run)_ | 0.1155 USD | 0.1139 – 0.1314 | 12 of 12 | 1.419 USD | — | provider-reported |
 | Modal (gVisor) | realworld-openclaw _(per pipeline run)_ | 0.4596 USD | 0.4435 – 0.6526 | 12 of 12 | 5.686 USD | — | provider-reported |
@@ -2773,14 +2800,6 @@ correction is applied across providers or metrics.
 | system | SQLite Speedtest | boat | 0.40 (too few sandboxes) | 0.012 |
 | system | SQLite Speedtest | Modal (gVisor) | 1.0 (too few sandboxes) | 0.81 |
 | system | SQLite Speedtest | Daytona (container) | 0.10 (too few sandboxes) | 0.0013 |
-| economics | Hourly cost | boat | — | — |
-| economics | Hourly cost | Tangle Sandbox | — | — |
-| economics | Hourly cost | Novita | — | — |
-| economics | Hourly cost | CreateOS | — | — |
-| economics | Hourly cost | DigitalOcean MicroVMs | — | — |
-| economics | Hourly cost | Daytona (container) | — | — |
-| economics | Hourly cost | Daytona (VM) | — (equal values) | — |
-| economics | Hourly cost | E2B | — (equal values) | — |
 
 </details>
 
