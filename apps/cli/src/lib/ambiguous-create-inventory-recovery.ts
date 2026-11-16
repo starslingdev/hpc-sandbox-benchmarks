@@ -65,6 +65,15 @@ export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 		sourceSha: "606c3e9eb4d3f83ac5f9d15ed2b04f80b8878467",
 		detail: FREESTYLE_502_DETAIL,
 	},
+	{
+		provider: "freestyle",
+		suite: "system",
+		attemptId: "freestyle-system-r0-a1-7a215e9a-f7f6-41eb-9d66-b85811031768",
+		cellId: "freestyle-system-r0",
+		workflowRun: "43859473792",
+		sourceSha: "987b4cba3eb94e92d52af5c9f45cd07c9f0538d8",
+		detail: "Sandbox creation timed out; allocation ownership unresolved",
+	},
 ] as const);
 
 export type AmbiguousCreateInventoryClearance =

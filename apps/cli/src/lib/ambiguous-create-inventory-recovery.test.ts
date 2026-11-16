@@ -21,12 +21,18 @@ afterEach(() => {
 
 const reviewedRuncloud = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[0];
 const reviewedFreestyle = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[2];
+const reviewedFreestyleTimeout = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[4];
 
 type FixtureProvider = "runcloud" | "freestyle" | "tama";
 type FixtureRefList = { provider: FixtureProvider; id: string }[];
 
-function fixture(kind: "runcloud" | "freestyle" | "other" = "runcloud") {
-	const reviewed = kind === "freestyle" ? reviewedFreestyle : reviewedRuncloud;
+function fixture(kind: "runcloud" | "freestyle" | "freestyle-timeout" | "other" = "runcloud") {
+	const reviewed =
+		kind === "freestyle-timeout"
+			? reviewedFreestyleTimeout
+			: kind === "freestyle"
+				? reviewedFreestyle
+				: reviewedRuncloud;
 	const provider: FixtureProvider = kind === "other" ? "tama" : reviewed.provider;
 	const suite = kind === "other" ? "memory" : reviewed.suite;
 	const directory = mkdtempSync(join(tmpdir(), "ambiguous-create-"));
@@ -168,6 +174,18 @@ test("the reviewed Freestyle 502 case releases after two empty inventories", asy
 		outcome: "not-allocated",
 		account: "freestyle",
 		attempt: reviewedFreestyle.attemptId,
+	});
+});
+
+test("the reviewed Freestyle harness create-timeout smoke releases after two empty inventories", async () => {
+	const f = fixture("freestyle-timeout");
+	expect(await recoverAmbiguousCreateInventory(f.options)).toBe(reviewedFreestyleTimeout.attemptId);
+	expect(f.records.at(-1)).toMatchObject({
+		kind: "released",
+		outcome: "not-allocated",
+		account: "freestyle",
+		attempt: reviewedFreestyleTimeout.attemptId,
+		cellId: reviewedFreestyleTimeout.cellId,
 	});
 });
 

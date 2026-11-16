@@ -218,4 +218,57 @@ describe("Freestyle as a native-snapshot build target", () => {
 			snapshotBuild.stockBase({ FREESTYLE_API_KEY: "k", FREESTYLE_BASE_SNAPSHOT_ID: "sh-base" }),
 		).toBe("sh-base");
 	});
+
+	test("adopts a VM by its pre-chosen slug after an unconfirmed create, even if the caller already aborted", async () => {
+		const account = freestyleAccount();
+		const marker = `${MARKER_PREFIX}11111111-1111-4111-8111-111111111111`;
+		const slug = FREESTYLE_SLUG.toVendor(marker);
+		const fetchImpl = Object.assign(
+			async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+				const url = new URL(String(input));
+				const method = init?.method ?? "GET";
+				if (method === "POST" && url.pathname === "/v5/vms") {
+					await account.fetch(input, init);
+					throw new Error(
+						"Freestyle background request returned HTTP 502; operation outcome is unconfirmed",
+					);
+				}
+				return account.fetch(input, init);
+			},
+			{ preconnect: fetch.preconnect },
+		);
+		const vendor = freestyleVendor(context, fetchImpl);
+		const adopted = await vendor.control.create(
+			{ request, marker },
+			{ signal: new AbortController().signal },
+		);
+		expect(adopted.id).toBe("vm-1");
+		expect(account.vms.get("vm-1")?.slug).toBe(slug);
+		const again = await vendor.control.create({ request, marker }, { signal: AbortSignal.abort() });
+		expect(again.id).toBe("vm-1");
+	});
+
+	test("names the pre-chosen slug when an unconfirmed create cannot be found", async () => {
+		const account = freestyleAccount();
+		const marker = `${MARKER_PREFIX}22222222-2222-4222-8222-222222222222`;
+		const slug = FREESTYLE_SLUG.toVendor(marker);
+		const fetchImpl = Object.assign(
+			async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+				const url = new URL(String(input));
+				if ((init?.method ?? "GET") === "POST" && url.pathname === "/v5/vms")
+					throw new Error(
+						"Freestyle background request returned HTTP 502; operation outcome is unconfirmed",
+					);
+				return account.fetch(input, init);
+			},
+			{ preconnect: fetch.preconnect },
+		);
+		await expect(
+			freestyleVendor(context, fetchImpl).control.create(
+				{ request, marker },
+				{ signal: new AbortController().signal },
+			),
+		).rejects.toThrow(`if a VM was allocated it carries the slug ${slug}`);
+		expect(account.vms.size).toBe(0);
+	});
 });
