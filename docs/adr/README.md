@@ -37,3 +37,4 @@ here changes, supersede the ADR (leave it in place, note what replaced it) rathe
 | [0025](./0025-runcloud-named-cleanup-recovery.md) | Runcloud cleanup from a retained unique create name |
 | [0026](./0026-provider-scoped-publication-gates.md) | Provider-scoped publication gates |
 | [0027](./0027-createos-reviewed-create-rejection.md) | Reviewed CreateOS create rejection |
+| [0028](./0028-reviewed-ambiguous-create-inventory-clearance.md) | Reviewed inventory clearance for name-free ambiguous creates |
