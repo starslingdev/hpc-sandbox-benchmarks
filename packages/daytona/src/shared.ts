@@ -29,6 +29,8 @@ function defineDaytonaDriver<P extends DaytonaId, Raw, Native>(
 		provenance: DAYTONA_PROVENANCE,
 		sandboxId: DAYTONA_SANDBOX_ID,
 		// The cell's CPU and memory (v2: guarantee and ceiling at create; v0: the snapshot); `prepare` proves them.
+		// Disk is reported, not requested: daytona-container's snapshot is this org's 10 GiB ceiling,
+		// not TARGET_SPEC.diskGb (40). v0 prepare() honors that ceiling; observed disk is recorded.
 		coverage: pinned(4, 8),
 		diskProof: "reported",
 		// Daytona returns HTTP 408 on a multi-minute synchronous executeCommand while the process

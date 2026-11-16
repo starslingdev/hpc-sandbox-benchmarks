@@ -50,6 +50,14 @@ Vercel exposes only a vCPU resource knob and derives memory at 2048 MB per vCPU,
 vCPU reaches the 8 GiB target as a coupled point. Its SDK does not expose a disk-size knob; available
 disk is measured in the guest and disk-gated suites skip honestly when the observed mount is too small.
 
+Daytona container-class sandboxes in this org reject disk above 10 GB (`Disk request 40GB exceeds
+maximum allowed per sandbox (10GB)`, toolchain bake 43780173359). `daytona-container` is therefore
+baked and prepared at 10 GiB disk — not the 40 GiB `TARGET_SPEC` that `daytona-vm` and the other
+providers use. CPU and memory stay at 4 vCPU / 8 GiB (`specMatched` still judges only that pair).
+Observed disk is recorded on the Run; suites whose `minDiskGb` exceeds what the guest has free
+(notably `realworld-mastra` at 30 GiB and `realworld-openclaw` at 25 GiB) skip with an Insufficient
+disk coverage gap rather than running as if the 40 GiB target had been honored.
+
 ## Dimensions and metrics
 
 Results land on a closed, ordered set of [`DIMENSIONS`](../packages/schema/src/metrics.ts): `lifecycle`,
