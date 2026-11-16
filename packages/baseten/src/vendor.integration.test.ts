@@ -18,6 +18,7 @@ import baseten from "./index.ts";
 import type { BasetenSdk } from "./vendor.ts";
 import {
 	BASETEN_KEEPALIVE_PROCESS,
+	BASETEN_ORG_SANDBOX_LIMIT,
 	BASETEN_OWNER_LABEL,
 	BASETEN_PTS_DATA_DIR,
 	BASETEN_VOLUME_HEADROOM_MB,
@@ -356,6 +357,89 @@ describe("Baseten end to end through its module", () => {
 		await expect(driverOver(team).create(request)).rejects.toBeDefined();
 		expect(team.volumeDeletes).toHaveLength(1);
 		expect([...team.volumes.values()].map((volume) => volume.status)).toEqual(["DELETING"]);
+	});
+});
+
+describe("Baseten org sandbox quota", () => {
+	const marker = (n: number) =>
+		`benchmark-${String(n).padStart(8, "0")}-0000-4000-8000-000000000000`;
+	const allocate = (vendor: ReturnType<typeof basetenVendor>, n: number, signal?: AbortSignal) =>
+		vendor.control.create(
+			{ request, marker: marker(n) },
+			{ signal: signal ?? AbortSignal.timeout(2_000) },
+		);
+
+	test("counts TERMINATED records toward the cap and creates once one is gone", async () => {
+		const team = basetenTeam();
+		team.allocate("leftover-a", {}, "TERMINATED");
+		team.allocate("leftover-b", {}, "TERMINATED");
+		let lists = 0;
+		const inner = team.sdk.list.bind(team.sdk);
+		team.sdk.list = async function* (args) {
+			lists++;
+			if (lists >= 2) team.sandboxes.delete("leftover-a");
+			yield* inner(args);
+		};
+		const vendor = basetenVendor(team.sdk, context, noDelay, { orgSandboxLimit: 2 });
+		await allocate(vendor, 1);
+		expect(team.created).toHaveLength(1);
+		expect(team.sandboxes.has("leftover-a")).toBe(false);
+		expect(lists).toBeGreaterThan(1);
+	});
+
+	test("times out with a quota error instead of starting a create that would 403", async () => {
+		const team = basetenTeam();
+		for (let i = 0; i < BASETEN_ORG_SANDBOX_LIMIT; i++)
+			team.allocate(`leftover-${i}`, {}, "TERMINATED");
+		const vendor = basetenVendor(team.sdk, context, noDelay, { quotaWaitTimeoutMs: 0 });
+		await expect(allocate(vendor, 1)).rejects.toThrow(
+			/Baseten organization sandbox quota is full \(10\/10, including terminating records\)/,
+		);
+		expect(team.volumeSizes).toHaveLength(0);
+		expect(team.created).toHaveLength(0);
+	});
+
+	test("concurrent creates reserve a slot so they cannot oversubscribe the cap", async () => {
+		const team = basetenTeam();
+		let entered = 0;
+		let maxEntered = 0;
+		let release!: () => void;
+		const hold = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const inner = team.sdk.volumes.create.bind(team.sdk.volumes);
+		team.sdk.volumes.create = async (params) => {
+			entered++;
+			maxEntered = Math.max(maxEntered, entered);
+			await hold;
+			entered--;
+			return inner(params);
+		};
+		// A real poll is required here: `noDelay` would tight-loop the waiter on
+		// microtasks and starve the in-flight creates after the gate opens.
+		const poll = async (ms: number, signal?: AbortSignal) => {
+			await Bun.sleep(ms);
+			signal?.throwIfAborted();
+		};
+		const vendor = basetenVendor(team.sdk, context, poll, {
+			orgSandboxLimit: 2,
+			quotaPollMs: 10,
+			quotaWaitTimeoutMs: 2_000,
+		});
+		const attempts = [1, 2, 3].map((n) => allocate(vendor, n, AbortSignal.timeout(3_000)));
+		const started = Date.now();
+		while (entered < 2 && Date.now() - started < 1_000) await Bun.sleep(1);
+		await Bun.sleep(20);
+		expect(entered).toBe(2);
+		expect(maxEntered).toBe(2);
+		release();
+		const waitCreated = Date.now();
+		while (team.created.length < 2 && Date.now() - waitCreated < 1_000) await Bun.sleep(1);
+		expect(team.created).toHaveLength(2);
+		team.sandboxes.delete(String(team.created[0]?.name));
+		const results = await Promise.allSettled(attempts);
+		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(3);
+		expect(maxEntered).toBe(2);
 	});
 });
 

@@ -59,6 +59,24 @@ export const BASETEN_VOLUME_HEADROOM_MB = 256;
 const VOLUME_READY_TIMEOUT_MS = 3 * 60_000;
 const VOLUME_POLL_MS = 2_000;
 /**
+ * Baseten's org cap is 10 sandboxes at once (docs.baseten.co/sandboxes/manage). TERMINATED
+ * records still occupy that cap until they 404, so a batch at maxConcurrency 10 plus leftovers
+ * still terminating from the previous job can get a generic 403. The adapter waits for a slot,
+ * counting every listed sandbox including TERMINATED, and holds a process-local reservation so
+ * concurrent creates in this process cannot race an unlocked inventory check. `page()` still
+ * omits TERMINATED, so cleanup confirmation is unchanged.
+ */
+export const BASETEN_ORG_SANDBOX_LIMIT = 10;
+const QUOTA_POLL_MS = 2_000;
+const QUOTA_WAIT_TIMEOUT_MS = 15 * 60_000;
+
+/** Test-only knobs; production callers omit this and get the documented org cap. */
+export interface BasetenVendorOptions {
+	readonly orgSandboxLimit?: number;
+	readonly quotaWaitTimeoutMs?: number;
+	readonly quotaPollMs?: number;
+}
+/**
  * `DEPLOYED` is the container, not the sandbox API inside it: the image's entrypoint seeds the
  * multi-GB PTS tree onto the volume before it starts the API, and until then the edge answers
  * 502/503/504 (live, 2026-11-14). The keepalive waits that long, inside the kit's ready budget.
@@ -188,7 +206,50 @@ export function basetenVendor(
 	sdk: BasetenSdk,
 	{ resolvedArtifact }: Pick<DriverContext<"baseten">, "resolvedArtifact">,
 	delay: (ms: number, signal?: AbortSignal) => Promise<void> = abortableDelay,
+	options: BasetenVendorOptions = {},
 ): Vendor<BasetenRaw, BasetenNative> {
+	const orgSandboxLimit = options.orgSandboxLimit ?? BASETEN_ORG_SANDBOX_LIMIT;
+	const quotaWaitTimeoutMs = options.quotaWaitTimeoutMs ?? QUOTA_WAIT_TIMEOUT_MS;
+	const quotaPollMs = options.quotaPollMs ?? QUOTA_POLL_MS;
+	// Reservations for creates that have a slot but may not yet appear in the account list.
+	let reserved = 0;
+	let gate = Promise.resolve();
+	const locked = async <T>(fn: () => Promise<T>): Promise<T> => {
+		let release!: () => void;
+		const previous = gate;
+		gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await previous;
+		try {
+			return await fn();
+		} finally {
+			release();
+		}
+	};
+	const occupySandboxSlot = async (signal: AbortSignal): Promise<void> => {
+		const deadline = Date.now() + quotaWaitTimeoutMs;
+		for (;;) {
+			const occupying = await locked(async () => {
+				let count = 0;
+				for await (const _info of sdk.list({ callOptions: { signal } })) count++;
+				if (count + reserved < orgSandboxLimit) {
+					reserved++;
+					return undefined;
+				}
+				return count;
+			});
+			if (occupying === undefined) return;
+			if (Date.now() >= deadline)
+				throw new Error(
+					`Baseten organization sandbox quota is full (${occupying}/${orgSandboxLimit}, including terminating records); no slot opened within ${quotaWaitTimeoutMs}ms`,
+				);
+			await delay(quotaPollMs, signal);
+		}
+	};
+	const releaseSandboxSlot = () => {
+		reserved = Math.max(0, reserved - 1);
+	};
 	const read = async (name: string, signal: AbortSignal): Promise<BasetenRaw | undefined> => {
 		const callOptions = { signal };
 		const [sandbox, volume] = await Promise.all([
@@ -215,52 +276,57 @@ export function basetenVendor(
 		control: {
 			// The sandbox's `DEPLOYING` record is returned; readiness is observed by `get`.
 			create: async ({ request: { spec }, marker }, { signal }) => {
-				const labels = { [BASETEN_OWNER_LABEL]: "baseten" };
-				const callOptions = { signal };
-				const sandbox = (volume?: VolumeInfo) =>
-					sdk.create({
+				await occupySandboxSlot(signal);
+				try {
+					const labels = { [BASETEN_OWNER_LABEL]: "baseten" };
+					const callOptions = { signal };
+					const sandbox = (volume?: VolumeInfo) =>
+						sdk.create({
+							name: marker,
+							image: `${resolvedArtifact.ref}:latest`,
+							memory: spec.memoryGb * 1024,
+							// A volume belongs to one region and only mounts in a sandbox there.
+							...(volume?.region !== undefined && { region: volume.region }),
+							labels,
+							lifecycle: {
+								expirationPolicies: [
+									{ type: "TTL_MAX_AGE", afterMs: LEAK_EXPIRY_MS, action: "DELETE" },
+								],
+							},
+							volumes:
+								volume === undefined ? [] : [{ name: marker, mountPath: BASETEN_VOLUME_MOUNT_DIR }],
+							callOptions,
+						});
+					// The module's `unsupported` hook refuses a request without disk: the image's entrypoint
+					// requires the mounted volume. The adapter itself still translates a bare create.
+					if (spec.diskGb === undefined)
+						return record({ name: marker, sandbox: (await sandbox()).info });
+					await sdk.volumes.create({
 						name: marker,
-						image: `${resolvedArtifact.ref}:latest`,
-						memory: spec.memoryGb * 1024,
-						// A volume belongs to one region and only mounts in a sandbox there.
-						...(volume?.region !== undefined && { region: volume.region }),
+						size: spec.diskGb * 1024 + BASETEN_VOLUME_HEADROOM_MB,
 						labels,
-						lifecycle: {
-							expirationPolicies: [
-								{ type: "TTL_MAX_AGE", afterMs: LEAK_EXPIRY_MS, action: "DELETE" },
-							],
-						},
-						volumes:
-							volume === undefined ? [] : [{ name: marker, mountPath: BASETEN_VOLUME_MOUNT_DIR }],
 						callOptions,
 					});
-				// The module's `unsupported` hook refuses a request without disk: the image's entrypoint
-				// requires the mounted volume. The adapter itself still translates a bare create.
-				if (spec.diskGb === undefined)
-					return record({ name: marker, sandbox: (await sandbox()).info });
-				await sdk.volumes.create({
-					name: marker,
-					size: spec.diskGb * 1024 + BASETEN_VOLUME_HEADROOM_MB,
-					labels,
-					callOptions,
-				});
-				try {
-					const volume = await awaitVolume(marker, signal);
-					return record({ name: marker, sandbox: (await sandbox(volume)).info, volume });
-				} catch (error) {
-					// The volume is allocated; a refused or failed sandbox create must not strand it. A
-					// volume that cannot be removed here is found again by its marker and torn down.
-					const code = status(error);
-					if (code !== undefined && code !== 409) {
-						const removed = await sdk.volumes
-							.delete({ name: marker })
-							.then(() => true)
-							.catch(() => false);
-						if (removed) throw error;
+					try {
+						const volume = await awaitVolume(marker, signal);
+						return record({ name: marker, sandbox: (await sandbox(volume)).info, volume });
+					} catch (error) {
+						// The volume is allocated; a refused or failed sandbox create must not strand it. A
+						// volume that cannot be removed here is found again by its marker and torn down.
+						const code = status(error);
+						if (code !== undefined && code !== 409) {
+							const removed = await sdk.volumes
+								.delete({ name: marker })
+								.then(() => true)
+								.catch(() => false);
+							if (removed) throw error;
+						}
+						throw new Error(`Baseten sandbox create failed after allocating volume ${marker}`, {
+							cause: error,
+						});
 					}
-					throw new Error(`Baseten sandbox create failed after allocating volume ${marker}`, {
-						cause: error,
-					});
+				} finally {
+					releaseSandboxSlot();
 				}
 			},
 			get: async (name, { signal }) => {
