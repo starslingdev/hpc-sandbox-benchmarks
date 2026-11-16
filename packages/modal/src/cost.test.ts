@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { providerCostEvidenceSchema } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
-import type { ModalBilling } from "./cost.ts";
+import type { ModalBilling, SandboxLifetime } from "./cost.ts";
 import { MODAL_MARKER_TAG, modalCostEvidence } from "./cost.ts";
 import type { SandboxStatsGroup, SandboxStatsRequest } from "./stats.ts";
 
@@ -25,6 +25,7 @@ const group = (cost: string, marker = "m-1"): SandboxStatsGroup => ({
 async function capture(
 	script: readonly (readonly SandboxStatsGroup[])[],
 	tags: Readonly<Record<string, string>> = { [MODAL_MARKER_TAG]: "m-1" },
+	lifetime: () => Promise<SandboxLifetime | undefined> = async () => undefined,
 ) {
 	const requests: SandboxStatsRequest[] = [];
 	const billing: ModalBilling = {
@@ -34,6 +35,7 @@ async function capture(
 			requests.push(request);
 			yield* script[Math.min(requests.length - 1, script.length - 1)] ?? [];
 		},
+		lifetime,
 		close: () => {},
 	};
 	const capability = modalCostEvidence("modal-vm", {
@@ -70,6 +72,34 @@ describe("modalCostEvidence", () => {
 			groupByTags: [MODAL_MARKER_TAG],
 			tags: { [MODAL_MARKER_TAG]: "m-1" },
 		});
+	});
+
+	it("records the sandbox's billed seconds from its finished task", async () => {
+		const { record } = await capture([[group("0.01")]], undefined, async () => ({
+			startedAt: 1_794_833_728.783,
+			finishedAt: 1_794_835_120.255,
+		}));
+		expect(record).toMatchObject({ kind: "observed", amount: 0.01 });
+		if (record.kind !== "observed") throw new Error("expected an observed record");
+		expect(record.usage.find((u) => u.resource === "wall_seconds")?.quantity).toBeCloseTo(
+			1391.472,
+			3,
+		);
+		expect(JSON.parse(record.responseJson).task).toEqual({
+			startedAt: 1_794_833_728.783,
+			finishedAt: 1_794_835_120.255,
+		});
+	});
+
+	it.each([
+		["Modal lists no task", async () => undefined],
+		["the lookup fails", async () => Promise.reject(new Error("unavailable"))],
+		["the task never started", async () => ({ startedAt: 0, finishedAt: 0 })],
+	])("keeps the bill without billed seconds when %s", async (_, lifetime) => {
+		const { record } = await capture([[group("0.01")]], undefined, lifetime);
+		expect(record).toMatchObject({ kind: "observed", amount: 0.01 });
+		if (record.kind !== "observed") throw new Error("expected an observed record");
+		expect(record.usage.map((u) => u.resource)).toEqual(["CPU", "Memory"]);
 	});
 
 	it.each([
