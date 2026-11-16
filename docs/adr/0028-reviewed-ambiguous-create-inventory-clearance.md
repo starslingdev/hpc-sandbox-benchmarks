@@ -22,6 +22,12 @@ Admission has refused later smokes on those accounts.
 Freestyle `memory` r1 retained `allocation.json` and is not this exception; recover it with
 `recover-allocated-intent` / `recover-experiment-cleanup`.
 
+The same clearance later covers Provider smoke 43859473792 (source
+`987b4cba3eb94e92d52af5c9f45cd07c9f0538d8`) freestyle `system` r0, whose harness create raced
+the unconfirmed POST at 5 minutes and retained no allocation or slug in the diagnostic
+(`Sandbox creation timed out; allocation ownership unresolved`). Two empty inventories remain
+the proof; the original attempt stays failed.
+
 ## Decision
 
 `recover-ambiguous-create-inventory --exclusive-account <provider> <suite> <attempt>` may append

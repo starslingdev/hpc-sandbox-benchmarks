@@ -120,8 +120,19 @@ export function freestyleVendor(
 			// The create request is bounded by the harness's attempt budget, not the VM's lifetime.
 			create: async ({ request, marker }, { signal }) => {
 				const slug = FREESTYLE_SLUG.toVendor(marker);
+				// Look up with a fresh bound: the caller may already have aborted (the harness
+				// races create at deadlineMs and does not cancel the in-flight request).
+				const adopt = async () => {
+					const row = vmRecord.assert(
+						await api(undefined, FREESTYLE_CONTROL_TIMEOUT_MS).vms.get(slug),
+					);
+					return row.metadata?.[FREESTYLE_OWNER_KEY] === marker ? record(row) : undefined;
+				};
 				try {
-					const created = await api(signal, request.deadlineMs).vms.create({
+					// Leave a control-timeout headroom so adopt can finish before a harness race
+					// at request.deadlineMs (SUITE_CREATE_ATTEMPT_TIMEOUT_MS is 5 minutes).
+					const createMs = Math.max(1_000, request.deadlineMs - FREESTYLE_CONTROL_TIMEOUT_MS);
+					const created = await api(signal, createMs).vms.create({
 						snapshotId: resolvedArtifact.ref,
 						slug,
 						metadata: { [FREESTYLE_OWNER_KEY]: marker },
@@ -133,12 +144,9 @@ export function freestyleVendor(
 					const id = FREESTYLE_SANDBOX_ID.assert(created.vm.id);
 					return { id, phase: "ready", marker, raw: { id } };
 				} catch (error) {
-					if (signal.aborted) throw error;
-					// A 502 or lost response is unconfirmed. The slug was chosen before the request;
-					// adopt the VM if it is already visible so allocation is recorded before readiness.
 					try {
-						const row = vmRecord.assert(await api(signal).vms.get(slug));
-						if (row.metadata?.[FREESTYLE_OWNER_KEY] === marker) return record(row);
+						const adopted = await adopt();
+						if (adopted) return adopted;
 					} catch {
 						// Lookup failed or the slug is not visible yet; fall through with the name.
 					}
