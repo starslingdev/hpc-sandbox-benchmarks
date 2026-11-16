@@ -22,9 +22,12 @@ afterEach(() => {
 const reviewedRuncloud = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[0];
 const reviewedFreestyle = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[2];
 
+type FixtureProvider = "runcloud" | "freestyle" | "tama";
+type FixtureRefList = { provider: FixtureProvider; id: string }[];
+
 function fixture(kind: "runcloud" | "freestyle" | "other" = "runcloud") {
 	const reviewed = kind === "freestyle" ? reviewedFreestyle : reviewedRuncloud;
-	const provider = kind === "other" ? "tama" : reviewed.provider;
+	const provider: FixtureProvider = kind === "other" ? "tama" : reviewed.provider;
 	const suite = kind === "other" ? "memory" : reviewed.suite;
 	const directory = mkdtempSync(join(tmpdir(), "ambiguous-create-"));
 	directories.push(directory);
@@ -95,7 +98,7 @@ function fixture(kind: "runcloud" | "freestyle" | "other" = "runcloud") {
 		},
 	];
 	const events: string[] = [];
-	let owned: { provider: string; id: string }[] = [];
+	let owned: FixtureRefList = [];
 	const driver: SandboxDriver = {
 		create: async () => {
 			throw new Error("must not allocate");
@@ -136,7 +139,7 @@ function fixture(kind: "runcloud" | "freestyle" | "other" = "runcloud") {
 		evidence,
 		save,
 		marker,
-		hold: (refs: { provider: string; id: string }[]) => {
+		hold: (refs: FixtureRefList) => {
 			owned = refs;
 		},
 	};
