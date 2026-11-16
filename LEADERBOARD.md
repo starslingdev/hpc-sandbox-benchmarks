@@ -1654,10 +1654,10 @@ best. The three after it show each pipeline's cost per run, the median across sa
 | Mastra | DigitalOcean MicroVMs | Estimated | 0.1009 | 0.09864 – 0.1016 | 12 |
 | Mastra | Blaxel | Estimated (at most) | 0.1199 | 0.1186 – 0.123 | 12 |
 | Mastra | E2B | Estimated | 0.1671 | 0.1336 – 0.2025 | 12 |
-| Mastra | Daytona (VM) | Estimated (at least) | 0.1807 | 0.1792 – 0.1827 | 12 |
 | Mastra | Modal (gVisor) | **Billed** | 0.2984 | 0.2963 – 0.331 | 12 |
 | Mastra | Vercel Sandbox | Estimated (at most) | 0.3137 | 0.2967 – 0.4271 | 12 |
 | Mastra | Modal (VM) | **Billed** | 0.3448 | 0.3423 – 0.3776 | 11 |
+| Mastra | Daytona (VM) | **Billed** | 0.4261 | 0.3893 – 0.4573 | 12 |
 | Better-Auth | boat | Estimated | 0.001982 | 0.001716 – 0.003797 | 12 |
 | Better-Auth | Namespace | Estimated | 0.01182 | 0.01045 – 0.02041 | 12 |
 | Better-Auth | Novita | Estimated | 0.01246 | 0.01188 – 0.01298 | 12 |
@@ -1665,9 +1665,9 @@ best. The three after it show each pipeline's cost per run, the median across sa
 | Better-Auth | Microsandbox Cloud | Estimated | 0.01431 | 0.01231 – 0.01507 | 12 |
 | Better-Auth | CreateOS | Estimated | 0.01436 | 0.01103 – 0.01636 | 12 |
 | Better-Auth | Blaxel | Estimated (at most) | 0.01821 | 0.0173 – 0.01912 | 12 |
-| Better-Auth | Daytona (VM) | Estimated (at least) | 0.02022 | 0.01995 – 0.02049 | 12 |
 | Better-Auth | E2B | Estimated | 0.02919 | 0.02143 – 0.03418 | 12 |
 | Better-Auth | Vercel Sandbox | Estimated (at most) | 0.0522 | 0.05028 – 0.09697 | 12 |
+| Better-Auth | Daytona (VM) | **Billed** | 0.1145 | 0.113 – 0.1162 | 12 |
 | Better-Auth | Modal (gVisor) | **Billed** | 0.1155 | 0.1139 – 0.1314 | 12 |
 | Better-Auth | Modal (VM) | **Billed** | 0.1309 | 0.1282 – 0.1524 | 12 |
 | OpenClaw | boat | Estimated | 0.006698 | 0.005252 – 0.0124 | 12 |
@@ -1676,10 +1676,10 @@ best. The three after it show each pipeline's cost per run, the median across sa
 | OpenClaw | Namespace | Estimated | 0.04511 | 0.04134 – 0.06061 | 12 |
 | OpenClaw | Novita | Estimated | 0.0482 | 0.04493 – 0.05005 | 12 |
 | OpenClaw | Blaxel | Estimated (at most) | 0.06219 | 0.06107 – 0.06717 | 12 |
-| OpenClaw | Daytona (VM) | Estimated (at least) | 0.06689 | 0.0658 – 0.06882 | 12 |
 | OpenClaw | DigitalOcean MicroVMs | Estimated | 0.06913 | 0.06719 – 0.08139 | 12 |
 | OpenClaw | E2B | Estimated | 0.1084 | 0.08775 – 0.1468 | 12 |
 | OpenClaw | Vercel Sandbox | Estimated (at most) | 0.1568 | 0.1488 – 0.2896 | 12 |
+| OpenClaw | Daytona (VM) | **Billed** | 0.2737 | 0.2664 – 0.3224 | 12 |
 | OpenClaw | Modal (gVisor) | **Billed** | 0.4596 | 0.4435 – 0.6526 | 12 |
 | OpenClaw | Modal (VM) | **Billed** | 0.593 | 0.5852 – 0.7046 | 12 |
 
@@ -1691,8 +1691,8 @@ sandbox was billed.
 
 | Provider | Billed sandboxes | Total billed (USD) | No bill (reason) |
 | --- | ---: | ---: | --- |
-| Daytona (container) | 13 of 56 | — | 43 × `provider_api_error` |
-| Daytona (VM) | 0 of 56 | — | 56 × `provider_api_error` |
+| Daytona (container) | 56 of 56 | 1.003 USD | — |
+| Daytona (VM) | 56 of 56 | 12.11 USD | — |
 | Modal (gVisor) | 56 of 56 | 13.29 USD | — |
 | Modal (VM) | 55 of 55 | 15.48 USD | — |
 
@@ -1703,15 +1703,24 @@ every sandbox in the suite was billed.
 
 | Provider | Suite | Median bill | Lowest – highest | Billed sandboxes | Suite total | No bill (reason) | Source |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-| Daytona (container) | realworld-mastra _(per pipeline run)_ | — | — | 0 of 12 | — | 12 × `provider_api_error` | — |
-| Daytona (container) | realworld-better-auth _(per pipeline run)_ | 0.0003003 USD | 0.0002496 – 0.0005095 | 8 of 12 | — | 4 × `provider_api_error` | provider-reported |
-| Daytona (container) | realworld-openclaw _(per pipeline run)_ | 0.0004109 USD | 0.0003109 – 0.000511 | 2 of 12 | — | 10 × `provider_api_error` | provider-reported |
-| Daytona (container) | cpu-node | — | — | 0 of 5 | — | 5 × `provider_api_error` | — |
-| Daytona (container) | system | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
-| Daytona (container) | pgbench | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
+| Daytona (container) | realworld-mastra _(per pipeline run)_ | 0.0007543 USD | 0.0002648 – 0.009063 | 12 of 12 | 0.03842 USD | — | provider-reported |
+| Daytona (container) | realworld-better-auth _(per pipeline run)_ | 0.0003116 USD | 0.0002329 – 0.0007305 | 12 of 12 | 0.004568 USD | — | provider-reported |
+| Daytona (container) | realworld-openclaw _(per pipeline run)_ | 0.0004064 USD | 0.0002294 – 0.0006091 | 12 of 12 | 0.004613 USD | — | provider-reported |
+| Daytona (container) | cpu-node | 0.0273 USD | 0.0257 – 0.02848 | 5 of 5 | 0.1366 USD | — | provider-reported |
+| Daytona (container) | system | 0.04712 USD | 0.04691 – 0.05064 | 3 of 3 | 0.1447 USD | — | provider-reported |
+| Daytona (container) | pgbench | 0.06746 USD | 0.06648 – 0.07199 | 3 of 3 | 0.2059 USD | — | provider-reported |
 | Daytona (container) | memory | 0.02663 USD | 0.02449 – 0.02988 | 3 of 3 | 0.08101 USD | — | provider-reported |
-| Daytona (container) | disk | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
-| Daytona (container) | network | — | — | 0 of 3 | — | 3 × `provider_api_error` | — |
+| Daytona (container) | disk | 0.08982 USD | 0.08911 – 0.09155 | 3 of 3 | 0.2705 USD | — | provider-reported |
+| Daytona (container) | network | 0.03806 USD | 0.0379 – 0.04064 | 3 of 3 | 0.1166 USD | — | provider-reported |
+| Daytona (VM) | realworld-mastra _(per pipeline run)_ | 0.4261 USD | 0.3893 – 0.4573 | 12 of 12 | 5.081 USD | — | provider-reported |
+| Daytona (VM) | realworld-better-auth _(per pipeline run)_ | 0.1145 USD | 0.113 – 0.1162 | 12 of 12 | 1.375 USD | — | provider-reported |
+| Daytona (VM) | realworld-openclaw _(per pipeline run)_ | 0.2737 USD | 0.2664 – 0.3224 | 12 of 12 | 3.411 USD | — | provider-reported |
+| Daytona (VM) | cpu-node | 0.06361 USD | 0.0636 – 0.06398 | 5 of 5 | 0.3184 USD | — | provider-reported |
+| Daytona (VM) | system | 0.09063 USD | 0.09061 – 0.0908 | 3 of 3 | 0.272 USD | — | provider-reported |
+| Daytona (VM) | pgbench | 0.2328 USD | 0.2175 – 0.2336 | 3 of 3 | 0.6839 USD | — | provider-reported |
+| Daytona (VM) | memory | 0.03142 USD | 0.03085 – 0.03333 | 3 of 3 | 0.09559 USD | — | provider-reported |
+| Daytona (VM) | disk | 0.2005 USD | 0.2003 – 0.2008 | 3 of 3 | 0.6015 USD | — | provider-reported |
+| Daytona (VM) | network | 0.08869 USD | 0.0885 – 0.09233 | 3 of 3 | 0.2695 USD | — | provider-reported |
 | Modal (gVisor) | realworld-mastra _(per pipeline run)_ | 0.2984 USD | 0.2963 – 0.331 | 12 of 12 | 3.612 USD | — | provider-reported |
 | Modal (gVisor) | realworld-better-auth _(per pipeline run)_ | 0.1155 USD | 0.1139 – 0.1314 | 12 of 12 | 1.419 USD | — | provider-reported |
 | Modal (gVisor) | realworld-openclaw _(per pipeline run)_ | 0.4596 USD | 0.4435 – 0.6526 | 12 of 12 | 5.686 USD | — | provider-reported |
