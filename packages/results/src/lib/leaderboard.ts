@@ -881,7 +881,7 @@ export function buildLeaderboard(
 		),
 		coverageGaps: coverageGapsOf(run),
 		measuredCost,
-		pipelineCost: buildPipelineCost(run.providers, measuredCost, run.targetSpec),
+		pipelineCost: buildPipelineCost(run.providers, run.targetSpec),
 	};
 	// One arm or the other, never a spread that could produce neither: a board with pooling notes
 	// and no sources to attribute them to is now unconstructable rather than merely unintended.
@@ -1284,8 +1284,12 @@ function costSection(board: Leaderboard, figures: readonly LeaderboardMetricFigu
 		"The first chart plots each environment's three-pipeline total: cost against time, bottom left",
 		"best. The three after it show each pipeline's cost per run, the median across sandboxes.",
 		"",
-		"- **Billed**: the provider's own bill for the sandbox.",
+		"- **Billed**: the provider's own bill rate × pipeline time: each sandbox's bill × its timed",
+		"  seconds ÷ its billed seconds.",
 		"- **Estimated**: the provider's published prices × pipeline time.",
+		"",
+		"Both price the pipeline's timed steps alone. A sandbox's whole bill also covers boot, setup",
+		"and an untimed warm-up of each task; it is under provider bills.",
 		"",
 		// The value scatter (the headline) first, then one chart per pipeline.
 		...[...figures]
@@ -1314,7 +1318,8 @@ function costSection(board: Leaderboard, figures: readonly LeaderboardMetricFigu
 	lines.push(
 		"#### Provider bills",
 		"",
-		"What each provider's billing API charged per sandbox, read after the sandbox was deleted.",
+		"What each provider's billing API charged for each whole sandbox (boot, setup and untimed",
+		"warm-ups included), read after the sandbox was deleted.",
 		"A sandbox with no bill shows why; it never counts as zero. A total appears only when every",
 		"sandbox was billed.",
 		"",
@@ -1351,13 +1356,12 @@ function costSection(board: Leaderboard, figures: readonly LeaderboardMetricFigu
 				suite.amounts.length > 1
 					? `${formatValue(low)} – ${formatValue(high)}`
 					: "—";
-			const name = suite.perPipelineRun ? `${suite.suite} _(per pipeline run)_` : suite.suite;
 			const source =
 				suite.sources.length === 0
 					? "—"
 					: suite.sources.map((source) => MEASURED_COST_SOURCE[source]).join(", ");
 			lines.push(
-				`| ${provider.displayName} | ${name} | ${cells.median} | ${range} | ${cells.coverage} | ${cells.total} | ${cells.unmeasured} | ${source} |`,
+				`| ${provider.displayName} | ${suite.suite} | ${cells.median} | ${range} | ${cells.coverage} | ${cells.total} | ${cells.unmeasured} | ${source} |`,
 			);
 		}
 	}

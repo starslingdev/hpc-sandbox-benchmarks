@@ -46,15 +46,20 @@ attempt artifacts or account ownership records. It permits explicit partial publ
 preserving those cells as missing; it contributes no execution attempt or measurement.
 
 **Cost per pipeline run**:
-What one run of a realworld pipeline costs on a provider: the median across its sandboxes. Either a
-billed cost or an estimated cost, never ranked.
+What the timed steps of one run of a realworld pipeline cost on a provider: the median across its
+sandboxes. Either a billed share or an estimated cost, never ranked.
 
 **Billed cost**:
-What the provider's own billing API charged for one sandbox. No bill is never counted as zero.
+What the provider's own billing API charged for one sandbox's whole billed lifetime: boot, setup and
+untimed warm-ups included. No bill is never counted as zero.
+
+**Billed share**:
+A billed cost × the sandbox's timed pipeline seconds ÷ its billed seconds: the provider's real
+billed rate over the window an estimated cost prices.
 
 **Estimated cost**:
 The provider's published per-sandbox prices (disk included, plan fees excluded) × pipeline time. _At
-most_ the bill when some charges apply only while in use; _at least_ when usage above the reservation
+most_ the billed share when some charges apply only while in use; _at least_ when usage above the reservation
 costs extra.
 
 **Three-pipeline total**:

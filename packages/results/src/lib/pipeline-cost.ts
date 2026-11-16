@@ -1,7 +1,11 @@
-/** Cost per pipeline run (see CONTEXT.md): billed where bills cover the suite, else estimated. */
+/**
+ * Cost per pipeline run (see CONTEXT.md): the timed steps of one pipeline run, priced from the
+ * provider's bills where every sandbox has a splittable one, else estimated from published prices.
+ */
 import type { ProviderRun, SuiteName, TargetSpec } from "@sandbox-benchmarks/schema";
 import {
 	aggregate,
+	billedWallSeconds,
 	burstCostPerRun,
 	fullHourlyPrice,
 	getMetric,
@@ -9,13 +13,12 @@ import {
 	percentileOf,
 	SUITES,
 } from "@sandbox-benchmarks/schema";
-import type { MeasuredCostProvider } from "./measured-cost.ts";
 
 export interface PipelineCostRow {
 	providerId: string;
 	displayName: string;
 	billed: boolean;
-	/** `Billed`, or `Estimated` with `(at most)` / `(at least)`. */
+	/** `Billed` (each bill's share for the timed steps), or `Estimated` with `(at most)` / `(at least)`. */
 	basis: string;
 	/** USD: median, lowest and highest sandbox; then the median pipeline seconds. */
 	value: number;
@@ -46,13 +49,39 @@ function completedSandboxes(provider: ProviderRun, suite: SuiteName): Map<number
 	return new Map([...sums].flatMap(([i, e]) => (e.n === tasks.length ? [[i, e.sum]] : [])));
 }
 
+/**
+ * Each completed sandbox's bill × its timed ÷ billed seconds: the provider's real billed rate over
+ * the window the estimate prices (docs/methodology.md, "Cost per pipeline run"). All or nothing: one
+ * bill that cannot be split sends the whole row to the estimate.
+ */
+function billedShares(
+	provider: ProviderRun,
+	suite: SuiteName,
+	completed: ReadonlyMap<number, number>,
+): number[] | undefined {
+	const bills = new Map(
+		(provider.costEvidence ?? []).flatMap((record) =>
+			record.kind === "observed" && record.cell.suite === suite
+				? [[record.cell.replicateIndex ?? 0, record] as const]
+				: [],
+		),
+	);
+	const shares: number[] = [];
+	for (const [index, timed] of completed) {
+		const bill = bills.get(index);
+		const billed = bill?.currency === "USD" ? billedWallSeconds(bill) : undefined;
+		// A billed lifetime shorter than the timed steps inside it is a mismatched record, not a bill.
+		if (bill === undefined || billed === undefined || billed < timed) return undefined;
+		shares.push((bill.amount * timed) / billed);
+	}
+	return shares;
+}
+
 function rowOf(
 	provider: ProviderRun,
 	suite: SuiteName,
-	measuredCost: readonly MeasuredCostProvider[],
 	targetSpec: TargetSpec,
 ): PipelineCostRow | undefined {
-	const measured = measuredCost.find((m) => m.providerId === provider.providerId);
 	const completed = completedSandboxes(provider, suite);
 	if (completed.size === 0) return undefined;
 	const meta = getProvider(provider.providerId);
@@ -66,9 +95,9 @@ function rowOf(
 		const { p50, min, max } = aggregate(costs);
 		return { value: p50, lo: min, hi: max, sandboxes: costs.length };
 	};
-	const bills = measured?.suites.find((s) => s.suite === suite);
-	if (bills?.median != null && measured?.currency === "USD") {
-		return { ...base, billed: true, basis: "Billed", ...spread(bills.amounts) };
+	const shares = billedShares(provider, suite, completed);
+	if (shares !== undefined) {
+		return { ...base, billed: true, basis: "Billed", ...spread(shares) };
 	}
 	const price = meta ? fullHourlyPrice(meta, targetSpec) : null;
 	if (price === null) return undefined;
@@ -79,14 +108,13 @@ function rowOf(
 /** Cost per pipeline run for every realworld suite a provider completed. */
 export function buildPipelineCost(
 	providers: readonly ProviderRun[],
-	measuredCost: readonly MeasuredCostProvider[],
 	targetSpec: TargetSpec,
 ): PipelineCostSuite[] {
 	return (Object.keys(SUITES) as SuiteName[])
 		.filter((suite) => SUITES[suite].wave === "realworld" && SUITES[suite].ptsTimesToRun === 1)
 		.flatMap((suite) => {
 			const rows = providers
-				.flatMap((p) => rowOf(p, suite, measuredCost, targetSpec) ?? [])
+				.flatMap((p) => rowOf(p, suite, targetSpec) ?? [])
 				.sort((a, b) => a.value - b.value || a.providerId.localeCompare(b.providerId, "en"));
 			const label = getMetric(SUITES[suite].metrics[0] ?? "")?.label.split(":")[0] ?? suite;
 			return rows.length === 0 ? [] : [{ suite, suiteName: label, rows }];

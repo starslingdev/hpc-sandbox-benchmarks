@@ -20,7 +20,11 @@ import type {
 	ObservedProviderCostEvidence,
 	ProviderCostEvidence,
 } from "@sandbox-benchmarks/schema";
-import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "@sandbox-benchmarks/schema";
+import {
+	BILLED_WALL_SECONDS,
+	canonicalJsonString,
+	PROVIDER_RESPONSE_LIMITS,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
@@ -117,7 +121,7 @@ async function v0Bill(
 			return {
 				// The allocation for the sandbox's wall clock: reserved quantities, not measured use.
 				usage: [
-					{ resource: "wall_seconds", quantity: sum(seconds), unit: "s" },
+					{ ...BILLED_WALL_SECONDS, quantity: sum(seconds) },
 					{
 						resource: "allocated_vcpu_seconds",
 						quantity: sum((p) => (p.cpu ?? 0) * seconds(p)),
@@ -191,7 +195,7 @@ function v2Bill(
 			const multiplier = V2_RATES.cpuTypeMultiplier[create.cpuType ?? ""] ?? 1;
 			return {
 				usage: [
-					{ resource: "wall_seconds", quantity: sum((p) => p.duration_ms / 1000), unit: "s" },
+					{ ...BILLED_WALL_SECONDS, quantity: sum((p) => p.duration_ms / 1000) },
 					{ resource: "billed_core_seconds", quantity: coreSeconds, unit: "core-s" },
 					{ resource: "billed_memory_gib_seconds", quantity: gibSeconds, unit: "GiB-s" },
 				],

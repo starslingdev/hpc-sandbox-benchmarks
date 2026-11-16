@@ -1708,7 +1708,7 @@ describe("measured cost section", () => {
 	it("prints the exact total only when every sandbox was measured", () => {
 		const complete = md([record(0, 0.1), record(1, 0.3)]);
 		expect(complete).toContain("| Modal (gVisor) | 2 of 2 | 0.4 USD | — |");
-		expect(complete).toContain("realworld-mastra _(per pipeline run)_ | 0.2 USD | 0.1 – 0.3 |");
+		expect(complete).toContain("| realworld-mastra | 0.2 USD | 0.1 – 0.3 |");
 		const partial = md([record(0, 0.1), record(1)]);
 		expect(partial).toContain("| Modal (gVisor) | 1 of 2 | — | 1 × `provider_api_error` |");
 	});
