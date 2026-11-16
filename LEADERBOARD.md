@@ -1650,42 +1650,42 @@ and an untimed warm-up of each task; it is under provider bills.
 
 | Pipeline | Provider | Cost | Median USD per run | Lowest – highest | Sandboxes |
 | --- | --- | --- | ---: | ---: | ---: |
-| Mastra | boat | Estimated | 0.01359 | 0.01076 – 0.02183 | 10 |
-| Mastra | Namespace | Estimated | 0.07698 | 0.07202 – 0.09872 | 12 |
+| Mastra | boat | **Billed** | 0.01359 | 0.01076 – 0.02183 | 10 |
+| Mastra | Namespace | **Billed** | 0.07698 | 0.07202 – 0.09872 | 12 |
 | Mastra | CreateOS | Estimated | 0.07701 | 0.07611 – 0.0791 | 12 |
-| Mastra | Microsandbox Cloud | Estimated | 0.07785 | 0.07406 – 0.08443 | 12 |
+| Mastra | Microsandbox Cloud | **Billed** | 0.07785 | 0.07406 – 0.08443 | 12 |
 | Mastra | Novita | Estimated | 0.08104 | 0.07917 – 0.08785 | 12 |
 | Mastra | DigitalOcean MicroVMs | Estimated | 0.1009 | 0.09864 – 0.1016 | 12 |
-| Mastra | Blaxel | Estimated (at most) | 0.1199 | 0.1186 – 0.123 | 12 |
-| Mastra | Modal (VM) | Estimated (at least) | 0.1464 | 0.1449 – 0.1585 | 11 |
+| Mastra | Blaxel | **Billed** | 0.1199 | 0.1186 – 0.123 | 12 |
 | Mastra | E2B | Estimated | 0.1671 | 0.1336 – 0.2025 | 12 |
-| Mastra | Modal (gVisor) | Estimated (at least) | 0.1678 | 0.167 – 0.17 | 11 |
+| Mastra | Modal (gVisor) | **Billed** | 0.2136 | 0.2124 – 0.2161 | 11 |
+| Mastra | Modal (VM) | **Billed** | 0.2423 | 0.24 – 0.263 | 11 |
 | Mastra | Daytona (VM) | **Billed** | 0.2968 | 0.2712 – 0.3168 | 12 |
 | Mastra | Vercel Sandbox | Estimated (at most) | 0.3137 | 0.2967 – 0.4271 | 12 |
-| Better-Auth | boat | Estimated | 0.001982 | 0.001716 – 0.003797 | 12 |
-| Better-Auth | Namespace | Estimated | 0.01182 | 0.01045 – 0.02041 | 12 |
+| Better-Auth | boat | **Billed** | 0.001982 | 0.001716 – 0.003797 | 12 |
+| Better-Auth | Namespace | **Billed** | 0.01182 | 0.01045 – 0.02041 | 12 |
 | Better-Auth | Novita | Estimated | 0.01246 | 0.01188 – 0.01298 | 12 |
 | Better-Auth | DigitalOcean MicroVMs | Estimated | 0.01289 | 0.01256 – 0.01541 | 12 |
-| Better-Auth | Microsandbox Cloud | Estimated | 0.01431 | 0.01231 – 0.01507 | 12 |
+| Better-Auth | Microsandbox Cloud | **Billed** | 0.01431 | 0.01231 – 0.01507 | 12 |
 | Better-Auth | CreateOS | Estimated | 0.01436 | 0.01103 – 0.01636 | 12 |
-| Better-Auth | Modal (VM) | Estimated (at least) | 0.01557 | 0.0151 – 0.0177 | 12 |
-| Better-Auth | Blaxel | Estimated (at most) | 0.01821 | 0.0173 – 0.01912 | 12 |
-| Better-Auth | Modal (gVisor) | Estimated (at least) | 0.02068 | 0.02029 – 0.02407 | 12 |
+| Better-Auth | Blaxel | **Billed** | 0.01821 | 0.0173 – 0.01912 | 12 |
 | Better-Auth | Daytona (VM) | **Billed** | 0.02414 | 0.02397 – 0.02452 | 12 |
+| Better-Auth | Modal (VM) | **Billed** | 0.02777 | 0.02693 – 0.03166 | 12 |
+| Better-Auth | Modal (gVisor) | **Billed** | 0.02841 | 0.02788 – 0.03273 | 12 |
 | Better-Auth | E2B | Estimated | 0.02919 | 0.02143 – 0.03418 | 12 |
 | Better-Auth | Vercel Sandbox | Estimated (at most) | 0.0522 | 0.05028 – 0.09697 | 12 |
-| OpenClaw | boat | Estimated | 0.006698 | 0.005252 – 0.0124 | 12 |
-| OpenClaw | Microsandbox Cloud | Estimated | 0.03745 | 0.03713 – 0.03955 | 3 |
+| OpenClaw | boat | **Billed** | 0.006698 | 0.005252 – 0.0124 | 12 |
+| OpenClaw | Microsandbox Cloud | **Billed** | 0.03745 | 0.03713 – 0.03955 | 3 |
 | OpenClaw | CreateOS | Estimated | 0.03866 | — | 1 |
-| OpenClaw | Namespace | Estimated | 0.04511 | 0.04134 – 0.06061 | 12 |
+| OpenClaw | Namespace | **Billed** | 0.04511 | 0.04134 – 0.06061 | 12 |
 | OpenClaw | Novita | Estimated | 0.0482 | 0.04493 – 0.05005 | 12 |
-| OpenClaw | Blaxel | Estimated (at most) | 0.06219 | 0.06107 – 0.06717 | 12 |
+| OpenClaw | Blaxel | **Billed** | 0.06219 | 0.06107 – 0.06717 | 12 |
 | OpenClaw | DigitalOcean MicroVMs | Estimated | 0.06913 | 0.06719 – 0.08139 | 12 |
-| OpenClaw | Modal (gVisor) | Estimated (at least) | 0.07217 | 0.06966 – 0.1019 | 12 |
-| OpenClaw | Modal (VM) | Estimated (at least) | 0.07368 | 0.0718 – 0.08799 | 12 |
 | OpenClaw | Daytona (VM) | **Billed** | 0.09955 | 0.09678 – 0.1179 | 12 |
 | OpenClaw | E2B | Estimated | 0.1084 | 0.08775 – 0.1468 | 12 |
 | OpenClaw | Vercel Sandbox | Estimated (at most) | 0.1568 | 0.1488 – 0.2896 | 12 |
+| OpenClaw | Modal (gVisor) | **Billed** | 0.1816 | 0.1732 – 0.249 | 12 |
+| OpenClaw | Modal (VM) | **Billed** | 0.2382 | 0.2315 – 0.2871 | 12 |
 
 #### Provider bills
 
@@ -1696,10 +1696,15 @@ sandbox was billed.
 
 | Provider | Billed sandboxes | Total billed (USD) | No bill (reason) |
 | --- | ---: | ---: | --- |
+| Blaxel | 56 of 56 | 5.311 USD | — |
+| boat | 56 of 56 | 0.6389 USD | — |
 | Daytona (container) | 56 of 56 | 1.003 USD | — |
 | Daytona (VM) | 56 of 56 | 12.11 USD | — |
+| Microsandbox Cloud | 47 of 47 | 2.722 USD | — |
 | Modal (gVisor) | 56 of 56 | 13.29 USD | — |
 | Modal (VM) | 55 of 55 | 15.48 USD | — |
+| Namespace | 56 of 56 | 3.698 USD | — |
+| Tangle Sandbox | 56 of 56 | 0.7277 USD | — |
 
 #### Provider bills per suite
 
@@ -1708,6 +1713,24 @@ every sandbox in the suite was billed.
 
 | Provider | Suite | Median bill | Lowest – highest | Billed sandboxes | Suite total | No bill (reason) | Source |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| Blaxel | realworld-mastra | 0.1629 USD | 0.1617 – 0.1677 | 12 of 12 | 1.964 USD | — | provider-reported |
+| Blaxel | realworld-better-auth | 0.06026 USD | 0.05824 – 0.06201 | 12 of 12 | 0.7245 USD | — | provider-reported |
+| Blaxel | realworld-openclaw | 0.1486 USD | 0.1449 – 0.1564 | 12 of 12 | 1.798 USD | — | provider-reported |
+| Blaxel | cpu-node | 0.0219 USD | 0.0207 – 0.02328 | 5 of 5 | 0.1095 USD | — | provider-reported |
+| Blaxel | system | 0.03717 USD | 0.03662 – 0.03726 | 3 of 3 | 0.111 USD | — | provider-reported |
+| Blaxel | pgbench | 0.06624 USD | 0.06615 – 0.06633 | 3 of 3 | 0.1987 USD | — | provider-reported |
+| Blaxel | memory | 0.0126 USD | 0.01233 – 0.0127 | 3 of 3 | 0.03763 USD | — | provider-reported |
+| Blaxel | disk | 0.08933 USD | 0.08924 – 0.08952 | 3 of 3 | 0.2681 USD | — | provider-reported |
+| Blaxel | network | 0.0334 USD | 0.03294 – 0.03367 | 3 of 3 | 0.1 USD | — | provider-reported |
+| boat | realworld-mastra | 0.01843 USD | 0.01617 – 0.03017 | 12 of 12 | 0.2408 USD | — | provider-reported |
+| boat | realworld-better-auth | 0.006865 USD | 0.00605 – 0.01019 | 12 of 12 | 0.08496 USD | — | provider-reported |
+| boat | realworld-openclaw | 0.0156 USD | 0.0134 – 0.02732 | 12 of 12 | 0.2011 USD | — | provider-reported |
+| boat | cpu-node | 0.00343 USD | 0.00328 – 0.00365 | 5 of 5 | 0.01733 USD | — | provider-reported |
+| boat | system | 0.00616 USD | 0.00557 – 0.007 | 3 of 3 | 0.01873 USD | — | provider-reported |
+| boat | pgbench | 0.00819 USD | 0.00815 – 0.009 | 3 of 3 | 0.02534 USD | — | provider-reported |
+| boat | memory | 0.00225 USD | 0.00166 – 0.00255 | 3 of 3 | 0.00646 USD | — | provider-reported |
+| boat | disk | 0.0102 USD | 0.01019 – 0.01062 | 3 of 3 | 0.03101 USD | — | provider-reported |
+| boat | network | 0.00414 USD | 0.00406 – 0.00494 | 3 of 3 | 0.01314 USD | — | provider-reported |
 | Daytona (container) | realworld-mastra | 0.0007543 USD | 0.0002648 – 0.009063 | 12 of 12 | 0.03842 USD | — | provider-reported |
 | Daytona (container) | realworld-better-auth | 0.0003116 USD | 0.0002329 – 0.0007305 | 12 of 12 | 0.004568 USD | — | provider-reported |
 | Daytona (container) | realworld-openclaw | 0.0004064 USD | 0.0002294 – 0.0006091 | 12 of 12 | 0.004613 USD | — | provider-reported |
@@ -1726,6 +1749,15 @@ every sandbox in the suite was billed.
 | Daytona (VM) | memory | 0.03142 USD | 0.03085 – 0.03333 | 3 of 3 | 0.09559 USD | — | provider-reported |
 | Daytona (VM) | disk | 0.2005 USD | 0.2003 – 0.2008 | 3 of 3 | 0.6015 USD | — | provider-reported |
 | Daytona (VM) | network | 0.08869 USD | 0.0885 – 0.09233 | 3 of 3 | 0.2695 USD | — | provider-reported |
+| Microsandbox Cloud | realworld-mastra | 0.1103 USD | 0.1042 – 0.1168 | 12 of 12 | 1.325 USD | — | calculated from provider usage |
+| Microsandbox Cloud | realworld-better-auth | 0.04419 USD | 0.04029 – 0.04545 | 12 of 12 | 0.5221 USD | — | calculated from provider usage |
+| Microsandbox Cloud | realworld-openclaw | 0.09426 USD | 0.09315 – 0.1014 | 3 of 3 | 0.2888 USD | — | calculated from provider usage |
+| Microsandbox Cloud | cpu-node | 0.01587 USD | 0.01492 – 0.01645 | 5 of 5 | 0.07864 USD | — | calculated from provider usage |
+| Microsandbox Cloud | system | 0.02547 USD | 0.02526 – 0.02585 | 3 of 3 | 0.07658 USD | — | calculated from provider usage |
+| Microsandbox Cloud | pgbench | 0.04469 USD | 0.04469 – 0.04492 | 3 of 3 | 0.1343 USD | — | calculated from provider usage |
+| Microsandbox Cloud | memory | 0.009507 USD | 0.009476 – 0.00951 | 3 of 3 | 0.02849 USD | — | calculated from provider usage |
+| Microsandbox Cloud | disk | 0.06186 USD | 0.06106 – 0.06229 | 3 of 3 | 0.1852 USD | — | calculated from provider usage |
+| Microsandbox Cloud | network | 0.02757 USD | 0.02643 – 0.02818 | 3 of 3 | 0.08218 USD | — | calculated from provider usage |
 | Modal (gVisor) | realworld-mastra | 0.2984 USD | 0.2963 – 0.331 | 12 of 12 | 3.612 USD | — | provider-reported |
 | Modal (gVisor) | realworld-better-auth | 0.1155 USD | 0.1139 – 0.1314 | 12 of 12 | 1.419 USD | — | provider-reported |
 | Modal (gVisor) | realworld-openclaw | 0.4596 USD | 0.4435 – 0.6526 | 12 of 12 | 5.686 USD | — | provider-reported |
@@ -1744,6 +1776,24 @@ every sandbox in the suite was billed.
 | Modal (VM) | memory | 0.02822 USD | 0.02735 – 0.02848 | 3 of 3 | 0.08405 USD | — | provider-reported |
 | Modal (VM) | disk | 0.2038 USD | 0.2014 – 0.2039 | 3 of 3 | 0.6091 USD | — | provider-reported |
 | Modal (VM) | network | 0.07947 USD | 0.07906 – 0.09262 | 3 of 3 | 0.2512 USD | — | provider-reported |
+| Namespace | realworld-mastra | 0.1068 USD | 0.09932 – 0.1344 | 12 of 12 | 1.305 USD | — | calculated from provider usage |
+| Namespace | realworld-better-auth | 0.03895 USD | 0.03584 – 0.0518 | 12 of 12 | 0.4899 USD | — | calculated from provider usage |
+| Namespace | realworld-openclaw | 0.1089 USD | 0.0967 – 0.1378 | 12 of 12 | 1.346 USD | — | calculated from provider usage |
+| Namespace | cpu-node | 0.01465 USD | 0.01273 – 0.0156 | 5 of 5 | 0.07077 USD | — | calculated from provider usage |
+| Namespace | system | 0.02106 USD | 0.01866 – 0.02211 | 3 of 3 | 0.06183 USD | — | calculated from provider usage |
+| Namespace | pgbench | 0.04536 USD | 0.04362 – 0.04605 | 3 of 3 | 0.135 USD | — | calculated from provider usage |
+| Namespace | memory | 0.01077 USD | 0.01067 – 0.0121 | 3 of 3 | 0.03354 USD | — | calculated from provider usage |
+| Namespace | disk | 0.06324 USD | 0.06318 – 0.0636 | 3 of 3 | 0.19 USD | — | calculated from provider usage |
+| Namespace | network | 0.02223 USD | 0.02156 – 0.02225 | 3 of 3 | 0.06603 USD | — | calculated from provider usage |
+| Tangle Sandbox | realworld-mastra | 0.01051 USD | 0.007009 – 0.01418 | 12 of 12 | 0.1197 USD | — | provider-reported |
+| Tangle Sandbox | realworld-better-auth | 0.009635 USD | 0.007275 – 0.01416 | 12 of 12 | 0.1196 USD | — | provider-reported |
+| Tangle Sandbox | realworld-openclaw | 0.01656 USD | 0.007046 – 0.01825 | 12 of 12 | 0.1789 USD | — | provider-reported |
+| Tangle Sandbox | cpu-node | 0.01194 USD | 0.01192 – 0.01235 | 5 of 5 | 0.06022 USD | — | provider-reported |
+| Tangle Sandbox | system | 0.01657 USD | 0.01595 – 0.02159 | 3 of 3 | 0.05411 USD | — | provider-reported |
+| Tangle Sandbox | pgbench | 0.005913 USD | 0.005903 – 0.005934 | 3 of 3 | 0.01775 USD | — | provider-reported |
+| Tangle Sandbox | memory | 0.01157 USD | 0.01125 – 0.01158 | 3 of 3 | 0.0344 USD | — | provider-reported |
+| Tangle Sandbox | disk | 0.03544 USD | 0.0351 – 0.03581 | 3 of 3 | 0.1063 USD | — | provider-reported |
+| Tangle Sandbox | network | 0.01205 USD | 0.012 – 0.01272 | 3 of 3 | 0.03676 USD | — | provider-reported |
 
 </details>
 
