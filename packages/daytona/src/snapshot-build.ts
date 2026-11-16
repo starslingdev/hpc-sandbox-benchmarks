@@ -414,10 +414,12 @@ export function daytonaArtifactBuilder<P extends DaytonaId>(
 
 		const deleted = await deleteExistingSnapshots(daytona, name, request.replace, sleep, log);
 		try {
+			// Containers in this org reject disk above 10GB (toolchain bake 43780173359).
+			const diskGb = variant.sandboxClass === "container" ? 10 : spec.diskGb;
 			const params = {
 				name,
 				image: transientRef,
-				resources: { cpu: spec.vcpus, memory: spec.memoryGb, disk: spec.diskGb },
+				resources: { cpu: spec.vcpus, memory: spec.memoryGb, disk: diskGb },
 				regionId: target,
 				sandboxClass: variant.sandboxClass,
 			};

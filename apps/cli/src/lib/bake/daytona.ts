@@ -340,6 +340,9 @@ export async function bakeDaytonaSnapshot(
 	opts: DaytonaBakeOptions,
 ): Promise<void> {
 	const { targetSpec } = config;
+	// Containers in this org reject disk above 10GB ("Disk request 40GB exceeds maximum allowed
+	// per sandbox (10GB)", toolchain bake 43780173359). VM snapshots keep the 40GB target spec.
+	const diskGb = opts.sandboxClass === SandboxClass.CONTAINER ? 10 : targetSpec.diskGb;
 	const apiKey = opts.apiKey;
 	if (!apiKey) throw new Error("DAYTONA_API_KEY is required to bake a Daytona snapshot");
 	const daytona = new RootOnlyClientV0({
@@ -377,7 +380,7 @@ export async function bakeDaytonaSnapshot(
 	const params = {
 		name,
 		image: transientRef,
-		resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: targetSpec.diskGb },
+		resources: { cpu: targetSpec.vcpus, memory: targetSpec.memoryGb, disk: diskGb },
 		...(opts.target ? { regionId: opts.target } : {}),
 		// Pin the snapshot's sandbox class explicitly (never rely on the transient-push API's `container`
 		// default): daytona-vm bakes LINUX_VM, daytona-container bakes CONTAINER.
