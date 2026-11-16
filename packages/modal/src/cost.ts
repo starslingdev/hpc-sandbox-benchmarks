@@ -1,6 +1,8 @@
 // Modal's cost evidence: the billed USD of exactly one benchmark sandbox, CPU burst included. Every
 // sandbox carries its ownership marker as a tag, and SandboxGetTimeRangeStats filtered on that one
-// value returns that sandbox's cost alone.
+// value returns that sandbox's cost alone. The stats report money only, so the sandbox's billed
+// lifetime comes from its finished task (SandboxList, finished sandboxes included): without it the
+// bill cannot be priced over one pipeline's timed steps.
 
 import type {
 	CostEvidenceCaptureInput,
@@ -9,7 +11,11 @@ import type {
 } from "@sandbox-benchmarks/driver";
 import { LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
 import type { ProviderCostEvidence } from "@sandbox-benchmarks/schema";
-import { canonicalJsonString, PROVIDER_RESPONSE_LIMITS } from "@sandbox-benchmarks/schema";
+import {
+	BILLED_WALL_SECONDS,
+	canonicalJsonString,
+	PROVIDER_RESPONSE_LIMITS,
+} from "@sandbox-benchmarks/schema";
 import { ModalClient } from "modal";
 import { MODAL_PROVENANCE } from "./provenance.ts";
 import type { SandboxStatsGroup, SandboxStatsRequest } from "./stats.ts";
@@ -26,12 +32,23 @@ const POLL_MS = 2_000;
 const SETTLE_POLLS = 4;
 const MAX_POLLS = 11;
 const USD = /^\d{1,12}(\.\d{1,12})?$/;
+// The task-window lookup runs after the cost settles (up to ~20 s); this keeps the hook inside the
+// harness's 30 s budget.
+const LIFETIME_DEADLINE_MS = 3_000;
+
+/** A finished sandbox's task window, in Unix seconds. */
+export interface SandboxLifetime {
+	readonly startedAt: number;
+	readonly finishedAt: number;
+}
 
 /** What the hook reads from Modal; tests substitute it. */
 export interface ModalBilling {
 	tags(sandboxId: string): Promise<Readonly<Record<string, string>>>;
 	appId(appName: string): Promise<string>;
 	stats(request: SandboxStatsRequest): AsyncIterable<SandboxStatsGroup>;
+	/** The sandbox's task window, found by its marker tag; undefined when Modal lists none. */
+	lifetime(appId: string, marker: string, sandboxId: string): Promise<SandboxLifetime | undefined>;
 	close(): void;
 }
 
@@ -45,6 +62,16 @@ function modalBilling(env: EnvOf<ModalProviderId>): ModalBilling {
 		tags: async (id) => (await client.sandboxes.fromId(id)).getTags(),
 		appId: async (name) => (await client.apps.fromName(name)).appId,
 		stats: (request) => stats.stats(request),
+		lifetime: async (appId, marker, sandboxId) => {
+			// The marker is unique per sandbox, so the tag-filtered listing is one row: no paging.
+			const { sandboxes } = await client.cpClient.sandboxListV2({
+				appId,
+				includeFinished: true,
+				tags: [{ tagName: MODAL_MARKER_TAG, tagValue: marker }],
+			});
+			const task = sandboxes.find((sandbox) => sandbox.id === sandboxId)?.taskInfo;
+			return task && { startedAt: task.startedAt, finishedAt: task.finishedAt };
+		},
 		close: () => {
 			stats.close();
 			client.close();
@@ -140,9 +167,13 @@ export function modalCostEvidence(
 					groupByTags: [MODAL_MARKER_TAG],
 					tags: { [MODAL_MARKER_TAG]: marker },
 				};
-				const response = (groups: readonly SandboxStatsGroup[]) =>
+				const response = (groups: readonly SandboxStatsGroup[], task?: SandboxLifetime) =>
 					canonicalJsonString(
-						{ request: { ...request, since: request.since.toISOString() }, groups },
+						{
+							request: { ...request, since: request.since.toISOString() },
+							groups,
+							...(task && { task }),
+						},
 						PROVIDER_RESPONSE_LIMITS,
 					);
 				const outcome = await settle(billing, request, marker, sleep);
@@ -165,17 +196,32 @@ export function modalCostEvidence(
 					};
 				}
 				const { group } = outcome;
+				// The bill stands without its lifetime — it just cannot be split — so a failed, empty or
+				// slow lookup drops the seconds, never the cost (the deadline keeps the hook in budget).
+				const lifetime = await Promise.race([
+					billing.lifetime(appId, marker, input.sandboxId),
+					Bun.sleep(LIFETIME_DEADLINE_MS),
+				]).catch(() => undefined);
+				const billedSeconds =
+					lifetime && lifetime.startedAt > 0 && lifetime.finishedAt > lifetime.startedAt
+						? lifetime.finishedAt - lifetime.startedAt
+						: undefined;
 				return {
 					...base,
 					kind: "observed",
 					// Modal reports billed USD per resource, not quantities: the cost is the usage.
-					usage: Object.entries(group.costByResource)
-						.sort()
-						.map(([resource, usd]) => ({ resource, quantity: Number(usd), unit: "USD" })),
+					usage: [
+						...Object.entries(group.costByResource)
+							.sort()
+							.map(([resource, usd]) => ({ resource, quantity: Number(usd), unit: "USD" })),
+						...(billedSeconds === undefined
+							? []
+							: [{ ...BILLED_WALL_SECONDS, quantity: billedSeconds }]),
+					],
 					amount: Number(group.cost),
 					currency: "USD",
 					source: "provider_reported",
-					responseJson: response([group]),
+					responseJson: response([group], lifetime || undefined),
 				};
 			} finally {
 				billing.close();
