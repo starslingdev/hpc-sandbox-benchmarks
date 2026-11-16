@@ -96,9 +96,10 @@ export function freestyleVendor(
 		// Native file writes belong to ubuntu. Root cannot overwrite those files in sticky /tmp
 		// with fs.protected_regular=2; use the same user and let harness setup elevate with sudo.
 		const result = execResult.assert(
-			// The synchronous API cannot kill accepted work. Wait for its bounded completion before
-			// reporting cancellation, so a caller never overlaps the next command with this one.
-			await api(undefined, EXEC_TIMEOUT_MS + 10_000)
+			// The synchronous API cannot kill accepted work. The transport still honors the caller
+			// signal so a cancelled readiness probe can settle and teardown can start; do not start
+			// a later command on this VM until this exec throws or returns.
+			await api(options?.signal, EXEC_TIMEOUT_MS + 10_000)
 				.vms.ref(vm.id)
 				.exec({
 					command: freestyleCommand(command),
@@ -118,17 +119,32 @@ export function freestyleVendor(
 		control: {
 			// The create request is bounded by the harness's attempt budget, not the VM's lifetime.
 			create: async ({ request, marker }, { signal }) => {
-				const created = await api(signal, request.deadlineMs).vms.create({
-					snapshotId: resolvedArtifact.ref,
-					slug: FREESTYLE_SLUG.toVendor(marker),
-					metadata: { [FREESTYLE_OWNER_KEY]: marker },
-					idleTimeoutSeconds: -1,
-					autoDeleteSeconds: 0,
-					ttlSeconds: FREESTYLE_VM_TTL_SECONDS,
-					firewall: { rules: [{ action: "allow", source: {}, destination: { public: true } }] },
-				});
-				const id = FREESTYLE_SANDBOX_ID.assert(created.vm.id);
-				return { id, phase: "ready", marker, raw: { id } };
+				const slug = FREESTYLE_SLUG.toVendor(marker);
+				try {
+					const created = await api(signal, request.deadlineMs).vms.create({
+						snapshotId: resolvedArtifact.ref,
+						slug,
+						metadata: { [FREESTYLE_OWNER_KEY]: marker },
+						idleTimeoutSeconds: -1,
+						autoDeleteSeconds: 0,
+						ttlSeconds: FREESTYLE_VM_TTL_SECONDS,
+						firewall: { rules: [{ action: "allow", source: {}, destination: { public: true } }] },
+					});
+					const id = FREESTYLE_SANDBOX_ID.assert(created.vm.id);
+					return { id, phase: "ready", marker, raw: { id } };
+				} catch (error) {
+					if (signal.aborted) throw error;
+					// A 502 or lost response is unconfirmed. The slug was chosen before the request;
+					// adopt the VM if it is already visible so allocation is recorded before readiness.
+					try {
+						const row = vmRecord.assert(await api(signal).vms.get(slug));
+						if (row.metadata?.[FREESTYLE_OWNER_KEY] === marker) return record(row);
+					} catch {
+						// Lookup failed or the slug is not visible yet; fall through with the name.
+					}
+					const detail = error instanceof Error ? error.message : "create failed";
+					throw new Error(`${detail}; if a VM was allocated it carries the slug ${slug}`);
+				}
 			},
 			// A read by id, or by the attempt's slug (recovery's lookup).
 			get: async (idOrSlug, { signal }) =>
