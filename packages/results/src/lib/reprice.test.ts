@@ -16,7 +16,7 @@ const stale = (metricId: string = ECONOMICS_METRIC_IDS.usdPerHour): MetricResult
 
 function fixture(
 	schemaVersion: Run["schemaVersion"],
-	providerId = "daytona-vm",
+	providerId = "daytona-container",
 	targetSpec: Run["targetSpec"] = { vcpus: 4, memoryGb: 8, diskGb: 40 },
 ): Run {
 	return {
@@ -41,7 +41,7 @@ function fixture(
 								{
 									cell: {
 										runId: "v6",
-										providerId: "daytona-vm" as const,
+										providerId: "daytona-container" as const,
 										suite: "cpu-node" as const,
 									},
 									sandboxId: "sb-1",
@@ -96,7 +96,7 @@ describe("rederiveRunEconomics", () => {
 		const input = fixture("5");
 		const record: ProviderCostEvidence = {
 			kind: "missing" as const,
-			cell: { runId: "v5", providerId: "daytona-vm", suite: "cpu-node" },
+			cell: { runId: "v5", providerId: "daytona-container", suite: "cpu-node" },
 			subject: { kind: "sandbox" as const, sandboxId: "sb-1" },
 			capturedAt: "2026-08-08T00:00:00.000Z",
 			sdk: { packageName: "sdk", version: "1.0.0" },
@@ -120,7 +120,7 @@ describe("rederiveRunEconomics", () => {
 
 	it("prices a historical 2-vCPU Run from its own target spec", () => {
 		const output = rederiveRunEconomics(
-			fixture("2", "daytona-vm", { vcpus: 2, memoryGb: 8, diskGb: 20 }),
+			fixture("2", "daytona-container", { vcpus: 2, memoryGb: 8, diskGb: 20 }),
 		);
 		expect(
 			output.providers[0]?.metrics.find(

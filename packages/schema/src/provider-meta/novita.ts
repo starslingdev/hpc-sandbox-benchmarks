@@ -43,6 +43,8 @@ export default defineProviderMeta("novita", {
 				vendorUnit: "GB",
 				usdPerUnitHour: 0.00009,
 				quantityRule: { kind: "linear", dimension: "diskGb", unitsPerTargetUnit: 1 },
+				notes:
+					"Persistent storage of PAUSED sandboxes beyond the 60 GB account allowance, billed daily — not a charge on a running sandbox's disk.",
 			},
 		],
 		adjustments: [
@@ -57,6 +59,7 @@ export default defineProviderMeta("novita", {
 					"Account-wide persistent-storage allowance for paused sandboxes; running sandboxes instead include 20 GB of ephemeral storage.",
 			},
 		],
+		fullPriceComponentIds: ["cpu", "memory"],
 		targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 		notes:
 			"Provisioned CPU and memory pricing; running ephemeral and paused persistent storage remain outside benchmark economics.",
@@ -64,7 +67,7 @@ export default defineProviderMeta("novita", {
 			{
 				label: "Novita Sandbox pricing",
 				url: "https://novita.ai/docs/guides/sandbox-pricing",
-				checkedAt: "2026-08-08",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

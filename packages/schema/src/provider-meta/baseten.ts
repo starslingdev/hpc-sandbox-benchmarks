@@ -16,15 +16,34 @@ export default defineProviderMeta("baseten", {
 			"Baseten does not document the isolation technology. Images run Blaxel's sandbox API binary, CPU is coupled to memory (2048 MiB per vCPU up to 8 GiB), and the root filesystem is memory-backed, so the benchmark mounts a per-sandbox 40 GiB persistent volume where PTS and HOME write.",
 	},
 	pricing: {
-		model: "unavailable",
-		reason: "unpublished",
+		model: "published",
+		components: [
+			{
+				id: "cpu",
+				resource: "cpu",
+				billingBasis: "active",
+				vendorUnit: "vCPU",
+				usdPerUnitHour: 0.0655,
+				quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+			},
+			{
+				id: "memory",
+				resource: "memory",
+				billingBasis: "active",
+				vendorUnit: "GB",
+				usdPerUnitHour: 0.0211,
+				quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+			},
+		],
+		targetHourlyCost: { kind: "usage_dependent", reason: "Billing basis is undocumented." },
 		notes:
-			"Baseten publishes no sandbox CPU, memory or volume rate. The sandboxes docs say only that sandboxes are free during the pre-release (until 2026-11-16) and that a sandbox on standby bills only its storage.",
+			"Sandbox rates published November 2026, ending the free pre-release. Snapshots $0.20/GB-month, volumes $0.16/GB-month.",
 		sources: [
+			{ label: "Baseten pricing", url: "https://www.baseten.co/pricing/", checkedAt: "2026-11-16" },
 			{
 				label: "Baseten Sandboxes overview",
 				url: "https://docs.baseten.co/sandboxes/overview",
-				checkedAt: "2026-11-14",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

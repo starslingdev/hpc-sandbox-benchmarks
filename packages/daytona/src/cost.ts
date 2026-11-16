@@ -31,7 +31,7 @@ import { DAYTONA_V2_BURST } from "./vendor.ts";
 const V2_RATES = {
 	coreHourUsd: 0.101,
 	memoryGibHourUsd: 0.0162,
-	cpuTypeMultiplier: { zen5: 2.3313 } as Record<string, number>,
+	cpuTypeMultiplier: { zen5: 0.235 / 0.101 } as Record<string, number>,
 	calculation: {
 		componentIds: ["linux.cpu.core_hour.on_demand", "linux.memory.gib_hour.on_demand"],
 		rateVerifiedAt: "2026-11-15T05:20:00.000Z",

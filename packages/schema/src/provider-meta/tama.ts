@@ -41,15 +41,15 @@ export default defineProviderMeta("tama", {
 				// machine bills nothing, but nothing about the benchmark's own load changes the rate.
 				billingBasis: "provisioned",
 				vendorUnit: "vCPU",
-				usdPerUnitHour: 0.0095,
+				usdPerUnitHour: 0.01166,
 				quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
 			},
 			{
 				id: "memory",
 				resource: "memory",
 				billingBasis: "provisioned",
-				vendorUnit: "GiB",
-				usdPerUnitHour: 0.0045,
+				vendorUnit: "GB",
+				usdPerUnitHour: 0.005523,
 				quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
 			},
 		],
@@ -57,8 +57,8 @@ export default defineProviderMeta("tama", {
 		// by the shared overlay's capacity rather than by a billable allocation (see specPinning).
 		targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 		notes:
-			"Per-second billing for the seconds a machine is running; snapshots and stopped machines are free. The rate is charged on the ALLOCATED size, so the benchmark's 4 vCPU / 8 GiB target costs 4 x $0.0095 + 8 x $0.0045 = $0.074/hr. GPU machines bill a per-card rate instead (`tama offers`), which this CPU-only target never enters.",
-		sources: [{ label: "tama pricing", url: "https://tama.computer", checkedAt: "2026-08-13" }],
+			"Per-second billing for the seconds a machine is running; snapshots and stopped machines are free. The rate is charged on the ALLOCATED size, so the benchmark's 4 vCPU / 8 GiB target costs 4 x $0.01166 + 8 x $0.005523 = $0.0908/hr. GPU machines bill a per-card rate instead (`tama offers`), which this CPU-only target never enters.",
+		sources: [{ label: "tama pricing", url: "https://tama.computer", checkedAt: "2026-11-16" }],
 	},
 	maturity: {
 		status: "beta",

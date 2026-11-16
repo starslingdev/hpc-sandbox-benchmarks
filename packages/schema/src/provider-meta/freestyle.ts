@@ -65,7 +65,7 @@ export default defineProviderMeta("freestyle", {
 			{
 				label: "Freestyle pricing and limits",
 				url: "https://www.freestyle.sh/docs/vms/pricing-and-limits",
-				checkedAt: "2026-09-29",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

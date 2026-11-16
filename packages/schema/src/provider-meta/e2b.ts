@@ -44,7 +44,7 @@ export default defineProviderMeta("e2b", {
 		targetHourlyCost: { kind: "exact", componentIds: ["cpu", "memory"] },
 		notes:
 			"Provisioned CPU and memory rates; storage allowances do not discount compute economics.",
-		sources: [{ label: "E2B pricing", url: "https://e2b.dev/pricing", checkedAt: "2026-08-08" }],
+		sources: [{ label: "E2B pricing", url: "https://e2b.dev/pricing", checkedAt: "2026-11-16" }],
 	},
 	maturity: { status: "ga", notes: "Custom images via e2b template build." },
 	specPinning: "fixed",

@@ -58,7 +58,7 @@ export default defineProviderMeta("vercel", {
 			{
 				label: "Vercel Sandbox pricing",
 				url: "https://vercel.com/docs/sandbox/pricing",
-				checkedAt: "2026-08-08",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

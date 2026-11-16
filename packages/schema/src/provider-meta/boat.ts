@@ -34,7 +34,7 @@ export default defineProviderMeta("boat", {
 		notes:
 			"Per-second billing while the sandbox is running; a stopped sandbox costs nothing. Boat snapshots a running sandbox about once a minute and the pricing page lists no storage charge; teardown deletes the sandbox with its snapshots, so a run leaves no stored data behind. $20/mo is a prepaid time allotment (555 hours of default), not a per-sandbox fee, and is recorded as plan metadata rather than a compute discount.",
 		sources: [
-			{ label: "boat pricing", url: "https://docs.boat.dev/pricing", checkedAt: "2026-09-21" },
+			{ label: "boat pricing", url: "https://docs.boat.dev/pricing", checkedAt: "2026-11-16" },
 		],
 		adjustments: [
 			{

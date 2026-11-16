@@ -263,14 +263,14 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 	});
 
 	it("appends derived economics ($/hr) to a validated provider", () => {
-		const suiteDir = join(providerDir, "cpu-node");
-		mkdirSync(suiteDir);
+		const suiteDir = join(root, "daytona-container", "cpu-node");
+		mkdirSync(suiteDir, { recursive: true });
 		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-container");
 		const usdPerHour = run.metrics.find((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerHour);
 		expect(usdPerHour?.samples).toEqual([
-			hourlyCostAtTargetSpec(getProvider("daytona-vm")) ?? Number.NaN,
+			hourlyCostAtTargetSpec(getProvider("daytona-container")) ?? Number.NaN,
 		]);
 		// No lifecycle timings in a PTS-only run, so no per-lifecycle cost.
 		expect(run.metrics.some((m) => m.metricId === ECONOMICS_METRIC_IDS.usdPerLifecycle)).toBe(

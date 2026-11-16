@@ -42,7 +42,7 @@ export default defineProviderMeta("runcloud", {
 		},
 		notes: "$0.0593784/hr is the target reservation floor, not a complete target-hour total.",
 		sources: [
-			{ label: "run.cloud pricing", url: "https://run.cloud/pricing", checkedAt: "2026-08-08" },
+			{ label: "run.cloud pricing", url: "https://run.cloud/pricing", checkedAt: "2026-11-16" },
 		],
 	},
 	maturity: {

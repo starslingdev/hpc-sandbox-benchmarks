@@ -56,6 +56,7 @@ export {
 	type ChartSegment,
 	type PipelineChartModel,
 } from "./chart/model.ts";
+export { valueScatterHtml } from "./chart/value-html.ts";
 export {
 	buildComparisonFigureModel,
 	type ComparisonBar,
@@ -65,7 +66,12 @@ export {
 	type ComparisonRunIdentity,
 	type ComparisonSuite,
 } from "./comparison-model.ts";
-export type { MetricFigure, MetricFigureModel, MetricFigureRow } from "./metric-model.ts";
+export type {
+	MetricFigure,
+	MetricFigureModel,
+	MetricFigureRow,
+	ValueScatter,
+} from "./metric-model.ts";
 export {
 	type BarSegment,
 	buildRealworldFigureModel,

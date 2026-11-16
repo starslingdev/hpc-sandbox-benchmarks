@@ -249,7 +249,6 @@ describe("@sandbox-benchmarks/schema providers", () => {
 	it("pins exact target costs and shared isolation-variant pricing", () => {
 		const expected: Record<string, number> = {
 			e2b: 0.3312,
-			"daytona-vm": 0.3312,
 			"daytona-container": 0.3312,
 			novita: 0.23328,
 			boat: 0.036,
@@ -260,28 +259,28 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(getProvider("modal-vm")?.pricing).toBe(getProvider("modal-gvisor")?.pricing);
 		expect(hourlyCostAtTargetSpec(getProvider("modal-gvisor"))).toBeNull();
 		expect(hourlyCostAtTargetSpec(getProvider("modal-vm"))).toBeNull();
-		expect(getProvider("daytona-container")?.pricing).toBe(getProvider("daytona-vm")?.pricing);
+		expect(hourlyCostAtTargetSpec(getProvider("daytona-vm"))).toBeNull();
 	});
 
 	it("records Daytona storage—not memory—allowance and excludes disk from exact cost", () => {
-		const pricing = published("daytona-vm");
+		const pricing = published("daytona-container");
 		expect(pricing.adjustments).toContainEqual(
 			expect.objectContaining({ resource: "disk", quantity: 5, scope: "per_sandbox" }),
 		);
 		expect(pricing.adjustments?.some((entry) => entry.resource === "memory")).toBe(false);
 		expect(pricing.targetHourlyCost).toEqual({ kind: "exact", componentIds: ["cpu", "memory"] });
-		expect(component("daytona-vm", "disk").usdPerUnitHour).toBeCloseTo(0.00000003 * 3600);
+		expect(component("daytona-container", "disk").usdPerUnitHour).toBeCloseTo(0.00000003 * 3600);
 	});
 
 	it("maps Modal's requested capped CPU and memory one-to-one", () => {
 		const cpu = component("modal-gvisor", "cpu");
 		const memory = component("modal-gvisor", "memory");
-		expect(cpu.vendorUnit).toContain("physical-core rate");
+		expect(cpu.vendorUnit).toContain("physical core");
 		expect(cpu.billingBasis).toBe("max_request_or_usage");
 		expect(cpu.quantityRule).toEqual({
 			kind: "linear",
 			dimension: "vcpus",
-			unitsPerTargetUnit: 1,
+			unitsPerTargetUnit: 0.5,
 		});
 		expect(cpu.usdPerUnitHour).toBeCloseTo(0.00003942 * 3600);
 		expect(cpu.notes).toContain("provider-observed usage");
@@ -310,11 +309,11 @@ describe("@sandbox-benchmarks/schema providers", () => {
 				referenceQuantity("blaxel", "active-compute"),
 		).toBeCloseTo(0.3312);
 		expect(
-			component("microsandbox-cloud", "cpu-overage").usdPerUnitHour *
-				referenceQuantity("microsandbox-cloud", "cpu-overage") +
-				component("microsandbox-cloud", "memory-overage").usdPerUnitHour *
-					referenceQuantity("microsandbox-cloud", "memory-overage"),
-		).toBeCloseTo(0.3296);
+			component("microsandbox-cloud", "cpu").usdPerUnitHour *
+				referenceQuantity("microsandbox-cloud", "cpu") +
+				component("microsandbox-cloud", "memory").usdPerUnitHour *
+					referenceQuantity("microsandbox-cloud", "memory"),
+		).toBeCloseTo(0.216);
 		expect(
 			component("namespace", "prepaid").usdPerUnitHour * referenceQuantity("namespace", "prepaid"),
 		).toBeCloseTo(0.24);

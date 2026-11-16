@@ -48,7 +48,7 @@ export default defineProviderMeta("createos", {
 			{
 				label: "CreateOS Sandbox pricing",
 				url: "https://createos.sh/products/sandbox",
-				checkedAt: "2026-09-30",
+				checkedAt: "2026-11-16",
 			},
 		],
 	},

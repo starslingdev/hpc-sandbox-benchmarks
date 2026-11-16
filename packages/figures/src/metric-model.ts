@@ -29,6 +29,8 @@ export interface MetricFigureRow {
 	/** Retained trials, and the sandboxes they came from. */
 	readonly n: number;
 	readonly sandboxes: number;
+	/** Shown in place of `best`: a cost chart's `billed` or `estimated`. */
+	readonly badge?: string;
 }
 
 export interface MetricFigure {
@@ -60,8 +62,22 @@ export interface MetricFigure {
 	}[];
 }
 
+/** The cost-vs-time scatter: one point per environment's three-pipeline total. */
+export interface ValueScatter {
+	readonly id: string;
+	readonly label: string;
+	readonly points: readonly {
+		readonly provider: string;
+		readonly label: string;
+		readonly costUsd: number;
+		readonly seconds: number;
+		readonly billed: boolean;
+	}[];
+}
+
 export interface MetricFigureModel {
 	/** Chartable metrics only (≥2 ranked environments), in the board's dimension and metric order. */
 	readonly metrics: readonly MetricFigure[];
 	readonly providers: readonly FigureProvider[];
+	readonly valueScatter?: ValueScatter;
 }

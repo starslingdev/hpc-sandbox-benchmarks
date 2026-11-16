@@ -629,6 +629,8 @@ describePublishedLeaderboard("LEADERBOARD.md leads with the real-world workflows
 			const collapses =
 				SYNTHETIC_DIMENSIONS.has(dimension as never) ||
 				(dimension === FIGURE_DIMENSION && figures.length > 0);
+			// Economics is charts with their receipts folded beneath, not a ranked section.
+			if (dimension === "economics") continue;
 			const opens = body.filter((line) => line === "<details>").length;
 			const closes = body.filter((line) => line === "</details>").length;
 			expect(opens, `${dimension} <details> count`).toBe(collapses ? 1 : 0);
@@ -717,7 +719,8 @@ describePublishedLeaderboard("LEADERBOARD.md leads with the real-world workflows
 				collapseAt >= 0 ? collapseAt : body.findIndex((line) => line.startsWith("### "));
 			const images = body.flatMap((line, index) => {
 				const match = image(line);
-				return match
+				// Cost-per-pipeline-run charts sit in economics beside their own table, not a metric's.
+				return match && !match[1]?.includes("/pipeline-cost-")
 					? [{ index, src: match[1] as string, width: Number(match[2]), alt: match[3] as string }]
 					: [];
 			});
@@ -888,8 +891,9 @@ describePublishedLeaderboard("LEADERBOARD.md stays in sync with the renderer", (
 			for (const result of provider.metrics) {
 				const metric = getMetric(result.metricId);
 				// A retired metric lingers in an already-published Run but is uncatalogued now; the renderer
-				// drops it, so the audit skips it rather than treating the historical data as drift.
-				if (!metric) continue;
+				// drops it, so the audit skips it rather than treating the historical data as drift. The
+				// economics section shows cost per pipeline run, not a ranked table, so it is skipped too.
+				if (!metric || metric.dimension === "economics") continue;
 				metrics.set(metric.id, metric);
 				const heading = `${metric.dimension}\0${metric.label}`;
 				const collision = emittedByHeading.get(heading);
@@ -904,8 +908,10 @@ describePublishedLeaderboard("LEADERBOARD.md stays in sync with the renderer", (
 
 		// The header counts only RENDERED (catalogued) records; retired metrics still on an already-
 		// published Run are dropped by the renderer, so the audit counts the catalogued set too.
-		const isCatalogued = (result: { metricId: string }): boolean =>
-			getMetric(result.metricId) !== undefined;
+		const isCatalogued = (result: { metricId: string }): boolean => {
+			const metric = getMetric(result.metricId);
+			return metric !== undefined && metric.dimension !== "economics";
+		};
 		const metricRecordCount = run.providers.reduce(
 			(sum, provider) => sum + provider.metrics.filter(isCatalogued).length,
 			0,

@@ -19,6 +19,7 @@ import type {
 	MetricFigureModel,
 	PipelineSuite,
 	RealworldFigureModel,
+	ValueScatter,
 } from "@sandbox-benchmarks/figures";
 import {
 	buildComparisonChartModel,
@@ -30,14 +31,15 @@ import {
 	FIGURE_WIDTH,
 	metricChartHtml,
 	pipelineChartHtml,
+	valueScatterHtml,
 } from "@sandbox-benchmarks/figures";
 import type { Run } from "@sandbox-benchmarks/schema";
-import { getMetric, METRIC_CATALOG, PROVIDERS, SUITES } from "@sandbox-benchmarks/schema";
+import { METRIC_CATALOG, PROVIDERS, SUITES } from "@sandbox-benchmarks/schema";
 import type { Leaderboard, LeaderboardFigure, LeaderboardMetricFigure } from "./leaderboard.ts";
 import {
 	buildLeaderboard,
 	FIGURE_DIMENSION,
-	MEASURED_COST_FIGURE_DIMENSION,
+	PIPELINE_COST_FIGURE_DIMENSION,
 } from "./leaderboard.ts";
 import type { LeaderboardDataset } from "./leaderboard-datasets.ts";
 
@@ -179,7 +181,7 @@ export function metricFigureModelOf(
 		for (const metricId of suite.metrics) suiteOf.set(metricId, suiteId);
 	}
 	const metrics: MetricFigure[] = board.dimensions
-		.filter((dimension) => dimension.dimension !== FIGURE_DIMENSION)
+		.filter(({ dimension }) => dimension !== FIGURE_DIMENSION && dimension !== "economics")
 		.flatMap((dimension) =>
 			dimension.metrics
 				.filter(({ rows }) => rows.length >= 2)
@@ -227,102 +229,87 @@ export function metricFigureModelOf(
 					};
 				}),
 		);
-	return { metrics: [...metrics, ...measuredCostFigures(board, validated)], providers };
+	const valueScatter = pipelineValueScatter(board, validated);
+	return {
+		metrics: [...metrics, ...pipelineCostFigures(board, validated)],
+		providers,
+		...(valueScatter ? { valueScatter } : {}),
+	};
 }
 
-/**
- * One chart per realworld suite with at least one measured pipeline run: each bar a provider's
- * median billed cost per pipeline run, the whisker its lowest and highest bill. Drawn from the
- * board's measured-cost section, so the chart and its table are one derivation.
- *
- * Only the realworld suites are drawn: one sandbox there is one pipeline run, so the bar answers
- * "what did one CI pipeline cost", while a synthetic suite's per-sandbox bill depends on how long
- * the harness chose to keep sampling. Those stay in the table. One measured provider is enough to
- * chart — a bill is a number worth seeing, not a comparison that needs a second bar.
- */
-function measuredCostFigures(board: Leaderboard, validated: ReadonlySet<string>): MetricFigure[] {
-	const providers = board.measuredCost.filter((provider) => validated.has(provider.providerId));
-	const suiteIds = new Set(
-		providers.flatMap((provider) =>
-			provider.suites.filter((suite) => suite.perPipelineRun).map((suite) => suite.suite),
-		),
-	);
-	return [...suiteIds].flatMap((suiteId): MetricFigure[] => {
-		const entries = providers.flatMap((provider) => {
-			const suite = provider.suites.find((candidate) => candidate.suite === suiteId);
-			return suite ? [{ provider, suite }] : [];
-		});
-		// A median exists only for a provider with observed bills in one currency (see `tally`).
-		const charted = entries
-			.flatMap(({ provider, suite }) =>
-				suite.median !== null && provider.currency !== null
-					? [{ provider, suite, median: suite.median, currency: provider.currency }]
-					: [],
-			)
-			.sort(
-				(a, b) =>
-					a.median - b.median || a.provider.providerId.localeCompare(b.provider.providerId, "en"),
-			);
-		const currencies = new Set(charted.map(({ currency }) => currency));
-		const [currency] = currencies;
-		// Bars in two currencies on one axis would be a lie; the table still shows each.
-		if (currency === undefined || currencies.size !== 1) return [];
-		const firstTask = SUITES[suiteId].metrics[0];
-		const suiteName =
-			(firstTask === undefined ? undefined : getMetric(firstTask)?.label.split(":")[0]) ?? suiteId;
+/** The economics headline: each environment's three-pipeline total, for those with all three. */
+function pipelineValueScatter(board: Leaderboard, validated: ReadonlySet<string>) {
+	const totals = new Map<string, ValueScatter["points"][number] & { n: number }>();
+	for (const { rows } of board.pipelineCost) {
+		for (const row of rows) {
+			const t = totals.get(row.providerId);
+			totals.set(row.providerId, {
+				provider: row.providerId,
+				label: row.displayName,
+				costUsd: (t?.costUsd ?? 0) + row.value,
+				seconds: (t?.seconds ?? 0) + row.seconds,
+				billed: (t?.billed ?? true) && row.billed,
+				n: (t?.n ?? 0) + 1,
+			});
+		}
+	}
+	const points = [...totals.values()]
+		.filter((t) => validated.has(t.provider) && t.n === board.pipelineCost.length)
+		.map(({ n: _n, ...point }) => point);
+	const label = "Cost vs. time: all three pipelines";
+	return points.length < 2 ? undefined : { id: "pipeline-cost-value", label, points };
+}
+
+/** One chart per realworld suite: each bar a provider's cost per pipeline run, billed or estimated. */
+function pipelineCostFigures(board: Leaderboard, validated: ReadonlySet<string>): MetricFigure[] {
+	return board.pipelineCost.flatMap(({ suite, suiteName, rows }): MetricFigure[] => {
+		const charted = rows.filter((row) => validated.has(row.providerId));
+		if (charted.length === 0) return [];
 		return [
 			{
-				id: measuredCostFigureId(suiteId),
-				label: `Measured cost per ${suiteName} pipeline run`,
-				dimension: MEASURED_COST_FIGURE_DIMENSION,
-				unit: currency,
+				id: pipelineCostFigureId(suite),
+				label: `Cost per ${suiteName} pipeline run`,
+				dimension: PIPELINE_COST_FIGURE_DIMENSION,
+				unit: "USD",
 				direction: "LIB",
 				headline: false,
 				derived: false,
 				measured: true,
-				rows: charted.map(({ provider, suite, median }, index) => ({
-					provider: provider.providerId,
-					value: median,
-					lo: suite.amounts[0] ?? median,
-					hi: suite.amounts.at(-1) ?? median,
+				rows: charted.map((row, index) => ({
+					provider: row.providerId,
+					value: row.value,
+					lo: row.lo,
+					hi: row.hi,
 					rank: index + 1,
-					n: suite.amounts.length,
-					sandboxes: suite.amounts.length,
+					n: row.sandboxes,
+					sandboxes: row.sandboxes,
+					badge: row.billed ? "billed" : "estimated",
 				})),
-				unmeasured: entries
-					.filter(({ suite }) => suite.median === null)
-					.map(({ provider, suite }) => ({
-						provider: provider.providerId,
-						outcome: "unmeasured",
-						reason:
-							suite.amounts.length > 0
-								? `Bills in more than one currency across ${suite.expected} sandboxes.`
-								: `No observed bill for any of ${suite.expected} sandboxes: ${suite.unmeasured
-										.map(({ reason, count }) => `${count} × ${reason}`)
-										.join(", ")}.`,
-					})),
+				unmeasured: [],
 			},
 		];
 	});
 }
 
-/** A measured-cost chart's id, and so its file name. Hyphenated with a prefix no suite id or
- *  catalog metric id carries, so it can share the figure directory with both. */
-export function measuredCostFigureId(suiteId: string): string {
-	return `measured-cost-${suiteId}`;
+/** A cost chart's id, and so its file name: a prefix no suite or catalog metric id carries. */
+export function pipelineCostFigureId(suiteId: string): string {
+	return `pipeline-cost-${suiteId}`;
 }
 
 /** The metric figures the Markdown links, in the board's dimension and metric order. */
 export function leaderboardMetricFigures(model: MetricFigureModel): LeaderboardMetricFigure[] {
-	return model.metrics.map((metric) => ({
+	// The value scatter last, so each metric figure keeps its model index; it headlines economics.
+	const { valueScatter: v } = model;
+	const scatter = v && { ...v, dimension: PIPELINE_COST_FIGURE_DIMENSION, headline: true };
+	return [...model.metrics, ...(scatter ? [scatter] : [])].map((metric) => ({
 		metricId: metric.id,
 		label: metric.label,
 		dimension: metric.dimension,
 		headline: metric.headline,
 		file: metricFigureFile(metric.id),
 		width: FIGURE_WIDTH,
-		charted: metric.rows.length,
-		unmeasured: metric.unmeasured.length,
+		charted: "rows" in metric ? metric.rows.length : metric.points.length,
+		unmeasured: "unmeasured" in metric ? metric.unmeasured.length : 0,
 	}));
 }
 
@@ -336,10 +323,8 @@ export function leaderboardMetricFigures(model: MetricFigureModel): LeaderboardM
 export function metricFigureNote(figure: MetricFigure): string {
 	if (figure.measured === true) {
 		return (
-			"Each bar is the median billed cost of one pipeline run across the sandboxes that were measured, " +
-			"as the provider's billing API reported it after teardown, CPU burst included; the whisker spans " +
-			"the lowest and highest bill. This is **measured**, not catalog pricing, and not a ranking — " +
-			"the board's Measured cost table gives how many of each provider's sandboxes it rests on. " +
+			"Bar: median cost of one pipeline run. Line: lowest to highest sandbox. Label: **billed** is the " +
+			"provider's own bill; **estimated** is the published prices × pipeline time. Not ranked. " +
 			"The scale is this chart's own."
 		);
 	}
@@ -424,7 +409,14 @@ export function renderLeaderboardFigureHtml(
 			),
 		),
 	}));
-	return [...suites, ...metrics];
+	const note =
+		"Bottom left is best: faster and cheaper. Each dot is one environment's three-pipeline total: " +
+		"one run each of Mastra, Better-Auth and OpenClaw, medians added up. Environments missing a " +
+		"pipeline are left out.";
+	const v = model.valueScatter;
+	const figure = metricFigures.at(-1) as LeaderboardMetricFigure; // the scatter comes last
+	const scatter = v ? [{ figure, html: valueScatterHtml(v, model.providers, note) }] : [];
+	return [...suites, ...metrics, ...scatter];
 }
 
 /**

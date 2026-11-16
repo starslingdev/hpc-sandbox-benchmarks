@@ -8,11 +8,12 @@ export const modalPricing: ProviderPricing = {
 			id: "cpu",
 			resource: "cpu",
 			billingBasis: "max_request_or_usage",
-			vendorUnit: "requested CPU unit (vendor physical-core rate)",
+			vendorUnit: "physical core (2 vCPU)",
 			usdPerUnitHour: 0.141912,
-			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
+			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 0.5 },
+			tier: "on-demand",
 			notes:
-				"Requested CPU maps one-to-one to vendor CPU units, but the billed max(request, usage) quantity must come from provider-observed usage.",
+				"$0.00003942/core-s (sandbox rate). The billed max(request, usage) quantity must come from provider-observed usage.",
 		},
 		{
 			id: "memory",
@@ -21,6 +22,7 @@ export const modalPricing: ProviderPricing = {
 			vendorUnit: "GiB",
 			usdPerUnitHour: 0.024012,
 			quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+			tier: "on-demand",
 			notes: "$0.00000667/GiB-s; a request-equals-limit configuration does not prove billed usage.",
 		},
 	],
@@ -40,8 +42,8 @@ export const modalPricing: ProviderPricing = {
 			"Modal bills max(request, usage); request-equals-limit does not substitute for provider-observed billed quantities.",
 	},
 	notes:
-		"Published CPU and memory rates are retained as catalog metadata, but no exact benchmark cost is inferred without sandbox-scoped billed usage.",
-	sources: [{ label: "Modal pricing", url: "https://modal.com/pricing", checkedAt: "2026-08-08" }],
+		"On-demand rates: CPU sandboxes are not subject to preemption, so no preemptible discount applies. No exact benchmark cost is inferred without sandbox-scoped billed usage.",
+	sources: [{ label: "Modal pricing", url: "https://modal.com/pricing", checkedAt: "2026-11-16" }],
 };
 
 export const modalTransport: ProviderTransport = {

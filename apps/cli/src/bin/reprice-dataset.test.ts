@@ -26,7 +26,7 @@ function dataset(path = "runs/run-1.json") {
 		targetSpec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
 		providers: [
 			{
-				providerId: "daytona-vm",
+				providerId: "e2b",
 				validationStatus: "validated",
 				observedSpecs: {},
 				metrics: [
