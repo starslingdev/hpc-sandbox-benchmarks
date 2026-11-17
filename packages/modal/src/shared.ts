@@ -32,8 +32,11 @@ export const MODAL_EXECUTION = Object.freeze({
 	durable: "shell-detach" as const,
 });
 
-/** The largest memory limit Modal's burst eviction SLO covers. */
-const MODAL_MEMORY_BURST_MAX_LIMIT_MIB = 8 * 1024;
+/**
+ * The memory size up to which Modal's burst eviction SLO applies. Sandboxes still burst past it,
+ * outside the SLO.
+ */
+const MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB = 8 * 1024;
 
 /**
  * Thread-count hints Modal sets to the rounded-up CPU request for JS SDKs before 0.11.2. GNU
@@ -70,9 +73,9 @@ export function modalAllocate(
 				// Modal bills max(request, usage) and bursts above the request
 				// (https://modal.com/docs/guide/sandbox-resources), so request the 0.125-core minimum.
 				cpu: 0.125,
-				// Burst from Modal's 128 MiB minimum when the limit is within Modal's 8 GiB burst
-				// eviction SLO; reserve larger limits in full.
-				memoryMiB: memoryLimitMiB <= MODAL_MEMORY_BURST_MAX_LIMIT_MIB ? 128 : memoryLimitMiB,
+				// Burst from Modal's 128 MiB minimum when the limit keeps the sandbox within Modal's
+				// burst eviction SLO; reserve larger limits in full.
+				memoryMiB: memoryLimitMiB <= MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB ? 128 : memoryLimitMiB,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB,
 				env: {
