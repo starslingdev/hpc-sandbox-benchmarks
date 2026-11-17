@@ -2,6 +2,9 @@
 // clients and the explicit CI token file here and nowhere else. Tests lower the same module over a
 // Connect router transport through `vendorDriver`.
 
+import { toJson } from "@bufbuild/protobuf";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { InstanceMetadataSchema } from "@namespacelabs/sdk/proto/namespace/cloud/compute/v1beta/compute_pb";
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { NAMESPACE_PROVENANCE } from "./provenance.ts";
 import {
@@ -34,6 +37,36 @@ export default defineVendorDriver("namespace", {
 		{ env: "mapped" },
 	),
 	execution: NAMESPACE_EXECUTION,
+	// Destroyed instances stay describable; `destroyedAt` is stamped when the destroy is accepted.
+	billing: {
+		operation: "DescribeInstance",
+		read: async ({ id, env, signal }) => {
+			const m = await namespaceClient(env.NSC_TOKEN_FILE)
+				.compute.describeInstance({ instanceId: id }, { signal })
+				.then(
+					(response) => response.metadata,
+					(error: unknown) => {
+						if (ConnectError.from(error).code === Code.NotFound) return undefined;
+						throw error;
+					},
+				);
+			if (!m?.createdAt || !m.shape)
+				return { missing: "provider_api_error", detail: `Namespace has no instance ${id}.` };
+			const {
+				creatorId: _,
+				services: __,
+				...evidence
+			} = toJson(InstanceMetadataSchema, m) as Record<string, unknown>;
+			const { createdAt, destroyedAt, shape } = m;
+			if (!destroyedAt) return { pending: "The instance has no destruction time yet.", evidence };
+			const seconds =
+				Number(destroyedAt.seconds - createdAt.seconds) +
+				(destroyedAt.nanos - createdAt.nanos) / 1e9;
+			// One compute unit is max(vCPU, GB / 2).
+			const units = Math.max(shape.virtualCpu, shape.memoryMegabytes / 2048);
+			return { usage: { prepaid: units * seconds }, seconds, evidence };
+		},
+	},
 	createBudget: { owner: "harness", timeoutMs: NAMESPACE_READY_WAIT_MS + 5 * 60_000 },
 	timing: {
 		pollMs: 2_000,

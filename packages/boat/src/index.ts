@@ -2,8 +2,9 @@
 // nowhere else. Tests lower the same module over a fake client through `vendorDriver`.
 
 import { BoatApi, Configuration } from "@boatdev/sdk";
-import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { billingJson, coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
+import { type } from "arktype";
 import { BOAT_PROVENANCE } from "./provenance.ts";
 import {
 	BOAT_CONTROL_TIMEOUT_MS,
@@ -66,6 +67,26 @@ export default defineVendorDriver("boat", {
 		controlTimeoutMs: BOAT_CONTROL_TIMEOUT_MS,
 	},
 	pageCap: 1_000,
+	// Usage outlives a stopped (archived) sandbox but not a deleted one, which 404s at once.
+	billing: {
+		operation: "GET /api/v1/sandboxes/{sandboxId}/usage",
+		stableReads: 3,
+		read: async ({ id, window, env, signal }) => {
+			const u = await billingJson(
+				`${env.BOAT_BASE_URL ?? BOAT_API_BASE}/sandboxes/${id}/usage?since=${window.since}`,
+				{ headers: { Authorization: `Bearer ${env.BOAT_API_KEY}` }, signal },
+				type({
+					sandboxId: `'${id}'`,
+					billingMultiplier: "number > 0",
+					seconds: "number > 0",
+					dollars: "number >= 0",
+					running: "boolean",
+				}),
+			);
+			if (u.running) return { pending: "The sandbox's meter was still running.", evidence: u };
+			return { usd: u.dollars, seconds: u.seconds / u.billingMultiplier, evidence: u };
+		},
+	},
 	markerKey: "name",
 	markerSpelling: BOAT_NAME,
 	// The marker is a sandbox name set after create, so no lookup can see an allocation whose
