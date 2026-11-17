@@ -189,9 +189,11 @@ vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor(
 
 describe("Modal benchmark resource configuration", () => {
 	it.each([
-		"modal-gvisor",
-		"modal-vm",
-	] as const)("%s permits CPU bursting and requests its runtime's memory floor", async (provider) => {
+		["modal-gvisor", 8, 128, "7516192768"],
+		["modal-vm", 8, 128, "7516192768"],
+		["modal-gvisor", 16, 16_384, "16106127360"],
+		["modal-vm", 16, 16_384, "16106127360"],
+	] as const)("%s at %d GiB requests minimum CPU and %d MiB of memory", async (provider, memoryGb, memoryMb, taskMemoryMaxBytes) => {
 		const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
 		const app = new App("ap-prepared", MODAL_APP_NAME);
 		const image = new Image(client, "im-prepared", "");
@@ -222,7 +224,10 @@ describe("Modal benchmark resource configuration", () => {
 				IMAGE,
 				() => client,
 			)(
-				{ request: request(), marker: "benchmark-replicate" },
+				{
+					request: request({ spec: { vcpus: 4, memoryGb, diskGb: 40 } }),
+					marker: "benchmark-replicate",
+				},
 				{ signal: AbortSignal.timeout(1000) },
 			);
 			const allocate = createV2;
@@ -242,11 +247,10 @@ describe("Modal benchmark resource configuration", () => {
 				definition: {
 					imageId: "im-prepared",
 					resources: {
-						milliCpu: 4000,
+						milliCpu: 125,
 						milliCpuMax: 0,
-						// A VM boots with about its request as MemTotal, so it reserves the ceiling.
-						memoryMb: provider === "modal-vm" ? 8192 : 128,
-						memoryMbMax: 8192,
+						memoryMb,
+						memoryMbMax: memoryGb * 1024,
 					},
 					runtime: provider === "modal-vm" ? "vm" : "gvisor",
 					experimentalOptionsV2: { performance_sensitive: "true" },
@@ -254,7 +258,14 @@ describe("Modal benchmark resource configuration", () => {
 			});
 			const environment = createV2.mock.calls[0]?.[0].secretSources?.[0]?.env?.contents;
 			expect(environment).toEqual({
-				REALWORLD_TASK_MEM_MAX_BYTES: "7516192768",
+				// Modal sizes these from the 0.125-core request unless the sandbox sets them.
+				OMP_NUM_THREADS: "4",
+				MKL_NUM_THREADS: "4",
+				OPENBLAS_NUM_THREADS: "4",
+				BLIS_NUM_THREADS: "4",
+				ORT_INTRA_OP_NUM_THREADS: "4",
+				ORT_INTER_OP_NUM_THREADS: "4",
+				REALWORLD_TASK_MEM_MAX_BYTES: taskMemoryMaxBytes,
 				BENCHMARK_MODE: "true",
 			});
 		} finally {

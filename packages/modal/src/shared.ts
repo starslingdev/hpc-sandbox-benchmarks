@@ -32,6 +32,22 @@ export const MODAL_EXECUTION = Object.freeze({
 	durable: "shell-detach" as const,
 });
 
+/** The largest memory limit Modal's burst eviction SLO covers. */
+const MODAL_MEMORY_BURST_MAX_LIMIT_MIB = 8 * 1024;
+
+/**
+ * Thread-count hints Modal sets to the rounded-up CPU request for JS SDKs before 0.11.2. GNU
+ * `nproc` and OpenMP follow them, so a 0.125-core request would size the workload to one thread.
+ */
+const MODAL_THREAD_COUNT_ENV_VARS = [
+	"OMP_NUM_THREADS",
+	"MKL_NUM_THREADS",
+	"OPENBLAS_NUM_THREADS",
+	"BLIS_NUM_THREADS",
+	"ORT_INTRA_OP_NUM_THREADS",
+	"ORT_INTER_OP_NUM_THREADS",
+] as const;
+
 /** The create transaction: App and image resolution and allocation, cancellable as one. */
 export function modalAllocate(
 	provider: ModalProviderId,
@@ -47,20 +63,27 @@ export function modalAllocate(
 			const memoryBytes = spec.memoryGb * 1024 ** 3;
 			const taskMemoryBytes =
 				memoryBytes >= 2 * 1024 ** 3 ? memoryBytes - 1024 ** 3 : memoryBytes / 2;
+			const memoryLimitMiB = spec.memoryGb * 1024;
 			const params = {
 				name: marker,
 				timeoutMs: LEAK_EXPIRY_MS,
-				// Reserve CPU for the workload and let Modal provide burst capacity above it.
-				cpu: spec.vcpus,
-				// The SDK requires a request alongside a limit. gVisor bursts from Modal's 128 MiB
-				// default up to the limit. A VM boots with only about the request as MemTotal
-				// (run 43646674451: 1.08 GB), so STREAM and mastra's install were OOM-killed;
-				// reserve the full ceiling there.
-				memoryMiB: provider === "modal-vm" ? spec.memoryGb * 1024 : 128,
+				// Modal bills max(request, usage) and bursts above the request
+				// (https://modal.com/docs/guide/sandbox-resources), so request the 0.125-core minimum.
+				cpu: 0.125,
+				// Burst from Modal's 128 MiB minimum when the limit is within Modal's 8 GiB burst
+				// eviction SLO; reserve larger limits in full.
+				memoryMiB: memoryLimitMiB <= MODAL_MEMORY_BURST_MAX_LIMIT_MIB ? 128 : memoryLimitMiB,
 				// Bound memory bursting by the benchmark's memory ceiling.
-				memoryLimitMiB: spec.memoryGb * 1024,
-				// Size the runner's guard from the configured ceiling.
-				env: { REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)), ...env },
+				memoryLimitMiB,
+				env: {
+					// Size thread pools from the target vCPUs; sandbox env overrides Modal's hints.
+					...Object.fromEntries(
+						MODAL_THREAD_COUNT_ENV_VARS.map((name) => [name, String(spec.vcpus)]),
+					),
+					// Size the runner's guard from the configured ceiling.
+					REALWORLD_TASK_MEM_MAX_BYTES: String(Math.floor(taskMemoryBytes)),
+					...env,
+				},
 				// Pin CPU placement to Modal's low-variance instance pool
 				// (https://modal.com/docs/guide/performance-sensitive-sandboxes). GPU creates
 				// must not set this; Modal documents the option as CPU-only.
