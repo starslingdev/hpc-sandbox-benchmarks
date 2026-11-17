@@ -5,6 +5,7 @@ import type {
 	CreateBudget,
 	CreateRequest,
 	DriverContext,
+	EnvOf,
 	ExecOptions,
 	ExecutionPolicy,
 	ProviderCostEvidenceCapability,
@@ -12,9 +13,17 @@ import type {
 	ResolvedArtifact,
 	SnapshotRetention,
 } from "@sandbox-benchmarks/driver";
-import { DriverError } from "@sandbox-benchmarks/driver";
+import { DriverError, pollUntilReady } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
-import type { SdkProvenance } from "@sandbox-benchmarks/schema";
+import type { MissingProviderCostEvidence, SdkProvenance } from "@sandbox-benchmarks/schema";
+import {
+	BILLED_WALL_SECONDS,
+	canonicalJsonString,
+	getProvider,
+	TARGET_SPEC,
+} from "@sandbox-benchmarks/schema";
+import type { Type } from "arktype";
+import { type } from "arktype";
 import type {
 	ComputeSdkCreateRequestCoverage,
 	ComputeSdkSandboxIdSchema,
@@ -22,6 +31,7 @@ import type {
 import { defineComputeSdkDriver } from "./lib/computesdk.ts";
 import { vendorSpec } from "./lib/vendor-driver.ts";
 import { executionOf } from "./lib/vendor-helpers.ts";
+import { bounded } from "./lib/vendor-port.ts";
 
 /**
  * A provider-neutral reading of one control-plane record. `failed` still owns resources and is
@@ -442,6 +452,8 @@ export interface VendorDriverSpec<P extends ProviderId, Raw, Native> extends Ven
 	readonly createBudget?: Extract<CreateBudget, { readonly owner: "harness" }>;
 	readonly accelerator?: AcceleratorStrategy;
 	readonly costEvidence?: ProviderCostEvidenceCapability<P>;
+	/** How to read a torn-down sandbox's bill; the kit derives the cost-evidence hook from it. */
+	readonly billing?: VendorBilling<P>;
 	/** The composition point: the only place the package binds its real SDK, client, or transport. */
 	readonly vendor: (context: DriverContext<P>) => Vendor<Raw, Native>;
 }
@@ -460,7 +472,8 @@ export function defineVendorDriver<P extends ProviderId, Raw, Native>(
 	provider: P,
 	module: VendorDriverSpec<NoInfer<P>, Raw, Native>,
 ) {
-	const { provenance, vendor, createBudget, accelerator, costEvidence, ...traits } = module;
+	const { provenance, vendor, createBudget, accelerator, billing, ...rest } = module;
+	const { costEvidence = billing && billingHook(provider, provenance, billing), ...traits } = rest;
 	// The bridge has no cancellable hard ceiling, so only the harness may own the create budget.
 	if (createBudget !== undefined && createBudget.owner !== "harness")
 		throw new DriverError(
@@ -506,3 +519,200 @@ function frozenData<T>(value: T): T {
 export type VendorDriverModule<P extends ProviderId, Raw, Native> = ReturnType<
 	typeof defineVendorDriver<P, Raw, Native>
 >;
+
+/** One read of a torn-down sandbox's bill; `evidence` becomes the record's responseJson. */
+export type BillingRead =
+	/** Not final yet: read again until the deadline. */
+	| { readonly pending: string; readonly evidence?: unknown }
+	/** Unmeasurable: recorded at once. */
+	| {
+			readonly missing: MissingProviderCostEvidence["reason"];
+			readonly detail: string;
+			readonly evidence?: unknown;
+	  }
+	/** The provider's `usd`, or `usage` in unit-seconds per pricing component; `seconds` is billed lifetime. */
+	| {
+			readonly usd?: number;
+			readonly usage?: Readonly<Record<string, number>>;
+			readonly seconds?: number;
+			readonly evidence: unknown;
+	  };
+
+export interface VendorBilling<P extends ProviderId> {
+	readonly operation: string;
+	/** One read; a throw is transient. `window` (ISO) spans the sandbox's longest possible life. */
+	readonly read: (sandbox: {
+		readonly id: string;
+		readonly target: typeof TARGET_SPEC;
+		readonly window: { readonly since: string; readonly until: string };
+		readonly env: EnvOf<P>;
+		readonly signal: AbortSignal;
+	}) => Promise<BillingRead>;
+	/** Identical bills in a row that settle it (default 2). */
+	readonly stableReads?: number;
+}
+
+/** A `missing` verdict raised from inside a helper; recorded as is. */
+class BillingVerdict extends Error {
+	constructor(readonly read: Extract<BillingRead, { missing: unknown }>) {
+		super(read.detail);
+	}
+}
+
+/** `value` as `schema`, or an `invalid_provider_response` verdict. */
+export function billingParse<T>(schema: Type<T>, value: unknown): T {
+	const parsed = schema(value);
+	if (!(parsed instanceof type.errors)) return parsed as T;
+	throw new BillingVerdict({
+		missing: "invalid_provider_response",
+		detail: parsed.summary.slice(0, 512),
+		evidence: { body: value ?? null },
+	});
+}
+
+/** GET a JSON bill: 429/5xx are transient, 404 means the bill is gone, any other failure is recorded. */
+export async function billingJson<T>(url: string, init: RequestInit, schema: Type<T>): Promise<T> {
+	const response = await fetch(url, init);
+	const body: unknown = await response.json().catch(() => null);
+	if (response.status === 429 || response.status >= 500) throw new Error(`HTTP ${response.status}`);
+	if (!response.ok) {
+		throw new BillingVerdict({
+			missing: response.status === 404 ? "unsupported_public_api" : "provider_api_error",
+			detail: `HTTP ${response.status} from ${new URL(url).pathname}`,
+			evidence: { status: response.status, body },
+		});
+	}
+	return billingParse(schema, body);
+}
+
+const HOUR_MS = 3_600_000;
+
+/**
+ * The cost-evidence hook every billing provider shares: the teardown gate, polling to a deadline
+ * inside the harness's 30 s budget, a bound on every read, settling on repeated bills, a `missing`
+ * record for each failure, and the record itself — source, amount and calculation provenance
+ * inferred from the provider's published pricing.
+ */
+function billingHook<P extends ProviderId>(
+	provider: P,
+	sdk: SdkProvenance,
+	{ operation, read, stableReads = 2 }: VendorBilling<P>,
+): ProviderCostEvidenceCapability<P> {
+	return {
+		sdk,
+		captureAfterTeardown: async (input, env) => {
+			const record = {
+				cell: input.cell,
+				subject: { kind: "sandbox", sandboxId: input.sandboxId },
+				capturedAt: new Date().toISOString(),
+				sdk,
+				apiOperation: operation,
+			} as const;
+			const missing = ({ missing, detail, evidence }: Extract<BillingRead, { missing: unknown }>) =>
+				({
+					...record,
+					kind: "missing",
+					reason: missing,
+					detail,
+					...(evidence !== undefined && { responseJson: canonicalJsonString(evidence) }),
+				}) as const;
+			if (!input.teardown.completed) {
+				return missing({
+					missing: "sandbox_teardown_unconfirmed",
+					detail: "Sandbox teardown was not confirmed; no provider usage was considered.",
+				});
+			}
+			const torn = Date.parse(input.teardown.attemptedAt);
+			const window = {
+				since: new Date(
+					Math.floor((torn - LEAK_EXPIRY_MS - HOUR_MS) / HOUR_MS) * HOUR_MS,
+				).toISOString(),
+				until: new Date(Math.ceil(torn / HOUR_MS) * HOUR_MS + HOUR_MS).toISOString(),
+			};
+			let last: { key: string; repeats: number } | undefined;
+			let waiting: Extract<BillingRead, { missing: unknown }> = {
+				missing: "provider_api_error",
+				detail: "No bill was read.",
+			};
+			const settled = await pollUntilReady<Exclude<BillingRead, { pending: string }>>({
+				provider,
+				deadlineMs: 22_000,
+				intervalMs: 2_000,
+				poll: async () => {
+					const r = await bounded(undefined, 8_000, (signal) =>
+						read({ id: input.sandboxId, target: TARGET_SPEC, window, env, signal }),
+					).catch(
+						(error: unknown): BillingRead =>
+							error instanceof BillingVerdict ? error.read : { pending: String(error) },
+					);
+					if ("missing" in r) return r;
+					if ("pending" in r) {
+						last = undefined;
+						waiting = { missing: "provider_api_error", detail: r.pending, evidence: r.evidence };
+						return null;
+					}
+					const key = JSON.stringify([r.usd, r.usage, r.seconds]);
+					last = { key, repeats: last?.key === key ? last.repeats + 1 : 1 };
+					waiting = {
+						missing: "provider_api_error",
+						detail: "The bill did not hold steady before the capture deadline.",
+						evidence: r.evidence,
+					};
+					return last.repeats >= stableReads ? r : null;
+				},
+			}).catch((error: unknown) => {
+				if (error instanceof DriverError && error.code === "readiness-timeout") return waiting;
+				throw error;
+			});
+			if ("missing" in settled) return missing(settled);
+			const seconds = settled.seconds
+				? [{ ...BILLED_WALL_SECONDS, quantity: settled.seconds }]
+				: [];
+			const observed = {
+				...record,
+				kind: "observed",
+				currency: "USD",
+				responseJson: canonicalJsonString(settled.evidence),
+			} as const;
+			if (settled.usd !== undefined) {
+				return {
+					...observed,
+					usage: [{ resource: "billed_usd", quantity: settled.usd, unit: "USD" }, ...seconds],
+					amount: settled.usd,
+					source: "provider_reported",
+				};
+			}
+			const { pricing } = getProvider(provider);
+			if (pricing.model !== "published") throw new Error(`${provider} publishes no rates`);
+			const priced = Object.entries(settled.usage ?? {}).map(([id, unitSeconds]) => {
+				const component = pricing.components.find((c) => c.id === id);
+				if (!component) throw new Error(`${provider} has no pricing component ${id}`);
+				return { component, unitSeconds };
+			});
+			return {
+				...observed,
+				usage: [
+					...priced.map(({ component, unitSeconds }) => ({
+						resource: component.id,
+						quantity: unitSeconds,
+						unit: `${component.vendorUnit}-second`,
+					})),
+					...seconds,
+				],
+				amount: priced.reduce(
+					(sum, p) => sum + (p.unitSeconds * p.component.usdPerUnitHour) / 3600,
+					0,
+				),
+				source: "calculated_from_provider_usage",
+				calculation: {
+					componentIds: priced.map(({ component }) => component.id),
+					rateVerifiedAt: pricing.sources
+						.map((s) => s.checkedAt)
+						.sort()
+						.at(-1) as string,
+					sourceUrls: pricing.sources.map((s) => s.url),
+				},
+			};
+		},
+	};
+}

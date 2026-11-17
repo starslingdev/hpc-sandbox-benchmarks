@@ -1,7 +1,8 @@
 // The Microsandbox Cloud DriverModule: the kit's driver over the Microsandbox adapter, bound to the
 // real SDK here and nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
-import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { billingJson, coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { type } from "arktype";
 import { Sandbox, withDefaultBackend } from "microsandbox";
 import { MICROSANDBOX_PROVENANCE } from "./provenance.ts";
 import { MICROSANDBOX_NAME, MICROSANDBOX_SANDBOX_ID, microsandboxVendor } from "./vendor.ts";
@@ -34,4 +35,40 @@ export default defineVendorDriver("microsandbox-cloud", {
 	markerSpelling: MICROSANDBOX_NAME,
 	recovery: { lookup: MICROSANDBOX_NAME, provesAbsence: false },
 	vendor: (context) => microsandboxVendor({ Sandbox, withDefaultBackend }, context),
+	// Usage is computed on read, so it is final on the first read after delete.
+	billing: {
+		operation: "GET /v1/billing/usage/sandbox",
+		stableReads: 1,
+		read: async ({ id, target, window, env, signal }) => {
+			// `from`/`to` clip rows to the window; `start`/`end` are silently ignored.
+			const query = new URLSearchParams({ from: window.since, to: window.until });
+			const body = await billingJson(
+				`${(env.MSB_API_URL ?? "https://api.microsandbox.dev").replace(/\/+$/, "")}/v1/billing/usage/sandbox?${query}`,
+				{ headers: { Authorization: `Bearer ${env.MSB_API_KEY}` }, signal },
+				type({
+					rows: type({
+						sandbox_id: "string",
+						vcpu_seconds: "number",
+						mem_mib_seconds: "number",
+						disk_mib_seconds: "number",
+					}).array(),
+					sandboxes: type({ id: "string", name: "string" }).array(),
+				}),
+			);
+			const uuid = body.sandboxes.find((sandbox) => sandbox.name === id)?.id;
+			const rows = body.rows.filter((row) => row.sandbox_id === uuid);
+			if (rows.length === 0) return { pending: "Microsandbox reported no usage for the sandbox." };
+			const sum = (key: "vcpu_seconds" | "mem_mib_seconds" | "disk_mib_seconds") =>
+				rows.reduce((total, row) => total + row[key], 0);
+			return {
+				usage: {
+					cpu: sum("vcpu_seconds"),
+					memory: sum("mem_mib_seconds") / 1024,
+					disk: sum("disk_mib_seconds") / 1024,
+				},
+				seconds: sum("vcpu_seconds") / target.vcpus,
+				evidence: { uuid, rows },
+			};
+		},
+	},
 });

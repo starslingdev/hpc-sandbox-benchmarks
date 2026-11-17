@@ -40,6 +40,8 @@ export const VERCEL_SANDBOX_ID = type(
 );
 /** Per-call ceiling on control-plane requests: the kit bounds each read by it. */
 export const VERCEL_CONTROL_TIMEOUT_MS = 20_000;
+/** Each torn-down sandbox's stopped session, by name: Vercel reports active CPU only once a session stops, and nothing after delete. */
+export const VERCEL_USAGE = new Map<string, Record<string, unknown>>();
 /** Vercel derives memory at a fixed 2048 MB per vCPU; the target's 4 vCPU × 8 GiB is that ratio. */
 export const VERCEL_MEMORY_GB_PER_VCPU = 2;
 
@@ -149,6 +151,22 @@ export function vercelVendor(
 			remove: async (_name, { signal, current }) => {
 				const sandbox = (await current())?.raw.sandbox;
 				if (sandbox === undefined) return "removed";
+				if (sandbox.status === "running")
+					VERCEL_USAGE.set(
+						sandbox.name,
+						await bounded(signal, VERCEL_CONTROL_TIMEOUT_MS, (bound) =>
+							sandbox.stop({ signal: bound }),
+						).then(
+							({ status, region, memory, duration, activeCpuDurationMs }) => ({
+								status,
+								region,
+								memory,
+								duration,
+								activeCpuDurationMs,
+							}),
+							(error: unknown) => ({ error: `Teardown's stop failed: ${String(error)}` }),
+						),
+					);
 				await bounded(signal, VERCEL_CONTROL_TIMEOUT_MS, (bound) =>
 					sandbox.delete({ signal: bound }),
 				);
