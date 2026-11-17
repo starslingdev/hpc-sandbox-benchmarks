@@ -9,6 +9,7 @@ import {
 	VERCEL_MEMORY_GB_PER_VCPU,
 	VERCEL_NAME,
 	VERCEL_SANDBOX_ID,
+	VERCEL_USAGE,
 	vercelVendor,
 } from "./vendor.ts";
 
@@ -34,4 +35,40 @@ export default defineVendorDriver("vercel", {
 	markerSpelling: VERCEL_NAME,
 	recovery: { lookup: VERCEL_NAME },
 	vendor: (context) => vercelVendor(Sandbox, context),
+	billing: {
+		operation: "POST /v2/sandboxes/sessions/{sessionId}/stop",
+		read: async ({ id }) => {
+			const s = VERCEL_USAGE.get(id);
+			VERCEL_USAGE.delete(id);
+			if (s === undefined || "error" in s)
+				return {
+					missing: "provider_api_error",
+					detail:
+						s?.error ?? "Teardown kept no stopped-session usage; Vercel answers 404 once deleted.",
+				};
+			const evidence = { session: s };
+			if (s.status !== "stopped" || s.duration === undefined || s.activeCpuDurationMs === undefined)
+				return {
+					missing: "invalid_provider_response",
+					detail: "The stop reported no final usage.",
+					evidence,
+				};
+			if (s.region !== "iad1")
+				return {
+					missing: "unsupported_public_api",
+					detail: `Only iad1 rates are published here; ran in ${s.region}.`,
+					evidence,
+				};
+			// Active CPU sums over vCPUs; Vercel's GB is 1024 MB.
+			return {
+				usage: {
+					"active-cpu": s.activeCpuDurationMs / 3.6e6,
+					memory: ((s.memory / 1024) * s.duration) / 3.6e6,
+				},
+				seconds: s.duration / 1000,
+				final: true,
+				evidence,
+			};
+		},
+	},
 });
