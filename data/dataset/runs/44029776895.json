@@ -1,0 +1,2340 @@
+{
+  "schemaVersion": "8",
+  "runId": "44029776895",
+  "sha": "3dee7b46430c37f642871ca8c1d085628c43be7b",
+  "generatedAt": "2026-11-17T06:39:15.785Z",
+  "targetSpec": {
+    "vcpus": 4,
+    "memoryGb": 8,
+    "diskGb": 40
+  },
+  "providers": [
+    {
+      "providerId": "baseten",
+      "costEvidence": [],
+      "artifactEvidence": [
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "cpu-node",
+            "replicateIndex": 0
+          },
+          "sandboxId": "benchmark-208f1ed6-b32d-4f82-ae56-a80fb48bb693",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "cpu-node",
+            "replicateIndex": 1
+          },
+          "sandboxId": "benchmark-2c3847ae-f8b2-45b4-97d8-1edcdb601be2",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "cpu-node",
+            "replicateIndex": 2
+          },
+          "sandboxId": "benchmark-d2a7e0d0-865e-4ef2-a770-5649554bd509",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "cpu-node",
+            "replicateIndex": 3
+          },
+          "sandboxId": "benchmark-994187b7-b3fe-4a2c-bd26-04c8f7312742",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-better-auth",
+            "replicateIndex": 8
+          },
+          "sandboxId": "benchmark-96797182-4ee8-401c-9125-914e2340ac28",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-better-auth",
+            "replicateIndex": 9
+          },
+          "sandboxId": "benchmark-b06341d1-36f1-4f52-87e2-cd97e357c495",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-better-auth",
+            "replicateIndex": 10
+          },
+          "sandboxId": "benchmark-f4b24934-1c09-4d6a-b7bd-c6003ef81562",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-better-auth",
+            "replicateIndex": 11
+          },
+          "sandboxId": "benchmark-d2acc9f9-fafb-47b7-9a08-2d91259c63f2",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-mastra",
+            "replicateIndex": 0
+          },
+          "sandboxId": "benchmark-47112b49-1e26-4f13-a6af-6fc70854d464",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-mastra",
+            "replicateIndex": 1
+          },
+          "sandboxId": "benchmark-8ddcb443-2144-45ab-9d6e-fcbf2ef3429c",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-mastra",
+            "replicateIndex": 2
+          },
+          "sandboxId": "benchmark-fab31f81-4776-4cfb-9c82-5dbdcdbfb0d1",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        },
+        {
+          "cell": {
+            "runId": "44029776895",
+            "providerId": "baseten",
+            "suite": "realworld-mastra",
+            "replicateIndex": 3
+          },
+          "sandboxId": "benchmark-0527d417-a40f-40c2-8ae5-f60976ad23d2",
+          "provenance": {
+            "source": "guest-fingerprint",
+            "requested": {
+              "kind": "baked",
+              "ref": "sandbox-benchmarks-toolchain-v8"
+            },
+            "fingerprint": {
+              "authority": "toolchain-manifest-v1",
+              "imageName": "sandbox-benchmarks-toolchain",
+              "imageVersion": "v8"
+            }
+          }
+        }
+      ],
+      "validationStatus": "validated",
+      "specMatched": true,
+      "observedSpecs": {
+        "containerRuntime": "none",
+        "cpuModel": "Intel(R) Xeon(R) Processor",
+        "detectedIsolation": "firecracker",
+        "diskGb": 40.2,
+        "hostMemoryGb": 8,
+        "hostVcpus": 4,
+        "isolationClass": "microvm",
+        "isolationConfidence": "confirmed",
+        "kernel": "6.12.114",
+        "machineVmm": "firecracker",
+        "memoryGb": 7.78,
+        "os": "Debian GNU/Linux 13 (trixie)",
+        "vcpus": 4,
+        "virtualization": "container-other"
+      },
+      "observedMixtures": {
+        "sandboxes": 53,
+        "hostHardware": {
+          "f32c4e3404372708": {
+            "count": 4,
+            "specs": {
+              "containerRuntime": "none",
+              "cpuModel": "Intel(R) Xeon(R) Processor",
+              "detectedIsolation": "firecracker",
+              "diskGb": 40.2,
+              "hostMemoryGb": 8,
+              "hostVcpus": 4,
+              "isolationClass": "microvm",
+              "isolationConfidence": "confirmed",
+              "kernel": "6.12.114",
+              "machineVmm": "firecracker",
+              "memoryGb": 7.78,
+              "os": "Debian GNU/Linux 13 (trixie)",
+              "vcpus": 4,
+              "virtualization": "container-other"
+            },
+            "specMatched": true
+          }
+        },
+        "hostNetwork": {}
+      },
+      "hostMetadata": [
+        {
+          "source": "phoronix/result-file-to-json",
+          "sourceFile": "cpu-node/pts_node-web-tooling--metadata.json",
+          "fields": [
+            {
+              "path": "ci.client_version",
+              "value": "10.8.4"
+            },
+            {
+              "path": "ci.data.cpu-microcode",
+              "value": "0x1"
+            },
+            {
+              "path": "ci.data.environment-variables",
+              "value": "BL_DEBUG_TELEMETRY=false"
+            },
+            {
+              "path": "ci.data.kernel-extra-details",
+              "value": "Transparent Huge Pages: madvise"
+            },
+            {
+              "path": "ci.data.security",
+              "value": "gather_data_sampling: Not affected + indirect_target_selection: Not affected + itlb_multihit: Not affected + l1tf: Not affected + mds: Not affected + meltdown: Not affected + mmio_stale_data: Not affected + reg_file_data_sampling: Not affected + retbleed: Not affected + spec_rstack_overflow: Not affected + spec_store_bypass: Mitigation of SSB disabled via prctl + spectre_v1: Mitigation of usercopy/swapgs barriers and __user pointer sanitization + spectre_v2: Mitigation of Enhanced / Automatic IBRS; IBPB: conditional; PBRSB-eIBRS: Not affected; BHI: BHI_DIS_S + srbds: Not affected + tsa: Not affected + tsx_async_abort: Mitigation of TSX disabled + vmscape: Not affected"
+            },
+            {
+              "path": "ci.hardware.Disk",
+              "value": "41GB"
+            },
+            {
+              "path": "ci.hardware.Memory",
+              "value": "8GB"
+            },
+            {
+              "path": "ci.hardware.Processor",
+              "value": "Intel Xeon (2 Cores / 4 Threads)"
+            },
+            {
+              "path": "ci.identifier",
+              "value": "ci"
+            },
+            {
+              "path": "ci.software.Compiler",
+              "value": "GCC 14.2.0"
+            },
+            {
+              "path": "ci.software.File-System",
+              "value": "fuse"
+            },
+            {
+              "path": "ci.software.Kernel",
+              "value": "6.12.114 (x86_64)"
+            },
+            {
+              "path": "ci.software.OS",
+              "value": "Debian GNU/Linux 13"
+            },
+            {
+              "path": "ci.software.System Layer",
+              "value": "container-other"
+            },
+            {
+              "path": "ci.user",
+              "value": "root"
+            }
+          ],
+          "sandboxes": 4,
+          "hostHardwareId": "f32c4e3404372708"
+        }
+      ],
+      "metrics": [
+        {
+          "metricId": "node_web_tooling_runs_per_s",
+          "samples": [19.83, 20.33, 19.86, 19.39, 19.35, 20.14, 20.25, 20.46],
+          "aggregates": {
+            "p50": 20,
+            "p95": 20.4145,
+            "mean": 19.95125,
+            "stdev": 0.41861804957331944,
+            "min": 19.35,
+            "max": 20.46,
+            "n": 8
+          },
+          "sourceFile": "cpu-node/pts_node-web-tooling.xml",
+          "replicates": [
+            {
+              "index": 0,
+              "samples": [19.83, 20.33],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "f32c4e3404372708"
+            },
+            {
+              "index": 1,
+              "samples": [19.86, 19.39],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "f32c4e3404372708"
+            },
+            {
+              "index": 2,
+              "samples": [19.35, 20.14],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "f32c4e3404372708"
+            },
+            {
+              "index": 3,
+              "samples": [20.25, 20.46],
+              "ptsSampleSource": "raw-string",
+              "hostHardwareId": "f32c4e3404372708"
+            }
+          ]
+        }
+      ],
+      "suitesCovered": ["cpu-node"],
+      "gaps": [
+        {
+          "scope": "suite",
+          "id": "cpu-node",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "cpu-node",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: node_web_tooling_runs_per_s"
+        },
+        {
+          "scope": "suite",
+          "id": "disk",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "disk",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: hardlink_bogo_ops_per_s, fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s, fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops, fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s, fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops, fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s, fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops, fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s, fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+        },
+        {
+          "scope": "suite",
+          "id": "network",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "network",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1, iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10, iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1, iperf_wan_direction_download, iperf_wan_direction_upload, network_https_github_com_total_ms, network_https_api_github_com_total_ms, network_https_raw_githubusercontent_com_total_ms, network_https_registry_npmjs_org_total_ms, network_https_pypi_org_total_ms, network_https_files_pythonhosted_org_total_ms, network_https_ghcr_io_v2_total_ms, network_https_gcr_io_v2_total_ms, network_https_auth_docker_io_registry_token_total_ms, network_https_crates_io_total_ms, network_https_index_crates_io_config_total_ms, network_dns_cold_github_com_ms, network_dns_cold_registry_npmjs_org_ms, network_dns_cold_docker_io_ms, network_dns_cold_pypi_org_ms, network_dns_cold_rubygems_org_ms, network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+        },
+        {
+          "scope": "suite",
+          "id": "pgbench",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "pgbench",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: pgbench_scaling_factor_100_clients_50_mode_read_only, pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency, pgbench_scaling_factor_100_clients_50_mode_read_write, pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-better-auth",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-better-auth",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: realworld_better_auth_task_git_clone, realworld_better_auth_task_cold_install, realworld_better_auth_task_lint_biome, realworld_better_auth_task_lint_deps_knip, realworld_better_auth_task_lint_format, realworld_better_auth_task_lint_spell, realworld_better_auth_task_lint_types, realworld_better_auth_task_lint_packages, realworld_better_auth_task_typecheck, realworld_better_auth_task_build"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-better-auth",
+          "outcome": "failed",
+          "reason": "Step \"mise run benchmark:realworld:pts:better-auth\" lost its sandbox: 12 consecutive detached polls failed (last: computesdk filesystem exists failed: sandbox API error (HTTP 403)) — the sandbox stopped responding, not a quiet long step",
+          "cause": {
+            "kind": "sandbox-lost",
+            "step": "mise run benchmark:realworld:pts:better-auth",
+            "consecutivePollFailures": 12
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "Step \"REALWORLD_TASK_TIMEOUT_SECONDS=2400 mise run benchmark:realworld:pts:mastra\" lost its sandbox: 12 consecutive detached polls failed (last: computesdk filesystem exists failed: sandbox API error (HTTP 403)) — the sandbox stopped responding, not a quiet long step",
+          "cause": {
+            "kind": "sandbox-lost",
+            "step": "REALWORLD_TASK_TIMEOUT_SECONDS=2400 mise run benchmark:realworld:pts:mastra",
+            "consecutivePollFailures": 12
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: realworld_mastra_task_git_clone, realworld_mastra_task_cold_install, realworld_mastra_task_lint_format, realworld_mastra_task_build_core, realworld_mastra_task_test_core"
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-mastra",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "realworld-openclaw",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: realworld_openclaw_task_git_clone, realworld_openclaw_task_cold_install, realworld_openclaw_task_lint_oxlint, realworld_openclaw_task_lint_extensions_all, realworld_openclaw_task_typecheck, realworld_openclaw_task_test_types"
+        },
+        {
+          "scope": "suite",
+          "id": "system",
+          "outcome": "failed",
+          "reason": "Failed to create sandbox: computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation.",
+          "cause": {
+            "kind": "sandbox-create-failed",
+            "detail": "computesdk create failed: sandbox API error (HTTP 403) FORBIDDEN: This API key does not have permission to perform this operation."
+          }
+        },
+        {
+          "scope": "suite",
+          "id": "system",
+          "outcome": "failed",
+          "reason": "Partial publication withheld unverified measurements: pybench_milliseconds, sqlite_speedtest_seconds, git_seconds"
+        }
+      ],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "blaxel",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "boat",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "brezel",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "createos",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-container",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "daytona-vm",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "digitalocean",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "e2b",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "freestyle",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "microsandbox-cloud",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-gvisor",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "modal-vm",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "namespace",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "novita",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "runcloud",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "tama",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "tangle",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    },
+    {
+      "providerId": "vercel",
+      "costEvidence": [],
+      "artifactEvidence": [],
+      "validationStatus": "pending",
+      "observedSpecs": {},
+      "metrics": [],
+      "suitesCovered": [],
+      "gaps": [],
+      "uncatalogued": []
+    }
+  ],
+  "experiment": {
+    "planDigest": "sha256:ef8196e199cf8b8594fcd145c409116d53cc2a13ff9e3fa67a1341fedd8c6bff",
+    "cohortDigest": "sha256:201931930453877c7ef6795302a8011ab5f5bf85f4cb6f3929c4b2aa28aca8a1",
+    "attemptIds": [
+      "baseten-cpu-node-r0-a1-79bc45c5-a33b-4ad7-b62e-661f71e6980b",
+      "baseten-cpu-node-r1-a1-63204820-4587-41d8-a63e-b185dd0223fa",
+      "baseten-cpu-node-r2-a1-a9a2702d-724a-4958-80bf-1897a0c4f667",
+      "baseten-cpu-node-r3-a1-03c47009-53cf-47a6-8a88-c3c5f97ae09d",
+      "baseten-cpu-node-r4-a1-0d3ad589-c8be-41d3-b9a6-7532efa341c9",
+      "baseten-system-r0-a1-a79230fa-65bd-4724-a461-09bbfd4f95fa",
+      "baseten-system-r1-a1-843c843e-57d5-4d23-9cfc-56dac33f9afa",
+      "baseten-system-r2-a1-db093b51-6dd5-444d-89f3-751190814580",
+      "baseten-pgbench-r0-a1-a2509598-c257-40bd-9541-90be38655aa4",
+      "baseten-pgbench-r1-a1-3e7db791-fcf5-4310-a793-af9cbdfd4b2e",
+      "baseten-pgbench-r2-a1-c29ad544-1ed2-49eb-bfe8-ae28e02d5b3d",
+      "baseten-disk-r0-a1-a5ee0e15-a2d2-4067-aad2-2f106d70bf3c",
+      "baseten-disk-r1-a1-fbc9604f-6a4c-4be0-9423-f65a1f631537",
+      "baseten-disk-r2-a1-c5c5ef2f-5285-4ec7-8b34-007e7b057bd2",
+      "baseten-network-r0-a1-efde7c3f-7ffa-4ecb-b8bd-4835f506a17e",
+      "baseten-network-r1-a1-8594e474-1c3d-43a3-9d64-48d9c4646846",
+      "baseten-network-r2-a1-0ca53040-f46d-4f55-9cf1-df6b95b8c260",
+      "baseten-realworld-mastra-r0-a1-3d1dbc89-e1ec-4b3c-b3ae-9d30cdee745f",
+      "baseten-realworld-mastra-r1-a1-7e1959f1-436a-4838-8afb-89f87834bbe7",
+      "baseten-realworld-mastra-r2-a1-58903f9d-827e-4524-8282-74a9c115def2",
+      "baseten-realworld-mastra-r3-a1-dea61cf7-dfa3-4e59-bdec-ce87cb7b6a7e",
+      "baseten-realworld-mastra-r4-a1-4bd94008-8e52-432c-bc28-9572aacbeb5a",
+      "baseten-realworld-mastra-r5-a1-c1c0f67b-b46b-4767-b0e8-072b37ce6c6d",
+      "baseten-realworld-mastra-r6-a1-45888fc2-8804-4f10-8266-5c0884d15e99",
+      "baseten-realworld-mastra-r7-a1-3288f295-8e64-4b02-9f5d-15ddf997a888",
+      "baseten-realworld-mastra-r8-a1-c7381010-dc6b-4fcc-b37d-98e4a7b49db5",
+      "baseten-realworld-mastra-r9-a1-1f0a8d2c-24bf-4acf-8a6d-dd88769fd266",
+      "baseten-realworld-mastra-r10-a1-f0abe977-5cb9-407a-b387-7ddd5fe7a673",
+      "baseten-realworld-mastra-r11-a1-9a9b9103-21c3-4952-b695-f0d762b0bda0",
+      "baseten-realworld-better-auth-r0-a1-7f703c57-f910-438a-90bd-516720cf7c66",
+      "baseten-realworld-better-auth-r1-a1-1fbf56c6-9141-4232-94b6-85fecbfc4874",
+      "baseten-realworld-better-auth-r2-a1-d9139e26-4eb1-44a1-88bd-a5433bbbc7f6",
+      "baseten-realworld-better-auth-r3-a1-ea729908-8387-480d-a0fa-fe26a4006244",
+      "baseten-realworld-better-auth-r4-a1-f7dcf401-ce76-4d55-99df-004eb68bff3c",
+      "baseten-realworld-better-auth-r5-a1-145fe9f2-dc8e-4e24-9d3d-ecbd9c9a3767",
+      "baseten-realworld-better-auth-r6-a1-ef23c949-8dbe-41f6-aa6c-fa270c18b3ee",
+      "baseten-realworld-better-auth-r7-a1-3343577a-c404-43d2-b2ff-c8ce4e567be1",
+      "baseten-realworld-better-auth-r8-a1-bfd62d4c-fa8f-401d-aabf-eecda5613772",
+      "baseten-realworld-better-auth-r9-a1-c27a1dd9-5217-4498-8131-75388fb8dcfc",
+      "baseten-realworld-better-auth-r10-a1-42ea9796-907a-440d-b8ef-e424d89bf204",
+      "baseten-realworld-better-auth-r11-a1-18903357-a102-4a2c-82e7-a49dd1d6d906",
+      "baseten-realworld-openclaw-r0-a1-0a624ee1-6109-4228-8a76-ff62f7b44d83",
+      "baseten-realworld-openclaw-r1-a1-e4d15569-cdc4-4fd4-9eab-1e643728e1a1",
+      "baseten-realworld-openclaw-r2-a1-32731e29-9c11-4a32-9dbb-9527e46ce694",
+      "baseten-realworld-openclaw-r3-a1-03851a5b-fe4c-4128-b7cc-e6fb95815f50",
+      "baseten-realworld-openclaw-r4-a1-05233b9d-8a21-4ade-9fa6-537a45c99959",
+      "baseten-realworld-openclaw-r5-a1-6c09e1cf-736c-40ca-a875-948e28b65789",
+      "baseten-realworld-openclaw-r6-a1-c409dbd1-684d-4ca0-b230-6322b9d62fd7",
+      "baseten-realworld-openclaw-r7-a1-cb5d6dbe-54f2-4dad-a6d2-90556d825aa5",
+      "baseten-realworld-openclaw-r8-a1-1236cd5a-4651-4bae-972d-2ae2a97d2a00",
+      "baseten-realworld-openclaw-r9-a1-d668d738-f25f-4ae9-8541-162ba9af5ea3",
+      "baseten-realworld-openclaw-r10-a1-334ee758-26c2-4795-9bbf-4c1b4a379fbe",
+      "baseten-realworld-openclaw-r11-a1-79e1ab41-8fb3-47d4-8e86-49db069c2045"
+    ],
+    "partial": {
+      "status": "partial",
+      "planned": 53,
+      "complete": 4,
+      "incomplete": 49,
+      "excluded": 0,
+      "cells": [
+        {
+          "id": "baseten-cpu-node-r0",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "baseten-cpu-node-r0-a1-79bc45c5-a33b-4ad7-b62e-661f71e6980b",
+          "retainedMetrics": ["node_web_tooling_runs_per_s"],
+          "provider": "baseten",
+          "suite": "cpu-node",
+          "replicate": 0,
+          "plannedMetrics": ["node_web_tooling_runs_per_s"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-cpu-node-r1",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "baseten-cpu-node-r1-a1-63204820-4587-41d8-a63e-b185dd0223fa",
+          "retainedMetrics": ["node_web_tooling_runs_per_s"],
+          "provider": "baseten",
+          "suite": "cpu-node",
+          "replicate": 1,
+          "plannedMetrics": ["node_web_tooling_runs_per_s"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-cpu-node-r2",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "baseten-cpu-node-r2-a1-a9a2702d-724a-4958-80bf-1897a0c4f667",
+          "retainedMetrics": ["node_web_tooling_runs_per_s"],
+          "provider": "baseten",
+          "suite": "cpu-node",
+          "replicate": 2,
+          "plannedMetrics": ["node_web_tooling_runs_per_s"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-cpu-node-r3",
+          "status": "complete",
+          "missingMetrics": [],
+          "excludedMetrics": [],
+          "attemptId": "baseten-cpu-node-r3-a1-03c47009-53cf-47a6-8a88-c3c5f97ae09d",
+          "retainedMetrics": ["node_web_tooling_runs_per_s"],
+          "provider": "baseten",
+          "suite": "cpu-node",
+          "replicate": 3,
+          "plannedMetrics": ["node_web_tooling_runs_per_s"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-cpu-node-r4",
+          "status": "failed",
+          "missingMetrics": ["node_web_tooling_runs_per_s"],
+          "excludedMetrics": [],
+          "attemptId": "baseten-cpu-node-r4-a1-0d3ad589-c8be-41d3-b9a6-7532efa341c9",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "cpu-node",
+          "replicate": 4,
+          "plannedMetrics": ["node_web_tooling_runs_per_s"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-system-r0",
+          "status": "failed",
+          "missingMetrics": ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+          "excludedMetrics": [],
+          "attemptId": "baseten-system-r0-a1-a79230fa-65bd-4724-a461-09bbfd4f95fa",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "system",
+          "replicate": 0,
+          "plannedMetrics": ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-system-r1",
+          "status": "failed",
+          "missingMetrics": ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+          "excludedMetrics": [],
+          "attemptId": "baseten-system-r1-a1-843c843e-57d5-4d23-9cfc-56dac33f9afa",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "system",
+          "replicate": 1,
+          "plannedMetrics": ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-system-r2",
+          "status": "failed",
+          "missingMetrics": ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+          "excludedMetrics": [],
+          "attemptId": "baseten-system-r2-a1-db093b51-6dd5-444d-89f3-751190814580",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "system",
+          "replicate": 2,
+          "plannedMetrics": ["pybench_milliseconds", "sqlite_speedtest_seconds", "git_seconds"],
+          "passes": 2
+        },
+        {
+          "id": "baseten-pgbench-r0",
+          "status": "failed",
+          "missingMetrics": [
+            "pgbench_scaling_factor_100_clients_50_mode_read_only",
+            "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-pgbench-r0-a1-a2509598-c257-40bd-9541-90be38655aa4",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "pgbench",
+          "replicate": 0,
+          "plannedMetrics": [
+            "pgbench_scaling_factor_100_clients_50_mode_read_only",
+            "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-pgbench-r1",
+          "status": "failed",
+          "missingMetrics": [
+            "pgbench_scaling_factor_100_clients_50_mode_read_only",
+            "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-pgbench-r1-a1-3e7db791-fcf5-4310-a793-af9cbdfd4b2e",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "pgbench",
+          "replicate": 1,
+          "plannedMetrics": [
+            "pgbench_scaling_factor_100_clients_50_mode_read_only",
+            "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-pgbench-r2",
+          "status": "failed",
+          "missingMetrics": [
+            "pgbench_scaling_factor_100_clients_50_mode_read_only",
+            "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-pgbench-r2-a1-c29ad544-1ed2-49eb-bfe8-ae28e02d5b3d",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "pgbench",
+          "replicate": 2,
+          "plannedMetrics": [
+            "pgbench_scaling_factor_100_clients_50_mode_read_only",
+            "pgbench_scaling_factor_100_clients_50_mode_read_only_average_latency",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write",
+            "pgbench_scaling_factor_100_clients_50_mode_read_write_average_latency"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-disk-r0",
+          "status": "failed",
+          "missingMetrics": [
+            "hardlink_bogo_ops_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-disk-r0-a1-a5ee0e15-a2d2-4067-aad2-2f106d70bf3c",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "disk",
+          "replicate": 0,
+          "plannedMetrics": [
+            "hardlink_bogo_ops_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-disk-r1",
+          "status": "failed",
+          "missingMetrics": [
+            "hardlink_bogo_ops_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-disk-r1-a1-fbc9604f-6a4c-4be0-9423-f65a1f631537",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "disk",
+          "replicate": 1,
+          "plannedMetrics": [
+            "hardlink_bogo_ops_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-disk-r2",
+          "status": "failed",
+          "missingMetrics": [
+            "hardlink_bogo_ops_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-disk-r2-a1-c5c5ef2f-5285-4ec7-8b34-007e7b057bd2",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "disk",
+          "replicate": 2,
+          "plannedMetrics": [
+            "hardlink_bogo_ops_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_read_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_sequential_write_engine_linux_aio_direct_yes_block_size_1mb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_read_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_mb_per_s",
+            "fio_type_random_write_engine_linux_aio_direct_yes_block_size_4kb_job_count_1_disk_target_default_test_directory_iops"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-network-r0",
+          "status": "failed",
+          "missingMetrics": [
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+            "iperf_wan_direction_download",
+            "iperf_wan_direction_upload",
+            "network_https_github_com_total_ms",
+            "network_https_api_github_com_total_ms",
+            "network_https_raw_githubusercontent_com_total_ms",
+            "network_https_registry_npmjs_org_total_ms",
+            "network_https_pypi_org_total_ms",
+            "network_https_files_pythonhosted_org_total_ms",
+            "network_https_ghcr_io_v2_total_ms",
+            "network_https_gcr_io_v2_total_ms",
+            "network_https_auth_docker_io_registry_token_total_ms",
+            "network_https_crates_io_total_ms",
+            "network_https_index_crates_io_config_total_ms",
+            "network_dns_cold_github_com_ms",
+            "network_dns_cold_registry_npmjs_org_ms",
+            "network_dns_cold_docker_io_ms",
+            "network_dns_cold_pypi_org_ms",
+            "network_dns_cold_rubygems_org_ms",
+            "network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-network-r0-a1-efde7c3f-7ffa-4ecb-b8bd-4835f506a17e",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "network",
+          "replicate": 0,
+          "plannedMetrics": [
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+            "iperf_wan_direction_download",
+            "iperf_wan_direction_upload",
+            "network_https_github_com_total_ms",
+            "network_https_api_github_com_total_ms",
+            "network_https_raw_githubusercontent_com_total_ms",
+            "network_https_registry_npmjs_org_total_ms",
+            "network_https_pypi_org_total_ms",
+            "network_https_files_pythonhosted_org_total_ms",
+            "network_https_ghcr_io_v2_total_ms",
+            "network_https_gcr_io_v2_total_ms",
+            "network_https_auth_docker_io_registry_token_total_ms",
+            "network_https_crates_io_total_ms",
+            "network_https_index_crates_io_config_total_ms",
+            "network_dns_cold_github_com_ms",
+            "network_dns_cold_registry_npmjs_org_ms",
+            "network_dns_cold_docker_io_ms",
+            "network_dns_cold_pypi_org_ms",
+            "network_dns_cold_rubygems_org_ms",
+            "network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-network-r1",
+          "status": "failed",
+          "missingMetrics": [
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+            "iperf_wan_direction_download",
+            "iperf_wan_direction_upload",
+            "network_https_github_com_total_ms",
+            "network_https_api_github_com_total_ms",
+            "network_https_raw_githubusercontent_com_total_ms",
+            "network_https_registry_npmjs_org_total_ms",
+            "network_https_pypi_org_total_ms",
+            "network_https_files_pythonhosted_org_total_ms",
+            "network_https_ghcr_io_v2_total_ms",
+            "network_https_gcr_io_v2_total_ms",
+            "network_https_auth_docker_io_registry_token_total_ms",
+            "network_https_crates_io_total_ms",
+            "network_https_index_crates_io_config_total_ms",
+            "network_dns_cold_github_com_ms",
+            "network_dns_cold_registry_npmjs_org_ms",
+            "network_dns_cold_docker_io_ms",
+            "network_dns_cold_pypi_org_ms",
+            "network_dns_cold_rubygems_org_ms",
+            "network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-network-r1-a1-8594e474-1c3d-43a3-9d64-48d9c4646846",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "network",
+          "replicate": 1,
+          "plannedMetrics": [
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+            "iperf_wan_direction_download",
+            "iperf_wan_direction_upload",
+            "network_https_github_com_total_ms",
+            "network_https_api_github_com_total_ms",
+            "network_https_raw_githubusercontent_com_total_ms",
+            "network_https_registry_npmjs_org_total_ms",
+            "network_https_pypi_org_total_ms",
+            "network_https_files_pythonhosted_org_total_ms",
+            "network_https_ghcr_io_v2_total_ms",
+            "network_https_gcr_io_v2_total_ms",
+            "network_https_auth_docker_io_registry_token_total_ms",
+            "network_https_crates_io_total_ms",
+            "network_https_index_crates_io_config_total_ms",
+            "network_dns_cold_github_com_ms",
+            "network_dns_cold_registry_npmjs_org_ms",
+            "network_dns_cold_docker_io_ms",
+            "network_dns_cold_pypi_org_ms",
+            "network_dns_cold_rubygems_org_ms",
+            "network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-network-r2",
+          "status": "failed",
+          "missingMetrics": [
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+            "iperf_wan_direction_download",
+            "iperf_wan_direction_upload",
+            "network_https_github_com_total_ms",
+            "network_https_api_github_com_total_ms",
+            "network_https_raw_githubusercontent_com_total_ms",
+            "network_https_registry_npmjs_org_total_ms",
+            "network_https_pypi_org_total_ms",
+            "network_https_files_pythonhosted_org_total_ms",
+            "network_https_ghcr_io_v2_total_ms",
+            "network_https_gcr_io_v2_total_ms",
+            "network_https_auth_docker_io_registry_token_total_ms",
+            "network_https_crates_io_total_ms",
+            "network_https_index_crates_io_config_total_ms",
+            "network_dns_cold_github_com_ms",
+            "network_dns_cold_registry_npmjs_org_ms",
+            "network_dns_cold_docker_io_ms",
+            "network_dns_cold_pypi_org_ms",
+            "network_dns_cold_rubygems_org_ms",
+            "network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-network-r2-a1-0ca53040-f46d-4f55-9cf1-df6b95b8c260",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "network",
+          "replicate": 2,
+          "plannedMetrics": [
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_1",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_tcp_parallel_10",
+            "iperf_server_address_localhost_server_port_5201_duration_10_seconds_test_udp_10000mbit_objective_parallel_1",
+            "iperf_wan_direction_download",
+            "iperf_wan_direction_upload",
+            "network_https_github_com_total_ms",
+            "network_https_api_github_com_total_ms",
+            "network_https_raw_githubusercontent_com_total_ms",
+            "network_https_registry_npmjs_org_total_ms",
+            "network_https_pypi_org_total_ms",
+            "network_https_files_pythonhosted_org_total_ms",
+            "network_https_ghcr_io_v2_total_ms",
+            "network_https_gcr_io_v2_total_ms",
+            "network_https_auth_docker_io_registry_token_total_ms",
+            "network_https_crates_io_total_ms",
+            "network_https_index_crates_io_config_total_ms",
+            "network_dns_cold_github_com_ms",
+            "network_dns_cold_registry_npmjs_org_ms",
+            "network_dns_cold_docker_io_ms",
+            "network_dns_cold_pypi_org_ms",
+            "network_dns_cold_rubygems_org_ms",
+            "network_download_node_v22_23_1_linux_x64_mbits_per_sec"
+          ],
+          "passes": 2
+        },
+        {
+          "id": "baseten-realworld-mastra-r0",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r0-a1-3d1dbc89-e1ec-4b3c-b3ae-9d30cdee745f",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 0,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r1",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r1-a1-7e1959f1-436a-4838-8afb-89f87834bbe7",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 1,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r2",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r2-a1-58903f9d-827e-4524-8282-74a9c115def2",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 2,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r3",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r3-a1-dea61cf7-dfa3-4e59-bdec-ce87cb7b6a7e",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 3,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r4",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r4-a1-4bd94008-8e52-432c-bc28-9572aacbeb5a",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 4,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r5",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r5-a1-c1c0f67b-b46b-4767-b0e8-072b37ce6c6d",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 5,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r6",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r6-a1-45888fc2-8804-4f10-8266-5c0884d15e99",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 6,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r7",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r7-a1-3288f295-8e64-4b02-9f5d-15ddf997a888",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 7,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r8",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r8-a1-c7381010-dc6b-4fcc-b37d-98e4a7b49db5",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 8,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r9",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r9-a1-1f0a8d2c-24bf-4acf-8a6d-dd88769fd266",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 9,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r10",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r10-a1-f0abe977-5cb9-407a-b387-7ddd5fe7a673",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 10,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-mastra-r11",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-mastra-r11-a1-9a9b9103-21c3-4952-b695-f0d762b0bda0",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-mastra",
+          "replicate": 11,
+          "plannedMetrics": [
+            "realworld_mastra_task_git_clone",
+            "realworld_mastra_task_cold_install",
+            "realworld_mastra_task_lint_format",
+            "realworld_mastra_task_build_core",
+            "realworld_mastra_task_test_core"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r0",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r0-a1-7f703c57-f910-438a-90bd-516720cf7c66",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 0,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r1",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r1-a1-1fbf56c6-9141-4232-94b6-85fecbfc4874",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 1,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r2",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r2-a1-d9139e26-4eb1-44a1-88bd-a5433bbbc7f6",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 2,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r3",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r3-a1-ea729908-8387-480d-a0fa-fe26a4006244",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 3,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r4",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r4-a1-f7dcf401-ce76-4d55-99df-004eb68bff3c",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 4,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r5",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r5-a1-145fe9f2-dc8e-4e24-9d3d-ecbd9c9a3767",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 5,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r6",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r6-a1-ef23c949-8dbe-41f6-aa6c-fa270c18b3ee",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 6,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r7",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r7-a1-3343577a-c404-43d2-b2ff-c8ce4e567be1",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 7,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r8",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r8-a1-bfd62d4c-fa8f-401d-aabf-eecda5613772",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 8,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r9",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r9-a1-c27a1dd9-5217-4498-8131-75388fb8dcfc",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 9,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r10",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r10-a1-42ea9796-907a-440d-b8ef-e424d89bf204",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 10,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-better-auth-r11",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-better-auth-r11-a1-18903357-a102-4a2c-82e7-a49dd1d6d906",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-better-auth",
+          "replicate": 11,
+          "plannedMetrics": [
+            "realworld_better_auth_task_git_clone",
+            "realworld_better_auth_task_cold_install",
+            "realworld_better_auth_task_lint_biome",
+            "realworld_better_auth_task_lint_deps_knip",
+            "realworld_better_auth_task_lint_format",
+            "realworld_better_auth_task_lint_spell",
+            "realworld_better_auth_task_lint_types",
+            "realworld_better_auth_task_lint_packages",
+            "realworld_better_auth_task_typecheck",
+            "realworld_better_auth_task_build"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r0",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r0-a1-0a624ee1-6109-4228-8a76-ff62f7b44d83",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 0,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r1",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r1-a1-e4d15569-cdc4-4fd4-9eab-1e643728e1a1",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 1,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r2",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r2-a1-32731e29-9c11-4a32-9dbb-9527e46ce694",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 2,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r3",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r3-a1-03851a5b-fe4c-4128-b7cc-e6fb95815f50",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 3,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r4",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r4-a1-05233b9d-8a21-4ade-9fa6-537a45c99959",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 4,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r5",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r5-a1-6c09e1cf-736c-40ca-a875-948e28b65789",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 5,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r6",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r6-a1-c409dbd1-684d-4ca0-b230-6322b9d62fd7",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 6,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r7",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r7-a1-cb5d6dbe-54f2-4dad-a6d2-90556d825aa5",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 7,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r8",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r8-a1-1236cd5a-4651-4bae-972d-2ae2a97d2a00",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 8,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r9",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r9-a1-d668d738-f25f-4ae9-8541-162ba9af5ea3",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 9,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r10",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r10-a1-334ee758-26c2-4795-9bbf-4c1b4a379fbe",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 10,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        },
+        {
+          "id": "baseten-realworld-openclaw-r11",
+          "status": "failed",
+          "missingMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "excludedMetrics": [],
+          "attemptId": "baseten-realworld-openclaw-r11-a1-79e1ab41-8fb3-47d4-8e86-49db069c2045",
+          "retainedMetrics": [],
+          "provider": "baseten",
+          "suite": "realworld-openclaw",
+          "replicate": 11,
+          "plannedMetrics": [
+            "realworld_openclaw_task_git_clone",
+            "realworld_openclaw_task_cold_install",
+            "realworld_openclaw_task_lint_oxlint",
+            "realworld_openclaw_task_lint_extensions_all",
+            "realworld_openclaw_task_typecheck",
+            "realworld_openclaw_task_test_types"
+          ],
+          "passes": 1
+        }
+      ]
+    }
+  }
+}
