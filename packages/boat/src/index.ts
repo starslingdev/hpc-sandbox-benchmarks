@@ -2,8 +2,9 @@
 // nowhere else. Tests lower the same module over a fake client through `vendorDriver`.
 
 import { BoatApi, Configuration } from "@boatdev/sdk";
-import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { coverage, defineVendorDriver, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema/target-spec";
+import { type } from "arktype";
 import { BOAT_PROVENANCE } from "./provenance.ts";
 import {
 	BOAT_CONTROL_TIMEOUT_MS,
@@ -38,6 +39,16 @@ export const BOAT_CREATE_CEILING_MS =
 	2 * BOAT_CONTROL_TIMEOUT_MS +
 	BOAT_DELETE_TIMEOUT_MS;
 
+const usage = type({
+	ok: "true",
+	sandboxId: "string",
+	billingMultiplier: "number > 0",
+	seconds: "number > 0",
+	dollars: "number >= 0",
+	secondsPerDollar: "number > 0",
+	running: "boolean",
+});
+
 export default defineVendorDriver("boat", {
 	provenance: BOAT_PROVENANCE,
 	sandboxId: BOAT_SANDBOX_ID,
@@ -66,6 +77,47 @@ export default defineVendorDriver("boat", {
 		controlTimeoutMs: BOAT_CONTROL_TIMEOUT_MS,
 	},
 	pageCap: 1_000,
+	// Usage outlives a stopped (archived) sandbox but not a deleted one, which 404s at once.
+	billing: {
+		operation: "GET /api/v1/sandboxes/{sandboxId}/usage",
+		timing: { stableReads: 3 },
+		read: async ({ id, teardownAt, env, signal }) => {
+			const since = new Date(Date.parse(teardownAt) - LEAK_EXPIRY_MS).toISOString();
+			const response = await fetch(
+				`${env.BOAT_BASE_URL ?? BOAT_API_BASE}/sandboxes/${id}/usage?since=${since}`,
+				{ headers: { Authorization: `Bearer ${env.BOAT_API_KEY}` }, signal },
+			);
+			const body: unknown = await response.json().catch(() => null);
+			const evidence = { request: { since }, response: body };
+			if (response.status === 404)
+				return {
+					missing: "unsupported_public_api",
+					detail: "boat serves usage only while the sandbox exists; this one was deleted.",
+					evidence,
+				};
+			if (response.status === 429 || response.status >= 500)
+				return { pending: `boat usage HTTP ${response.status}`, evidence };
+			if (!response.ok)
+				return {
+					missing: "provider_api_error",
+					detail: `boat usage HTTP ${response.status}`,
+					evidence,
+				};
+			const u = usage(body);
+			if (
+				u instanceof type.errors ||
+				u.sandboxId !== id ||
+				Math.abs(u.dollars - u.seconds / u.secondsPerDollar) > 1e-6
+			)
+				return {
+					missing: "invalid_provider_response",
+					detail: "The response was not this sandbox's list-price usage.",
+					evidence,
+				};
+			if (u.running) return { pending: "The sandbox's meter was still running.", evidence };
+			return { usd: u.dollars, seconds: u.seconds / u.billingMultiplier, evidence };
+		},
+	},
 	markerKey: "name",
 	markerSpelling: BOAT_NAME,
 	// The marker is a sandbox name set after create, so no lookup can see an allocation whose
