@@ -2,6 +2,12 @@
 // clients and the explicit CI token file here and nowhere else. Tests lower the same module over a
 // Connect router transport through `vendorDriver`.
 
+import { toJson } from "@bufbuild/protobuf";
+import { Code, ConnectError } from "@connectrpc/connect";
+import {
+	InstanceMetadataSchema,
+	InstanceMetadata_Status as Status,
+} from "@namespacelabs/sdk/proto/namespace/cloud/compute/v1beta/compute_pb";
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
 import { NAMESPACE_PROVENANCE } from "./provenance.ts";
 import {
@@ -34,6 +40,53 @@ export default defineVendorDriver("namespace", {
 		{ env: "mapped" },
 	),
 	execution: NAMESPACE_EXECUTION,
+	// Destroyed instances stay describable; `destroyedAt` is stamped when the destroy is accepted
+	// and holds through DESTROYING → DESTROYED. Billed per compute unit, max(vCPU, GB / 2).
+	billing: {
+		operation: "DescribeInstance",
+		read: async ({ id, env, signal }) => {
+			const { metadata: m } = await namespaceClient(env.NSC_TOKEN_FILE)
+				.compute.describeInstance({ instanceId: id }, { signal })
+				.catch((error: unknown) => {
+					if (ConnectError.from(error).code === Code.NotFound) return { metadata: undefined };
+					throw error;
+				});
+			if (m === undefined)
+				return { missing: "provider_api_error", detail: `Namespace has no instance ${id}.` };
+			const {
+				creatorId: _,
+				services: __,
+				...evidence
+			} = toJson(InstanceMetadataSchema, m) as Record<string, unknown>;
+			const { createdAt, destroyedAt, shape, status } = m;
+			if (
+				m.instanceId !== id ||
+				NAMESPACE_PURPOSE.fromVendor(m.documentedPurpose) === undefined ||
+				!createdAt ||
+				!(shape && shape.virtualCpu > 0 && shape.memoryMegabytes > 0)
+			)
+				return {
+					missing: "invalid_provider_response",
+					detail: "Not this benchmark instance.",
+					evidence,
+				};
+			if (!destroyedAt || (status !== Status.DESTROYED && status !== Status.DESTROYING))
+				return { pending: "The instance's destruction time is not final.", evidence };
+			const seconds =
+				Number(destroyedAt.seconds - createdAt.seconds) +
+				(destroyedAt.nanos - createdAt.nanos) / 1e9;
+			if (!(seconds > 0))
+				return { missing: "invalid_provider_response", detail: "No positive lifetime.", evidence };
+			const units = Math.max(shape.virtualCpu, shape.memoryMegabytes / 2048);
+			return {
+				usage: { prepaid: (units * seconds) / 3600 },
+				seconds,
+				final: status === Status.DESTROYED,
+				evidence,
+			};
+		},
+		timing: { requestTimeoutMs: 2_500 },
+	},
 	createBudget: { owner: "harness", timeoutMs: NAMESPACE_READY_WAIT_MS + 5 * 60_000 },
 	timing: {
 		pollMs: 2_000,
