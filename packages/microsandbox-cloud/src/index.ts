@@ -2,6 +2,7 @@
 // real SDK here and nowhere else. Tests lower the same module over a stub SDK through `vendorDriver`.
 
 import { coverage, defineVendorDriver } from "@sandbox-benchmarks/driver/vendor";
+import { type } from "arktype";
 import { Sandbox, withDefaultBackend } from "microsandbox";
 import { MICROSANDBOX_PROVENANCE } from "./provenance.ts";
 import { MICROSANDBOX_NAME, MICROSANDBOX_SANDBOX_ID, microsandboxVendor } from "./vendor.ts";
@@ -14,6 +15,17 @@ export { MICROSANDBOX_PROVENANCE, MICROSANDBOX_SANDBOX_ID };
  * budget loses to that pull and a create timeout is not a capacity refusal, so it would not retry.
  */
 export const MICROSANDBOX_CREATE_TIMEOUT_MS = 20 * 60_000;
+
+/** Org-wide usage: one row per (sandbox UUID, UTC day); `sandboxes` maps our names to UUIDs. */
+const usage = type({
+	rows: type({
+		sandbox_id: "string",
+		vcpu_seconds: "number >= 0",
+		mem_mib_seconds: "number >= 0",
+		disk_mib_seconds: "number >= 0",
+	}).array(),
+	sandboxes: type({ id: "string", name: "string" }).array(),
+});
 
 export default defineVendorDriver("microsandbox-cloud", {
 	provenance: MICROSANDBOX_PROVENANCE,
@@ -34,4 +46,48 @@ export default defineVendorDriver("microsandbox-cloud", {
 	markerSpelling: MICROSANDBOX_NAME,
 	recovery: { lookup: MICROSANDBOX_NAME, provesAbsence: false },
 	vendor: (context) => microsandboxVendor({ Sandbox, withDefaultBackend }, context),
+	billing: {
+		operation: "GET /v1/billing/usage/sandbox",
+		// Usage is computed on read and final once the sandbox is gone; three agreeing reads settle it.
+		timing: { stableReads: 3 },
+		read: async ({ id, target, teardownAt, env, signal }) => {
+			// `from`/`to` clip rows (`start`/`end` are ignored), so cover the longest life: 3 h + create.
+			const torn = Date.parse(teardownAt);
+			const window = {
+				from: new Date(Math.floor((torn - 4 * 3_600_000) / 3_600_000) * 3_600_000).toISOString(),
+				to: new Date(torn + 3_600_000).toISOString(),
+			};
+			const base = (env.MSB_API_URL ?? "https://api.microsandbox.dev").replace(/\/+$/, "");
+			const response = await fetch(
+				`${base}/v1/billing/usage/sandbox?${new URLSearchParams(window)}`,
+				{
+					headers: { Authorization: `Bearer ${env.MSB_API_KEY}` },
+					signal,
+				},
+			);
+			if (!response.ok) throw new Error(`The usage read failed: HTTP ${response.status}`);
+			const body = usage(await response.json());
+			if (body instanceof type.errors)
+				return { missing: "invalid_provider_response", detail: body.summary };
+			const named = body.sandboxes.filter((sandbox) => sandbox.name === id);
+			if (named.length > 1)
+				return {
+					missing: "invalid_provider_response",
+					detail: `${named.length} sandboxes are named ${id}`,
+				};
+			const rows = body.rows.filter((row) => row.sandbox_id === named[0]?.id);
+			if (rows.length === 0) return { pending: "Microsandbox reported no usage for the sandbox." };
+			const sum = (key: "vcpu_seconds" | "mem_mib_seconds" | "disk_mib_seconds") =>
+				rows.reduce((total, row) => total + row[key], 0);
+			return {
+				usage: {
+					cpu: sum("vcpu_seconds") / 3600,
+					memory: sum("mem_mib_seconds") / 1024 / 3600,
+					disk: sum("disk_mib_seconds") / 1024 / 3600,
+				},
+				seconds: sum("vcpu_seconds") / target.vcpus,
+				evidence: { request: window, sandbox: named[0], rows },
+			};
+		},
+	},
 });
