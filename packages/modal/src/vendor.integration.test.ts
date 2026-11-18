@@ -190,7 +190,7 @@ vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor(
 describe("Modal benchmark resource configuration", () => {
 	it.each([
 		["modal-gvisor", 8, 128, "7516192768"],
-		["modal-vm", 8, 128, "7516192768"],
+		["modal-vm", 8, 8192, "7516192768"],
 		["modal-gvisor", 16, 16_384, "16106127360"],
 		["modal-vm", 16, 16_384, "16106127360"],
 	] as const)("%s at %d GiB requests minimum CPU and %d MiB of memory", async (provider, memoryGb, memoryMb, taskMemoryMaxBytes) => {

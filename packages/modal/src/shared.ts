@@ -73,9 +73,14 @@ export function modalAllocate(
 				// Modal bills max(request, usage) and bursts above the request
 				// (https://modal.com/docs/guide/sandbox-resources), so request the 0.125-core minimum.
 				cpu: 0.125,
-				// Burst from Modal's 128 MiB minimum when the limit keeps the sandbox within Modal's
-				// burst eviction SLO; reserve larger limits in full.
-				memoryMiB: memoryLimitMiB <= MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB ? 128 : memoryLimitMiB,
+				// A VM grows from its request only as the guest uses memory, too slowly for a workload
+				// that allocates gigabytes right after boot (STREAM), so VMs reserve their limit.
+				// gVisor bursts from Modal's 128 MiB minimum when the limit keeps the sandbox within
+				// Modal's burst eviction SLO; larger limits are reserved in full.
+				memoryMiB:
+					provider === "modal-vm" || memoryLimitMiB > MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB
+						? memoryLimitMiB
+						: 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB,
 				env: {
