@@ -107,7 +107,8 @@ const round = (v: number, dp: number) => Number(v.toFixed(dp));
 /** The chart uses concise vendor names while the full registry names remain in the Markdown tables. */
 function figureProviderName(providerId: string, displayName: string): string {
 	if (providerId.startsWith("daytona")) return "Daytona";
-	if (providerId.startsWith("modal")) return "Modal";
+	if (providerId.startsWith("modal"))
+		return providerId.endsWith("-standard") ? "Modal (standard pool)" : "Modal";
 	if (providerId.startsWith("microsandbox")) return "microsandbox";
 	if (providerId.startsWith("vercel")) return "Vercel";
 	return displayName;

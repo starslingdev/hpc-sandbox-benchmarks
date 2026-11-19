@@ -13,6 +13,8 @@ export const PROVIDER_IDS = [
 	"microsandbox-cloud",
 	"modal-gvisor",
 	"modal-vm",
+	"modal-gvisor-standard",
+	"modal-vm-standard",
 	"novita",
 	"namespace",
 	"vercel",

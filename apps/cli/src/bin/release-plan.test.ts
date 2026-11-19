@@ -72,6 +72,8 @@ describe("buildReleasePlan matrix", () => {
 			"microsandbox-cloud",
 			"modal-gvisor",
 			"modal-vm",
+			"modal-gvisor-standard",
+			"modal-vm-standard",
 			"novita",
 			"namespace",
 			"vercel",

@@ -15,6 +15,8 @@ import {
 	MODAL_INVENTORY_TIMEOUT_MS,
 	modalAppName,
 	modalControlPlane,
+	modalPerformanceSensitive,
+	modalRuntime,
 	modalSandboxId,
 	modalVendor,
 } from "./vendor.ts";
@@ -75,7 +77,8 @@ export function modalAllocate(
 				cpu: 0.125,
 				// Modal supports memory bursting, with an SLO up to MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB. But disable for vms because of observed OOMs
 				memoryMiB:
-					provider === "modal-vm" || memoryLimitMiB > MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB
+					modalRuntime(provider) === "vm" ||
+					memoryLimitMiB > MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB
 						? memoryLimitMiB
 						: 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
@@ -91,16 +94,22 @@ export function modalAllocate(
 				},
 				// Pin CPU placement to Modal's low-variance instance pool
 				// (https://modal.com/docs/guide/performance-sensitive-sandboxes). GPU creates
-				// must not set this; Modal documents the option as CPU-only.
-				experimentalOptions: { performance_sensitive: true },
+				// must not set this; Modal documents the option as CPU-only. The `-standard`
+				// variants leave it off and schedule on the general pool.
+				...(modalPerformanceSensitive(provider)
+					? { experimentalOptions: { performance_sensitive: true } }
+					: {}),
 				// The cost hook isolates this sandbox's billed usage by filtering stats on the
 				// marker tag. perf_sensitive is a console/inventory label only.
-				tags: { [MODAL_MARKER_TAG]: marker, perf_sensitive: "true" },
+				tags: {
+					[MODAL_MARKER_TAG]: marker,
+					perf_sensitive: String(modalPerformanceSensitive(provider)),
+				},
 			};
 			const registry = client.images.fromRegistry(image);
 			return client.sandboxes.create(app, registry, {
 				...params,
-				runtime: provider === "modal-vm" ? "vm" : "gvisor",
+				runtime: modalRuntime(provider),
 			});
 		});
 }

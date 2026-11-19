@@ -124,8 +124,8 @@ jobs:
           BL_WORKSPACE: ${{ contains(fromJSON(inputs.providers), 'blaxel') && secrets.BL_WORKSPACE || '' }}
           MSB_API_KEY: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && secrets.MSB_API_KEY || '' }}
           MSB_API_URL: ${{ contains(fromJSON(inputs.providers), 'microsandbox-cloud') && (env.MSB_API_URL || vars.MSB_API_URL || secrets.MSB_API_URL) || '' }}
-          MODAL_TOKEN_ID: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_ID || '' }}
-          MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_SECRET || '' }}
+          MODAL_TOKEN_ID: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm') || contains(fromJSON(inputs.providers), 'modal-gvisor-standard') || contains(fromJSON(inputs.providers), 'modal-vm-standard')) && secrets.MODAL_TOKEN_ID || '' }}
+          MODAL_TOKEN_SECRET: ${{ (contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm') || contains(fromJSON(inputs.providers), 'modal-gvisor-standard') || contains(fromJSON(inputs.providers), 'modal-vm-standard')) && secrets.MODAL_TOKEN_SECRET || '' }}
           NOVITA_API_KEY: ${{ contains(fromJSON(inputs.providers), 'novita') && secrets.NOVITA_API_KEY || '' }}
           NOVITA_TEMPLATE: ${{ contains(fromJSON(inputs.providers), 'novita') && (env.NOVITA_TEMPLATE || vars.NOVITA_TEMPLATE || secrets.NOVITA_TEMPLATE) || '' }}
           NSC_TOKEN_FILE: ${{ steps.namespace.outputs.token-file }}

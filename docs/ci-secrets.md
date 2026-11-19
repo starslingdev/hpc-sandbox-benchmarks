@@ -230,8 +230,8 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | `BL_API_KEY` | Blaxel provider runtime and validation |
    | `BL_WORKSPACE` | Blaxel provider runtime and validation |
    | `MSB_API_KEY` | Microsandbox Cloud provider runtime and validation |
-   | `MODAL_TOKEN_ID` | Modal (gVisor), Modal (VM) provider runtime and validation |
-   | `MODAL_TOKEN_SECRET` | Modal (gVisor), Modal (VM) provider runtime and validation |
+   | `MODAL_TOKEN_ID` | Modal (gVisor), Modal (VM), Modal (gVisor, standard pool), Modal (VM, standard pool) provider runtime and validation |
+   | `MODAL_TOKEN_SECRET` | Modal (gVisor), Modal (VM), Modal (gVisor, standard pool), Modal (VM, standard pool) provider runtime and validation |
    | `NOVITA_API_KEY` | Novita provider runtime and validation |
    | `RUN_CLOUD_API_KEY` | run.cloud provider runtime and validation |
    | `TAMA_TOKEN` | tama provider runtime and validation |

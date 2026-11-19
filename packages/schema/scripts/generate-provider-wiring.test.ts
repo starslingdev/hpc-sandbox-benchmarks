@@ -103,14 +103,17 @@ describe("provider wiring projections", () => {
 		expect(bindings.flatMap(({ owners }) => owners)).toEqual([...PROVIDER_IDS]);
 		expect(bindings.filter(({ owners }) => owners.length > 1)).toEqual([
 			{ domain: "daytona", owners: ["daytona-vm", "daytona-container"] },
-			{ domain: "modal", owners: ["modal-gvisor", "modal-vm"] },
+			{
+				domain: "modal",
+				owners: ["modal-gvisor", "modal-vm", "modal-gvisor-standard", "modal-vm-standard"],
+			},
 		]);
 		// A provider that shares no credential is its own domain — never a stray custom name.
 		expect(
 			bindings.filter(({ domain, owners }) => owners.length === 1 && owners[0] !== domain),
 		).toEqual([]);
 		expect(renderAccountConcurrencyGroup("")).toBe(
-			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}`,
+			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm' || matrix.provider == 'modal-gvisor-standard' || matrix.provider == 'modal-vm-standard') && 'modal' || matrix.provider }}`,
 		);
 	});
 
@@ -137,14 +140,14 @@ describe("provider wiring projections", () => {
 			`RUN_CLOUD_API_KEY: \${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}`,
 		);
 		expect(promote).toContain(
-			"(contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')) && secrets.MODAL_TOKEN_ID",
+			"(contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor-standard') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm-standard')) && secrets.MODAL_TOKEN_ID",
 		);
 	});
 
 	test("a shared batch scopes credentials to every frozen provider without creating separate owners", () => {
 		const batch = renderWorkflowInputs("batch", "");
 		expect(batch).toContain(
-			"(contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_ID",
+			"(contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm') || contains(fromJSON(inputs.providers), 'modal-gvisor-standard') || contains(fromJSON(inputs.providers), 'modal-vm-standard')) && secrets.MODAL_TOKEN_ID",
 		);
 		expect(batch).toContain(
 			"contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET",
@@ -263,6 +266,8 @@ describe("provider wiring projections", () => {
 			"microsandbox-cloud",
 			"modal-gvisor",
 			"modal-vm",
+			"modal-gvisor-standard",
+			"modal-vm-standard",
 			"novita",
 			"namespace",
 			"vercel",

@@ -60,6 +60,8 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 			};
 		case "modal-gvisor":
 		case "modal-vm":
+		case "modal-gvisor-standard":
+		case "modal-vm-standard":
 		// Same candidate image as modal-gvisor; the VM runtime is selected by the adapter's base
 		// createOptions (experimentalOptions:{vm_runtime:true}), which validate-run.ts preserves
 		// through the spread — so this candidate override, like modal-gvisor's, is only the templateId.
