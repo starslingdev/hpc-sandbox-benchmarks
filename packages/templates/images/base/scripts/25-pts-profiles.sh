@@ -134,6 +134,15 @@ for t in "${pts_tests[@]}"; do
 		chmod -R go-rwx "${pgdata}"
 		[ "$(stat -c '%a' "${pgdata}")" = "700" ] ||
 			{ echo "ERROR: ${t} data dir mode is $(stat -c '%a' "${pgdata}"), postgres requires 0700" >&2; exit 1; }
+		# Publish only the image's freshly initialized benchmark fixture. Keep the live data
+		# directory private. An unprivileged sandbox can restore these same bytes as its own uid.
+		seed="/usr/local/share/sandbox-benchmarks/${t}.tar.gz"
+		install -d -m 0755 "${seed%/*}"
+		role_dir=$(mktemp -d)
+		stat -c '%U' "${pgdata}" >"${role_dir}/.bootstrap-role"
+		tar -czf "${seed}" -C "${pgdata%/*}" db -C "${role_dir}" .bootstrap-role
+		chmod 0644 "${seed}"
+		rm -r "${role_dir}"
 		;;
 	esac
 done
