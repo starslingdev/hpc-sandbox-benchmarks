@@ -15,13 +15,12 @@ const MIN = 60_000;
 export default defineVendorDriver("tangle", {
 	provenance: TANGLE_PROVENANCE,
 	sandboxId: type(/^[A-Za-z0-9_-]{1,128}$/),
-	// Disk is granted as a workspace quota rather than `/`, so the kit's `df` proves the capacity.
+	// data.prepare measures capacity at the workspace where PTS runs.
 	coverage: coverage({
 		vcpus: "mapped",
 		memoryGb: "mapped",
 		diskGb: { capacityAtLeast: TARGET_SPEC.diskGb },
 	}),
-	diskProof: {},
 	execution: { syncCapMs: MIN, durable: "native-launch" },
 	// Create (15m), readiness (5m), cleanup (2m), and the preflight and disk proof (1m).
 	createBudget: { owner: "harness", timeoutMs: CREATE_TIMEOUT_MS + 8 * MIN },
