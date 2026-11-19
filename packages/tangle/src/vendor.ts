@@ -38,7 +38,7 @@ export const TANGLE_PTS_PREFLIGHT = [
 	`    bash -o pipefail -c 'tar -C "$1" --exclude="./pg_/data/db" -cf - . | tar -C "$2" --no-same-owner -xf -' _ "$profile" "$staged"`,
 	'    tar -C "$staged/pg_/data" --no-same-owner -xzf "$seed"',
 	'    mv -T "$staged" "$dest"',
-	'    trap - EXIT',
+	"    trap - EXIT",
 	"  fi",
 	'  [ -e "$dest" ] || cp -R "$profile" "$dest" 2>/dev/null || { rm -rf "$dest"; ln -s "$profile" "$dest"; }',
 	"done",
@@ -156,7 +156,9 @@ export function tangleVendor(
 								`if [ "$bytes" -lt ${Math.ceil(spec.diskGb * 1024 ** 3)} ]; then echo "requested ${spec.diskGb} GiB workspace, mounted $bytes bytes at $HOME"; exit 78; fi`,
 								"",
 							].join("\n");
-				const { exitCode, stdout, stderr } = await exec(native, workspace + TANGLE_PTS_PREFLIGHT, { signal });
+				const { exitCode, stdout, stderr } = await exec(native, workspace + TANGLE_PTS_PREFLIGHT, {
+					signal,
+				});
 				if (exitCode === 78 && stdout.startsWith("requested "))
 					return { status: "unsupported", detail: stdout.trim() };
 				if (exitCode === 0) return { status: "honored" };
