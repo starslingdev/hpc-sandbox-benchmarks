@@ -36,6 +36,14 @@ export function readTangleVendorAttestation(path: string | undefined) {
 	}).assert(JSON.parse(bytes.toString("utf8")));
 	return {
 		sandboxId: receipt.sandboxId,
+		releaseEvidence(confirmedAt: string) {
+			return {
+				kind: "tangle-vendor-cleanup",
+				attemptDigest: reviewedTangleCleanup.attemptDigest,
+				attestationDigest: reviewedTangleCleanup.attestationDigest,
+				confirmedAt,
+			} as const;
+		},
 		assertCustomer(customerId: string) {
 			const hash = createHash("sha256").update(receipt.requestId).update("\n").update(customerId);
 			if (`sha256:${hash.digest("hex")}` !== receipt.customerCommitment)

@@ -207,7 +207,10 @@ export async function recoverAmbiguousCreateInventory(options: {
 			if (!observeCustomer) throw new Error("missing Tangle account identity observer");
 			attestation.assertCustomer(await withinSignal(signal, observeCustomer));
 			const observed = await withinSignal(signal, () =>
-				probes.observe({ provider: "tangle", id: attestation.sandboxId }),
+				probes.observe({ provider: "tangle", id: attestation.sandboxId }).catch(() => {
+					// An SDK error may echo the private resource ID in the request URL.
+					throw new Error("Tangle could not verify the attested resource");
+				}),
 			);
 			if (observed.state !== "absent")
 				throw new Error("the attested Tangle resource is still visible");
@@ -223,29 +226,16 @@ export async function recoverAmbiguousCreateInventory(options: {
 	await assertNothingOwned();
 	await assertQuiescent(evidence.workflowRun, evidence.sha);
 	await assertNothingOwned();
-	if (reviewed.provider === "tangle") await assertQuiescent(evidence.workflowRun, evidence.sha);
+	if (attestation) await assertQuiescent(evidence.workflowRun, evidence.sha);
 	const unchanged = await readIntent();
 	if (JSON.stringify(unchanged) !== JSON.stringify(intent))
 		throw new Error("journal changed during inventory clearance");
 	signal.throwIfAborted();
+	const release = attestation
+		? { outcome: "reconciled", evidence: attestation.releaseEvidence(new Date().toISOString()) }
+		: { outcome: "not-allocated" };
 	await withinSignal(signal, () =>
-		journal.append(
-			accountRecordSchema.assert(
-				reviewed.provider === "tangle"
-					? {
-							...intent,
-							kind: "released",
-							outcome: "reconciled",
-							evidence: {
-								kind: "tangle-vendor-cleanup",
-								attemptDigest: reviewed.attemptDigest,
-								attestationDigest: reviewed.attestationDigest,
-								confirmedAt: new Date().toISOString(),
-							},
-						}
-					: { ...intent, kind: "released", outcome: "not-allocated" },
-			),
-		),
+		journal.append(accountRecordSchema.assert({ ...intent, kind: "released", ...release })),
 	);
 	return reviewed.attemptId;
 }
