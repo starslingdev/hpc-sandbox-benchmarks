@@ -13,14 +13,14 @@ const rawRoots: string[] = [];
 function rawRootFor(runId: string, replicateIndex?: number): string {
 	const root = mkdtempSync(join(tmpdir(), "sandbox-bench-write-raw-"));
 	rawRoots.push(root);
-	cpSync(join(fixtureRoot, "daytona-vm"), join(root, "daytona-vm"), { recursive: true });
+	cpSync(join(fixtureRoot, "daytona-vm-zen5"), join(root, "daytona-vm-zen5"), { recursive: true });
 	writeFileSync(
-		join(root, "daytona-vm", "cpu-node", "provider-artifact-evidence.json"),
+		join(root, "daytona-vm-zen5", "cpu-node", "provider-artifact-evidence.json"),
 		`${JSON.stringify(
 			{
 				cell: {
 					runId,
-					providerId: "daytona-vm",
+					providerId: "daytona-vm-zen5",
 					suite: "cpu-node",
 					...(replicateIndex !== undefined ? { replicateIndex } : {}),
 				},

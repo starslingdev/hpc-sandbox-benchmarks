@@ -1,7 +1,7 @@
 {
   "cell": {
     "runId": "run-test",
-    "providerId": "daytona-vm",
+    "providerId": "daytona-vm-zen5",
     "suite": "cpu-node"
   },
   "sandboxId": "fixture-sandbox",

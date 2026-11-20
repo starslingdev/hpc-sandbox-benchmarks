@@ -246,7 +246,7 @@ export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
 
 /**
  * The vendor account a provider's sandboxes are charged to and queued behind. Isolation variants
- * that share credentials share one domain (daytona-vm and daytona-container → `daytona`); every
+ * that share credentials share one domain (the four daytona-vm-* variants and daytona-container → `daytona`); every
  * other provider is its own. This one lookup names the Actions concurrency group (generated wiring),
  * the account journal branch and the experiment plan's batches, so they cannot disagree.
  */
@@ -272,7 +272,12 @@ export const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = Obj
 	// branch shows "VM" only because this stack sits on top of that later change — that is the current
 	// adapter config, not the runtime the historical runs were collected under.)
 	modal: "modal-gvisor",
-	daytona: "daytona-vm",
+	daytona: "daytona-vm-zen5-burst",
+	// `daytona-vm` → the zen5 burst variant: every committed `daytona-vm` run booted the v2 Linux VM on
+	// Zen 5 with a CPU guarantee that could burst above it, which is what the split kept as
+	// daytona-vm-zen5-burst. Its pre-split guarantee (4 vCPU, ceiling 8) differed from the new burst
+	// floor, so those runs are the closest historical analogue, not the same configuration.
+	"daytona-vm": "daytona-vm-zen5-burst",
 });
 
 /**
@@ -286,7 +291,26 @@ export function getProvider(id: string): ProviderMeta | undefined {
 	// A linear scan over a handful of frozen entries — no module-load Map to drift out of sync, and
 	// the entries are immutable, so returning the reference directly is safe.
 	const canonical = LEGACY_PROVIDER_ALIASES[id] ?? id;
-	return PROVIDERS.find((p) => p.id === canonical);
+	const meta = PROVIDERS.find((p) => p.id === canonical);
+	const legacyName = LEGACY_DISPLAY_NAMES[id];
+	if (meta === undefined || legacyName === undefined) return meta;
+	return legacyViews.get(id) ?? legacyView(id, { ...meta, displayName: legacyName });
+}
+
+/**
+ * Display names a retired id keeps, so the committed runs that carry it (and the leaderboard and
+ * figures rendered from them) read as they were published instead of taking the successor variant's
+ * name: the pre-split Daytona runs were one unqualified "Daytona (VM)", not a Zen 5 burst variant.
+ */
+const LEGACY_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze({
+	"daytona-vm": "Daytona (VM)",
+	daytona: "Daytona (VM)",
+});
+const legacyViews = new Map<string, ProviderMeta>();
+function legacyView(id: string, meta: ProviderMeta): ProviderMeta {
+	const view = Object.freeze(meta);
+	legacyViews.set(id, view);
+	return view;
 }
 
 /**

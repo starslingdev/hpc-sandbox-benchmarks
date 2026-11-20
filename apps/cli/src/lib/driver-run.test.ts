@@ -96,7 +96,10 @@ describe("bench-suite driver vs legacy selection (Phase A unit 1)", () => {
 			"brezel",
 			"createos",
 			"daytona-container",
-			"daytona-vm",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
 			"digitalocean",
 			"e2b",
 			"freestyle",
@@ -245,10 +248,7 @@ describe("resolveDriverArtifact", () => {
 });
 
 describe("driverArtifactResolution", () => {
-	test("honors each Daytona variant's own snapshot override", () => {
-		expect(driverArtifactResolution("daytona-vm", { DAYTONA_SNAPSHOT: "vm-debug" })).toEqual({
-			ref: "vm-debug",
-		});
+	test("honors the Daytona container's own snapshot override", () => {
 		expect(
 			driverArtifactResolution("daytona-container", {
 				DAYTONA_CONTAINER_SNAPSHOT: "container-debug",

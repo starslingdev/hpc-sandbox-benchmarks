@@ -13,12 +13,12 @@ import { vendorContract, vendorDriver } from "@sandbox-benchmarks/driver/vendor/
 import container from "./container.ts";
 import type { DaytonaClient } from "./vendor.ts";
 import { DAYTONA_LISTING_TIMEOUT_MS, daytonaVendor } from "./vendor.ts";
-import vm from "./vm.ts";
+import vm from "./vm-zen5.ts";
 
 const KEY = "dtn_test-key";
-const context: DriverContext<"daytona-vm"> = {
-	env: { DAYTONA_API_KEY: KEY, DAYTONA_TARGET: "us-west-2" },
-	artifact: { kind: "baked" },
+const context: DriverContext<"daytona-vm-zen5"> = {
+	env: { DAYTONA_API_KEY: KEY },
+	artifact: { kind: "baked", nameSuffix: "-zen5" },
 	resolvedArtifact: { kind: "baked", ref: "benchmark-toolchain-v1" },
 };
 const request: CreateRequest = {
@@ -143,7 +143,7 @@ const vendorOver = (org: ReturnType<typeof daytonaOrg>, sandboxClass = "linux-vm
 /** Each variant's own module, lowered over a fake org instead of the real SDK. */
 function driverOver(org: ReturnType<typeof daytonaOrg>, module: typeof vm | typeof container = vm) {
 	const sandboxClass = module === vm ? "linux-vm" : "container";
-	return vendorDriver<"daytona-vm", Sandbox, Sandbox>(module as never, context, {
+	return vendorDriver<"daytona-vm-zen5", Sandbox, Sandbox>(module as never, context, {
 		vendor: daytonaVendor(context, sandboxClass, org.client),
 		timing: { pollMs: 0, deleteTimeoutMs: 1_000 },
 	});

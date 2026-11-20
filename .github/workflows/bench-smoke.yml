@@ -6,11 +6,14 @@ on:
       provider:
         description: Provider to benchmark
         type: choice
-        default: daytona-vm
+        default: daytona-vm-zen5
         options:
           # >>> generated: provider-options — bun run generate-provider-wiring
           - 'e2b'
-          - 'daytona-vm'
+          - 'daytona-vm-zen5'
+          - 'daytona-vm-zen5-burst'
+          - 'daytona-vm-arm'
+          - 'daytona-vm-arm-burst'
           - 'daytona-container'
           - 'blaxel'
           - 'microsandbox-cloud'
@@ -106,7 +109,6 @@ jobs:
           BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
           BENCH_ACCOUNT_CAPACITY: ${{ vars.BENCH_ACCOUNT_CAPACITY }}
           BENCH_ARTIFACT_E2B: ${{ vars.E2B_TEMPLATE }}
-          BENCH_ARTIFACT_DAYTONA_VM: ${{ vars.DAYTONA_SNAPSHOT }}
           BENCH_ARTIFACT_DAYTONA_CONTAINER: ${{ vars.DAYTONA_CONTAINER_SNAPSHOT }}
           BENCH_ARTIFACT_VERCEL: ${{ vars.BENCH_ARTIFACT_VERCEL }}
           BENCH_ARTIFACT_FREESTYLE: ${{ vars.FREESTYLE_SNAPSHOT_ID }}

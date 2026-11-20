@@ -17,7 +17,10 @@ const transpiler = new Bun.Transpiler({ loader: "ts" });
 
 const REQUIRED_INPUTS = {
 	e2b: ["E2B_API_KEY"],
-	"daytona-vm": ["DAYTONA_API_KEY"],
+	"daytona-vm-zen5": ["DAYTONA_API_KEY"],
+	"daytona-vm-zen5-burst": ["DAYTONA_API_KEY"],
+	"daytona-vm-arm": ["DAYTONA_API_KEY"],
+	"daytona-vm-arm-burst": ["DAYTONA_API_KEY"],
 	"daytona-container": ["DAYTONA_API_KEY"],
 	blaxel: ["BL_API_KEY", "BL_WORKSPACE"],
 	"microsandbox-cloud": ["MSB_API_KEY"],
@@ -39,7 +42,10 @@ const REQUIRED_INPUTS = {
 
 const ARTIFACT_KINDS = {
 	e2b: "baked",
-	"daytona-vm": "baked",
+	"daytona-vm-zen5": "baked",
+	"daytona-vm-zen5-burst": "baked",
+	"daytona-vm-arm": "baked",
+	"daytona-vm-arm-burst": "baked",
 	"daytona-container": "baked",
 	blaxel: "baked",
 	"microsandbox-cloud": "image",
@@ -61,7 +67,10 @@ const ARTIFACT_KINDS = {
 
 const BAKED = {
 	e2b: true,
-	"daytona-vm": true,
+	"daytona-vm-zen5": true,
+	"daytona-vm-zen5-burst": true,
+	"daytona-vm-arm": true,
+	"daytona-vm-arm-burst": true,
 	"daytona-container": true,
 	blaxel: true,
 	freestyle: true,
@@ -141,7 +150,10 @@ describe("provider metadata authoring", () => {
 	test("derives exact artifact partitions and makes no-op bakers unrepresentable", () => {
 		expect(Object.keys(BAKED)).toEqual([
 			"e2b",
-			"daytona-vm",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
 			"daytona-container",
 			"blaxel",
 			"freestyle",

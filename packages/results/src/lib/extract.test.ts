@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { extractProviderDir } from "./extract.ts";
 import { parsePtsComposite, ptsResultToMetric } from "./pts.ts";
 
-const daytonaDir = join(import.meta.dir, "__fixtures__/daytona-vm");
+const daytonaDir = join(import.meta.dir, "__fixtures__/daytona-vm-zen5");
 
 describe("extractProviderDir", () => {
 	const extraction = extractProviderDir(daytonaDir, "daytona-vm");

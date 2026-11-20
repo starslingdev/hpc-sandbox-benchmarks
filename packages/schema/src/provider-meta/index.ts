@@ -7,7 +7,10 @@ import boat from "./boat.ts";
 import brezel from "./brezel.ts";
 import createos from "./createos.ts";
 import daytona_container from "./daytona-container.ts";
-import daytona_vm from "./daytona-vm.ts";
+import daytona_vm_arm from "./daytona-vm-arm.ts";
+import daytona_vm_arm_burst from "./daytona-vm-arm-burst.ts";
+import daytona_vm_zen5 from "./daytona-vm-zen5.ts";
+import daytona_vm_zen5_burst from "./daytona-vm-zen5-burst.ts";
 import digitalocean from "./digitalocean.ts";
 import e2b from "./e2b.ts";
 import freestyle from "./freestyle.ts";
@@ -23,7 +26,10 @@ import vercel from "./vercel.ts";
 
 const MODULES = {
 	e2b: e2b,
-	"daytona-vm": daytona_vm,
+	"daytona-vm-zen5": daytona_vm_zen5,
+	"daytona-vm-zen5-burst": daytona_vm_zen5_burst,
+	"daytona-vm-arm": daytona_vm_arm,
+	"daytona-vm-arm-burst": daytona_vm_arm_burst,
 	"daytona-container": daytona_container,
 	blaxel: blaxel,
 	"microsandbox-cloud": microsandbox_cloud,
@@ -45,7 +51,10 @@ const MODULES = {
 
 export const REGISTRY = {
 	e2b: MODULES.e2b.meta,
-	"daytona-vm": MODULES["daytona-vm"].meta,
+	"daytona-vm-zen5": MODULES["daytona-vm-zen5"].meta,
+	"daytona-vm-zen5-burst": MODULES["daytona-vm-zen5-burst"].meta,
+	"daytona-vm-arm": MODULES["daytona-vm-arm"].meta,
+	"daytona-vm-arm-burst": MODULES["daytona-vm-arm-burst"].meta,
 	"daytona-container": MODULES["daytona-container"].meta,
 	blaxel: MODULES.blaxel.meta,
 	"microsandbox-cloud": MODULES["microsandbox-cloud"].meta,

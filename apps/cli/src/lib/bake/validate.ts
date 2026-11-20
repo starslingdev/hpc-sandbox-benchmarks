@@ -3,14 +3,15 @@
 // it's unit-testable without the env-backed config.
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import type { DriverResolvedArtifact } from "@sandbox-benchmarks/schema/driver-schemas";
+import type { DaytonaVmVariantId } from "@sandbox-benchmarks/schema/toolchain";
 
 export { baseImageUse } from "@sandbox-benchmarks/schema/provider-artifacts";
 
 export interface CandidateRefs {
 	freestyleSnapshotCandidate?: string;
 	e2bTemplateCandidate: string;
-	/** Candidate LINUX_VM snapshot for daytona-vm. */
-	daytonaSnapshotCandidate: string;
+	/** Candidate LINUX_VM v2 image name for each daytona-vm variant. */
+	daytonaVmSnapshotCandidate: Readonly<Record<DaytonaVmVariantId, string>>;
 	/** Candidate CONTAINER snapshot for daytona-container (its own snapshot + region). */
 	daytonaContainerSnapshotCandidate: string;
 	/** Candidate template on Novita's E2B-compatible control plane (its own namespace). */
@@ -22,8 +23,8 @@ export interface CandidateRefs {
 	toolchainImageCandidate: string;
 	/** Candidate image mirrored into the linked project's Vercel Container Registry. */
 	vercelImageCandidate: string;
-	/** daytona-vm runner target (us-west-2; undefined → account default). */
-	daytonaVmTarget?: string;
+	/** Each daytona-vm variant's v2 region (DAYTONA_VM_REGIONS). */
+	daytonaVmTarget: Readonly<Record<DaytonaVmVariantId, string>>;
 	/** daytona-container runner target (us-west-2; undefined → account default). */
 	daytonaContainerTarget?: string;
 }
@@ -42,12 +43,15 @@ function candidateLaunch(id: ProviderId, refs: CandidateRefs): CandidateLaunch {
 				artifact: { kind: "baked", ref: refs.e2bTemplateCandidate },
 				createOptions: { snapshotId: refs.e2bTemplateCandidate },
 			};
-		case "daytona-vm":
+		case "daytona-vm-zen5":
+		case "daytona-vm-zen5-burst":
+		case "daytona-vm-arm":
+		case "daytona-vm-arm-burst":
 			return {
-				artifact: { kind: "baked", ref: refs.daytonaSnapshotCandidate },
+				artifact: { kind: "baked", ref: refs.daytonaVmSnapshotCandidate[id] },
 				createOptions: {
-					snapshotId: refs.daytonaSnapshotCandidate,
-					...(refs.daytonaVmTarget ? { target: refs.daytonaVmTarget } : {}),
+					snapshotId: refs.daytonaVmSnapshotCandidate[id],
+					target: refs.daytonaVmTarget[id],
 				},
 			};
 		case "daytona-container":

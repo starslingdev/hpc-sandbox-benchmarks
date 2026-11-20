@@ -6,7 +6,7 @@ import { openDriver } from "./driver-run.ts";
 const ref: SandboxRef = { provider: "tama", id: "machine-owned" };
 
 for (const id of [
-	"daytona-vm",
+	"daytona-vm-zen5",
 	"daytona-container",
 	"novita",
 	"modal-gvisor",
