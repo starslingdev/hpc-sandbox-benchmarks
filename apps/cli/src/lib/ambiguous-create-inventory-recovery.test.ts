@@ -25,7 +25,7 @@ const reviewedRuncloud = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[0];
 const reviewedFreestyle = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[2];
 const reviewedFreestyleTimeout = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[4];
 
-test("the original Tangle failure requires the reviewed vendor attestation before opening the account", async () => {
+test("the frozen Tangle artifact and vendor attestation are checked before account access", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "tangle-original-"));
 	directories.push(directory);
 	const archive = join(import.meta.dir, "__fixtures__", "tangle-v8-better-auth.zip");
@@ -34,7 +34,20 @@ test("the original Tangle failure requires the reviewed vendor attestation befor
 	);
 	execFileSync("unzip", ["-q", archive, "-d", directory]);
 	const options = { directory, provider: "tangle", suite: "realworld-better-auth" } as const;
-	await expect(recoverAmbiguousCreateInventory(options)).rejects.toThrow(/reviewed Tangle vendor attestation/);
+	await expect(recoverAmbiguousCreateInventory(options)).rejects.toThrow(
+		/reviewed Tangle vendor attestation/,
+	);
+	const vendorAttestation = join(directory, "unverified-claim.json");
+	writeFileSync(vendorAttestation, JSON.stringify({ state: "absent", amountUsd: 0 }));
+	await expect(recoverAmbiguousCreateInventory({ ...options, vendorAttestation })).rejects.toThrow(
+		/file does not match the reviewed Tangle vendor attestation/,
+	);
+	const path = join(directory, "attempt.json");
+	const attempt = JSON.parse(readFileSync(path, "utf8"));
+	writeFileSync(path, JSON.stringify({ ...attempt, passes: attempt.passes + 1 }));
+	await expect(recoverAmbiguousCreateInventory({ ...options, vendorAttestation })).rejects.toThrow(
+		/attempt differs from the reviewed artifact/,
+	);
 });
 
 type FixtureProvider = "runcloud" | "freestyle" | "tama";

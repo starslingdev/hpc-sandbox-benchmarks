@@ -2,12 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SandboxDriver } from "@sandbox-benchmarks/driver";
 import { CREATE_FAILURE_PREFIX } from "@sandbox-benchmarks/harness";
+import { evidenceDigest } from "@sandbox-benchmarks/results";
 import type { ProviderId, SuiteName } from "@sandbox-benchmarks/schema";
 import { providerIdSchema, quotaDomain, suiteNameSchema } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import type { AccountJournal } from "./account-journal.ts";
 import { accountRecordSchema, withinSignal } from "./account-journal.ts";
 import { readExperimentAttempt } from "./experiment-artifacts.ts";
+import { readTangleVendorAttestation, reviewedTangleCleanup } from "./reviewed-tangle-cleanup.ts";
 
 /**
  * Name-free ambiguous creates cannot be cleared from empty inventory in general (ADR-0019,
@@ -74,6 +76,7 @@ export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 		sourceSha: "987b4cba3eb94e92d52af5c9f45cd07c9f0538d8",
 		detail: "Sandbox creation timed out; allocation ownership unresolved",
 	},
+	reviewedTangleCleanup,
 ] as const);
 
 export type AmbiguousCreateInventoryClearance =
@@ -92,6 +95,7 @@ export function verifyAmbiguousCreateInventory(options: {
 	directory: string;
 	provider: ProviderId;
 	suite: SuiteName;
+	vendorAttestation?: string;
 }) {
 	const attempt = readExperimentAttempt(options.directory);
 	const { evidence, execution, cleanup } = attempt;
@@ -140,23 +144,36 @@ export function verifyAmbiguousCreateInventory(options: {
 			evidence.diagnostic?.endsWith(entry.detail),
 	);
 	if (!reviewed) throw new Error(NO_REVIEWED_EVIDENCE);
+	if (reviewed.provider === "tangle") {
+		if (evidenceDigest(evidence) !== reviewed.attemptDigest)
+			throw new Error("Tangle attempt differs from the reviewed artifact");
+		return {
+			attempt,
+			reviewed,
+			attestation: readTangleVendorAttestation(options.vendorAttestation),
+		};
+	}
+	if (options.vendorAttestation)
+		throw new Error("the vendor attestation only applies to the reviewed Tangle attempt");
 	return { attempt, reviewed };
 }
 
 /**
- * Append the ordinary not-allocated release for a reviewed ADR-0028 attempt, under exclusive
- * account ownership. It never calls a provider mutation and never rewrites the original attempt.
+ * Release one reviewed ADR-0028 intent under exclusive account ownership. A Tangle dispatch
+ * receives its vendor reconciliation receipt. Name-free inventory clearances keep their original outcome.
  */
 export async function recoverAmbiguousCreateInventory(options: {
 	directory: string;
 	provider: ProviderId;
 	suite: SuiteName;
+	vendorAttestation?: string;
+	observeTangleCustomer?: () => Promise<string>;
 	drivers?: readonly { readonly id: ProviderId; readonly driver: SandboxDriver }[];
 	journal?: AccountJournal;
 	assertQuiescent?: (workflowRun: string, sourceSha: string) => Promise<void>;
 	signal?: AbortSignal;
 }): Promise<string> {
-	const { attempt, reviewed } = verifyAmbiguousCreateInventory(options);
+	const { attempt, reviewed, attestation } = verifyAmbiguousCreateInventory(options);
 	const { evidence } = attempt;
 	const { journal, assertQuiescent, signal } = options;
 	const driver = options.drivers?.length === 1 ? options.drivers[0] : undefined;
@@ -183,6 +200,18 @@ export async function recoverAmbiguousCreateInventory(options: {
 		return intent;
 	};
 	const assertNothingOwned = async () => {
+		if (attestation) {
+			const probes = driver.driver.probes;
+			if (!probes) throw new Error("Tangle resource absence requires authenticated probes");
+			const observeCustomer = options.observeTangleCustomer;
+			if (!observeCustomer) throw new Error("missing Tangle account identity observer");
+			attestation.assertCustomer(await withinSignal(signal, observeCustomer));
+			const observed = await withinSignal(signal, () =>
+				probes.observe({ provider: "tangle", id: attestation.sandboxId }),
+			);
+			if (observed.state !== "absent")
+				throw new Error("the attested Tangle resource is still visible");
+		}
 		const { owned } = await withinSignal(signal, () => inventory.list());
 		if (owned.length > 0)
 			throw new Error(
@@ -194,13 +223,28 @@ export async function recoverAmbiguousCreateInventory(options: {
 	await assertNothingOwned();
 	await assertQuiescent(evidence.workflowRun, evidence.sha);
 	await assertNothingOwned();
+	if (reviewed.provider === "tangle") await assertQuiescent(evidence.workflowRun, evidence.sha);
 	const unchanged = await readIntent();
 	if (JSON.stringify(unchanged) !== JSON.stringify(intent))
 		throw new Error("journal changed during inventory clearance");
 	signal.throwIfAborted();
 	await withinSignal(signal, () =>
 		journal.append(
-			accountRecordSchema.assert({ ...intent, kind: "released", outcome: "not-allocated" }),
+			accountRecordSchema.assert(
+				reviewed.provider === "tangle"
+					? {
+							...intent,
+							kind: "released",
+							outcome: "reconciled",
+							evidence: {
+								kind: "tangle-vendor-cleanup",
+								attemptDigest: reviewed.attemptDigest,
+								attestationDigest: reviewed.attestationDigest,
+								confirmedAt: new Date().toISOString(),
+							},
+						}
+					: { ...intent, kind: "released", outcome: "not-allocated" },
+			),
 		),
 	);
 	return reviewed.attemptId;
