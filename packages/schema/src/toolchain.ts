@@ -40,7 +40,9 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 // a directory mode. Re-bake all providers before the runs that consume v8.
 // v9 packages the image's initialized pgbench cluster for providers that run as an
 // unprivileged user. The tool pins, workload and scoring are the same as v8.
-export const TOOLCHAIN_VERSION = "v9";
+// Newest first. Each entry has a release-owned guest manifest in published benchmark evidence.
+export const FINGERPRINTED_TOOLCHAIN_RELEASES = ["v9", "v8"] as const;
+export const TOOLCHAIN_VERSION = FINGERPRINTED_TOOLCHAIN_RELEASES[0];
 
 /** Public registry repository the shared toolchain image is published to. */
 export const TOOLCHAIN_IMAGE_REPOSITORY = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;
@@ -56,8 +58,11 @@ export const TOOLCHAIN_CANDIDATE_SUFFIX = "-candidate";
  * runtime config gatekeeper and the driver composition root derive the same ref instead of each
  * rebuilding the repository string.
  */
-export function toolchainImageRef(phase: "candidate" | "version"): string {
-	const version = `${TOOLCHAIN_IMAGE_REPOSITORY}:${TOOLCHAIN_VERSION}`;
+export function toolchainImageRef(
+	phase: "candidate" | "version",
+	release: string = TOOLCHAIN_VERSION,
+): string {
+	const version = `${TOOLCHAIN_IMAGE_REPOSITORY}:${release}`;
 	return phase === "candidate" ? `${version}${TOOLCHAIN_CANDIDATE_SUFFIX}` : version;
 }
 
@@ -80,7 +85,11 @@ export const VERCEL_PROJECT_NAME_DEFAULT = "hpc-sandbox-benchmarks";
  * Build canonical VCR refs from human-readable Vercel namespace names. API IDs (`team_*`, `prj_*`)
  * are deliberately rejected so they can never accidentally become Docker path segments.
  */
-export function vercelVcrImageRefs(teamSlug: string, projectName: string) {
+export function vercelVcrImageRefs(
+	teamSlug: string,
+	projectName: string,
+	release: string = TOOLCHAIN_VERSION,
+) {
 	for (const [label, value, idPrefix] of [
 		["team slug", teamSlug, "team_"],
 		["project name", projectName, "prj_"],
@@ -92,7 +101,7 @@ export function vercelVcrImageRefs(teamSlug: string, projectName: string) {
 		}
 	}
 	const repository = `vcr.vercel.com/${teamSlug}/${projectName}/${VERCEL_VCR_REPOSITORY}`;
-	const version = `${repository}:${TOOLCHAIN_VERSION}`;
+	const version = `${repository}:${release}`;
 	return Object.freeze({
 		repository,
 		version,

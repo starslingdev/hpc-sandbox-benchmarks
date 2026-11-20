@@ -10,6 +10,7 @@ import {
 	parseGapMarker,
 	parseProviderArtifactEvidence,
 	sandboxFailureMarkerFile,
+	TOOLCHAIN_VERSION,
 } from "@sandbox-benchmarks/schema";
 import type { SuiteRunContext } from "./index.ts";
 import {
@@ -843,7 +844,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 				destroyed: { hit: false },
 				manifest: JSON.stringify({
 					image_name: "sandbox-benchmarks-toolchain",
-					image_version: "v8",
+					image_version: TOOLCHAIN_VERSION,
 				}),
 			}),
 			{ ...ctx(suite({}), resultsDir), artifact },
@@ -857,7 +858,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			fingerprint: {
 				authority: "toolchain-manifest-v1",
 				imageName: "sandbox-benchmarks-toolchain",
-				imageVersion: "v8",
+				imageVersion: TOOLCHAIN_VERSION,
 			},
 		});
 	});
@@ -877,7 +878,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 				}),
 				{ ...ctx(suite({}), resultsDir), artifact },
 			),
-		).rejects.toThrow(/matching sandbox-benchmarks-toolchain@v8/);
+		).rejects.toThrow(`matching sandbox-benchmarks-toolchain@${TOOLCHAIN_VERSION}`);
 		const evidence = parseProviderArtifactEvidence(
 			readFileSync(join(resultsDir, "provider-artifact-evidence.json"), "utf8"),
 		);
