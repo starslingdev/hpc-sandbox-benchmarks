@@ -38,7 +38,9 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 // themselves, so v7 images keep working, but the vendored-profile path needs THIS image.
 // Numbers stay comparable across v7↔v8: no pin, profile, or build flag changed — only an env var and
 // a directory mode. Re-bake all providers before the runs that consume v8.
-export const TOOLCHAIN_VERSION = "v8";
+// v9 packages the image's initialized pgbench cluster for providers that run as an
+// unprivileged user. The tool pins, workload and scoring are the same as v8.
+export const TOOLCHAIN_VERSION = "v9";
 
 /** Public registry repository the shared toolchain image is published to. */
 export const TOOLCHAIN_IMAGE_REPOSITORY = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;

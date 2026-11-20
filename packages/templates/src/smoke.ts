@@ -91,9 +91,10 @@ export function pgbenchPayloadSmokeCheck(installTests: string): SmokeCheck | nul
 	const entry = installTests.split(/\s+/).find((test) => /^pgbench-/.test(test));
 	if (!entry) return null;
 	const installRoot = `/var/lib/phoronix-test-suite/installed-tests/pts/${entry}`;
+	const seed = `/usr/local/share/sandbox-benchmarks/${entry}.tar.gz`;
 	return {
 		name: "pgbench-payload",
-		cmd: `test -x ${installRoot}/pg_/bin/pgbench && test "$(stat -c %a ${installRoot}/pg_/data/db)" = 700 && echo pgbench-payload-ok`,
+		cmd: `test -x ${installRoot}/pg_/bin/pgbench && test "$(stat -c %a ${installRoot}/pg_/data/db)" = 700 && test -r ${seed} && test -s ${seed} && echo pgbench-payload-ok`,
 		expect: "pgbench-payload-ok",
 	};
 }
