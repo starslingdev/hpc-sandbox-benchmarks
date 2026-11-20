@@ -65,6 +65,6 @@ test("managed setup pins and verifies the experiment commit, independent of ambi
 		},
 		sha,
 	).find((step) => step.label === "clone repo");
-	expect(clone?.script).toContain(`git checkout --detach "${sha}"`);
+	expect(clone?.script).toContain(`ref='${sha}'`);
 	expect(clone?.script).toContain(`test "$(git rev-parse HEAD)" = "${sha}"`);
 });
