@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +24,18 @@ afterEach(() => {
 const reviewedRuncloud = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[0];
 const reviewedFreestyle = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[2];
 const reviewedFreestyleTimeout = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[4];
+
+test("the original Tangle failure requires the reviewed vendor attestation before opening the account", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "tangle-original-"));
+	directories.push(directory);
+	const archive = join(import.meta.dir, "__fixtures__", "tangle-v8-better-auth.zip");
+	expect(createHash("sha256").update(readFileSync(archive)).digest("hex")).toBe(
+		"d44d947b23704d53c612c03c257776953a8bdff58d52438bdae53e467e168951",
+	);
+	execFileSync("unzip", ["-q", archive, "-d", directory]);
+	const options = { directory, provider: "tangle", suite: "realworld-better-auth" } as const;
+	await expect(recoverAmbiguousCreateInventory(options)).rejects.toThrow(/reviewed Tangle vendor attestation/);
+});
 
 type FixtureProvider = "runcloud" | "freestyle" | "tama";
 type FixtureRefList = { provider: FixtureProvider; id: string }[];
