@@ -160,7 +160,12 @@ describe("requiredCredentialKeys", () => {
 		const required = requiredCredentialKeys();
 		expect(required.get("E2B_API_KEY")).toEqual(["e2b"]);
 		// A credential shared by a vendor's isolation variants records every owner, in registry order.
-		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal-gvisor", "modal-vm"]);
+		expect(required.get("MODAL_TOKEN_ID")).toEqual([
+			"modal-gvisor",
+			"modal-vm",
+			"modal-gvisor-standard",
+			"modal-vm-standard",
+		]);
 		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
 	});
 });

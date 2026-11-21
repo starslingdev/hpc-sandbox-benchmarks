@@ -20,6 +20,8 @@ export const MIGRATED_DRIVER_IDS = [
 	"e2b",
 	"modal-gvisor",
 	"modal-vm",
+	"modal-gvisor-standard",
+	"modal-vm-standard",
 	"tama",
 	"novita",
 	"daytona-vm",

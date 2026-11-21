@@ -13,7 +13,9 @@ import e2b from "./e2b.ts";
 import freestyle from "./freestyle.ts";
 import microsandbox_cloud from "./microsandbox-cloud.ts";
 import modal_gvisor from "./modal-gvisor.ts";
+import modal_gvisor_standard from "./modal-gvisor-standard.ts";
 import modal_vm from "./modal-vm.ts";
+import modal_vm_standard from "./modal-vm-standard.ts";
 import namespace from "./namespace.ts";
 import novita from "./novita.ts";
 import runcloud from "./runcloud.ts";
@@ -29,6 +31,8 @@ const MODULES = {
 	"microsandbox-cloud": microsandbox_cloud,
 	"modal-gvisor": modal_gvisor,
 	"modal-vm": modal_vm,
+	"modal-gvisor-standard": modal_gvisor_standard,
+	"modal-vm-standard": modal_vm_standard,
 	novita: novita,
 	namespace: namespace,
 	vercel: vercel,
@@ -51,6 +55,8 @@ export const REGISTRY = {
 	"microsandbox-cloud": MODULES["microsandbox-cloud"].meta,
 	"modal-gvisor": MODULES["modal-gvisor"].meta,
 	"modal-vm": MODULES["modal-vm"].meta,
+	"modal-gvisor-standard": MODULES["modal-gvisor-standard"].meta,
+	"modal-vm-standard": MODULES["modal-vm-standard"].meta,
 	novita: MODULES.novita.meta,
 	namespace: MODULES.namespace.meta,
 	vercel: MODULES.vercel.meta,

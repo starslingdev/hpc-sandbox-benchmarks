@@ -23,12 +23,35 @@ import { ClientError, Status } from "nice-grpc";
 
 export const MODAL_APP_NAME = "sandbox-benchmarks";
 export const MODAL_VM_APP_NAME = "sandbox-benchmarks-vm";
+export const MODAL_STANDARD_APP_NAME = "sandbox-benchmarks-standard";
+export const MODAL_VM_STANDARD_APP_NAME = "sandbox-benchmarks-vm-standard";
 
-export type ModalProviderId = "modal-gvisor" | "modal-vm";
+export type ModalProviderId =
+	| "modal-gvisor"
+	| "modal-vm"
+	| "modal-gvisor-standard"
+	| "modal-vm-standard";
 
-/** Separate Apps keep each runtime's inventory, cleanup and billing ownership disjoint. */
+const MODAL_APP_NAMES = {
+	"modal-gvisor": MODAL_APP_NAME,
+	"modal-vm": MODAL_VM_APP_NAME,
+	"modal-gvisor-standard": MODAL_STANDARD_APP_NAME,
+	"modal-vm-standard": MODAL_VM_STANDARD_APP_NAME,
+} as const satisfies Record<ModalProviderId, string>;
+
+/** Separate Apps keep each variant's inventory, cleanup and billing ownership disjoint. */
 export function modalAppName(provider: ModalProviderId): string {
-	return provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME;
+	return MODAL_APP_NAMES[provider];
+}
+
+/** The `-standard` variants schedule on Modal's general instance pool instead of the performance-sensitive one. */
+export function modalPerformanceSensitive(provider: ModalProviderId): boolean {
+	return !provider.endsWith("-standard");
+}
+
+/** The sandbox runtime a variant selects at create. */
+export function modalRuntime(provider: ModalProviderId): "gvisor" | "vm" {
+	return provider.startsWith("modal-vm") ? "vm" : "gvisor";
 }
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 /**

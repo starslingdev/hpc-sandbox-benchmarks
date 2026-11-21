@@ -277,6 +277,8 @@ describe("Tier-3 provider metadata schema", () => {
 					pricing: structuredClone(REGISTRY["modal-vm"].pricing),
 				}),
 			),
-		).toThrow(/modal-gvisor\/modal-vm: isolation variants must share one pricing object/);
+		).toThrow(
+			/modal-gvisor\/modal-vm\/modal-gvisor-standard\/modal-vm-standard: isolation variants must share one pricing object/,
+		);
 	});
 });
