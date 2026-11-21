@@ -71,7 +71,11 @@ export default defineVendorDriver("tangle", {
 	},
 	vendor: ({ env, resolvedArtifact }) =>
 		tangleVendor(
-			new Sandbox({ apiKey: env.TANGLE_API_KEY, baseUrl: "https://sandbox.tangle.tools" }),
+			new Sandbox({
+				apiKey: env.TANGLE_API_KEY,
+				baseUrl: "https://sandbox.tangle.tools",
+				directExec: false,
+			}),
 			{ resolvedArtifact },
 		),
 });
