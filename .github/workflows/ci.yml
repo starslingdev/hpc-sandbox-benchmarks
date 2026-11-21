@@ -47,7 +47,7 @@ jobs:
       # Installs the version-pinned tools from mise.toml (typos) with checksum verification, and
       # caches them. mise itself is version-pinned for reproducibility.
       - name: Set up mise tools
-        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.7.11
           install: true
