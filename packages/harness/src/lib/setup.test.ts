@@ -1,15 +1,66 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUITES } from "@sandbox-benchmarks/schema";
-import { HOST_VCPUS_PROBE, OBSERVED_SPECS_SCRIPT, REPO_URL, setupSteps } from "./setup.ts";
+import {
+	HOST_VCPUS_PROBE,
+	OBSERVED_SPECS_SCRIPT,
+	PTS_FREE_DISK_KB,
+	REPO_URL,
+	setupSteps,
+} from "./setup.ts";
 
 it("emits a syntactically valid observed-specs script using the shared isolation probe", () => {
 	const syntax = Bun.spawnSync(["bash", "-n", "-c", OBSERVED_SPECS_SCRIPT]);
 	expect(syntax.exitCode, syntax.stderr.toString()).toBe(0);
 	expect(OBSERVED_SPECS_SCRIPT).toContain('source "$PWD/lib/probe/isolation/main.sh"');
 });
+
+it.skipIf(process.platform !== "linux")(
+	"gates and reports the PTS workspace filesystem before its install directory exists",
+	() => {
+		const home = mkdtempSync(join(tmpdir(), "bench-disk-"));
+		try {
+			const checkout = join(home, "sandbox-benchmarks");
+			mkdirSync(checkout);
+			symlinkSync(join(import.meta.dir, "../../../../lib"), join(checkout, "lib"));
+			const env = {
+				...process.env,
+				HOME: home,
+				PTS_USER_PATH_OVERRIDE: home,
+				PTS_TEST_INSTALL_ROOT_PATH: join(
+					"/dev/shm",
+					`new PTS install ${process.pid}`,
+					"installed-tests/",
+				),
+			};
+			const run = (script: string) => {
+				const result = Bun.spawnSync(["bash", "-eo", "pipefail", "-c", script], { env });
+				expect(result.exitCode, result.stderr.toString()).toBe(0);
+				return result.stdout.toString().trim();
+			};
+			const totalKb = Number(run("df -Pk /dev/shm | awk 'NR==2 {print $2}'"));
+			expect(totalKb).toBeGreaterThan(0);
+			const freeKb = Number(run(PTS_FREE_DISK_KB));
+			expect(freeKb).toBeGreaterThanOrEqual(0);
+			expect(freeKb).toBeLessThanOrEqual(totalKb);
+			expect(JSON.parse(run(OBSERVED_SPECS_SCRIPT)).diskGb).toBe(
+				Number((totalKb / 1048576).toFixed(1)),
+			);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	},
+);
 
 // GNU nproc is Linux-only.
 it.skipIf(Bun.which("nproc") === null)("counts CPUs past Modal's OpenMP hints", () => {
