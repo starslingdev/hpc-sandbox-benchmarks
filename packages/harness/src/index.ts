@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import type {
 	BoundCostEvidenceCapability,
 	CreateRequest,
+	DriverCreateOptions,
 	DriverModule,
 	ProviderId,
 	SandboxDriver,
@@ -800,6 +801,7 @@ export interface DriverAllocation<Handle = unknown> {
 }
 
 export interface ExecuteSuiteOptions {
+	readonly preparation?: Omit<DriverCreateOptions, "signal">;
 	readonly allocation: DriverAllocation;
 	readonly runId: RunId;
 	readonly replicateIndex?: number;
@@ -832,7 +834,8 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 			: (timeoutMs ?? SUITE_CREATE_ATTEMPT_TIMEOUT_MS);
 	const session = await createSuiteSandboxFromPlan(
 		{
-			create: (signal) => driver.create({ ...request, deadlineMs }, { signal }),
+			create: (signal) =>
+				driver.create({ ...request, deadlineMs }, { ...options.preparation, signal }),
 			isRetryable: isRetryableDriverCreate,
 			destroy: (destroy, destroyOptions) => destroy(destroyOptions),
 		},

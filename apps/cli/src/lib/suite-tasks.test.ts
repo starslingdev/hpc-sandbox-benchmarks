@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
@@ -12,6 +13,7 @@ import {
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
+	suiteBakedPtsProfiles,
 } from "./suite-tasks.ts";
 
 // apps/cli/src/lib → repo root
@@ -204,5 +206,20 @@ describe("summary rows", () => {
 		const metricRows = suiteMetricSummaryRows(plan);
 		expect(metricRows[0]?.[0]).toEqual({ data: "Metric", header: true });
 		expect(metricRows.length).toBe(1 + plan.metrics.length);
+	});
+});
+
+describe("frozen suite image preparation", () => {
+	it("selects installed fixtures from the actual suite tasks and keeps generic setup for other source revisions", async () => {
+		const revision = execFileSync("git", ["rev-parse", "HEAD"], {
+			cwd: root,
+			encoding: "utf8",
+		}).trim();
+		expect(await suiteBakedPtsProfiles("network", revision, root)).toEqual(["iperf-1.2.0"]);
+		expect(await suiteBakedPtsProfiles("pgbench", revision, root)).toEqual(["pgbench-1.15.0"]);
+		for (const suite of ["realworld-better-auth", "realworld-openclaw"] as const)
+			expect(await suiteBakedPtsProfiles(suite, revision, root)).toEqual([]);
+		expect(await suiteBakedPtsProfiles("pgbench", "main", root)).toBeUndefined();
+		expect(await suiteBakedPtsProfiles("pgbench", "0".repeat(40), root)).toBeUndefined();
 	});
 });

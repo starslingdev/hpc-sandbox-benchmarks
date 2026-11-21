@@ -25,11 +25,12 @@ const PREFIX =
  * Stage the baked profiles and a writable PTS copy. Older images without a portable
  * pgbench fixture report their permission gap in the leaf.
  */
-export const TANGLE_PTS_PREFLIGHT = [
+const PREPARE_PTS = [
 	"set -eu",
 	'installed="$HOME/.phoronix-test-suite/installed-tests/pts"',
 	'mkdir -p "$installed"',
-	"for profile in /var/lib/phoronix-test-suite/installed-tests/pts/*; do",
+	"for profile do",
+	'  [ -d "$profile" ] || continue',
 	'  dest="$installed/$(basename "$profile")"',
 	'  seed="/usr/local/share/sandbox-benchmarks/$(basename "$profile").tar.gz"',
 	'  if [ ! -e "$dest" ] && [ -f "$seed" ]; then',
@@ -50,6 +51,16 @@ export const TANGLE_PTS_PREFLIGHT = [
 	"fi",
 	'"$bin" version',
 ].join("\n");
+
+export function tanglePtsPreflight(profiles?: readonly string[]): string {
+	const root = "/var/lib/phoronix-test-suite/installed-tests/pts";
+	const paths = profiles?.every((name) => /^[a-z0-9]/.test(name) && !/[^a-z0-9._-]/.test(name))
+		? [...new Set(profiles)].map((name) => `${root}/${name}`).join(" ")
+		: `${root}/*`;
+	return `set -- ${paths}\n${PREPARE_PTS}`;
+}
+
+export const TANGLE_PTS_PREFLIGHT = tanglePtsPreflight();
 
 function phaseOf(status: string): Phase {
 	if (status === "running") return "ready";
@@ -138,7 +149,7 @@ export function tangleVendor(
 		},
 		data: {
 			attach: ({ raw }) => raw,
-			prepare: async ({ native }, { spec }, { signal }) => {
+			prepare: async ({ native }, { spec }, { signal, resolveBakedPtsProfiles }) => {
 				const g = native.resources;
 				if (g && (g.cpuCores !== spec.vcpus || g.memoryMB !== spec.memoryGb * 1024))
 					return {
@@ -156,9 +167,13 @@ export function tangleVendor(
 								`if [ "$bytes" -lt ${Math.ceil(spec.diskGb * 1024 ** 3)} ]; then echo "requested ${spec.diskGb} GiB workspace, mounted $bytes bytes at $HOME"; exit 78; fi`,
 								"",
 							].join("\n");
-				const { exitCode, stdout, stderr } = await exec(native, workspace + TANGLE_PTS_PREFLIGHT, {
-					signal,
-				});
+				const { exitCode, stdout, stderr } = await exec(
+					native,
+					workspace + tanglePtsPreflight(await resolveBakedPtsProfiles?.()),
+					{
+						signal,
+					},
+				);
 				if (exitCode === 78 && stdout.startsWith("requested "))
 					return { status: "unsupported", detail: stdout.trim() };
 				if (exitCode === 0) return { status: "honored" };
