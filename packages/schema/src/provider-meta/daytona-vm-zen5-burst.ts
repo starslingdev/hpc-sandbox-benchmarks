@@ -2,7 +2,7 @@ import { defineProviderMeta } from "../provider-meta.ts";
 import { daytonaTransport, daytonaV2Pricing } from "./_daytona.ts";
 
 export default defineProviderMeta("daytona-vm-zen5-burst", {
-	displayName: "Daytona (VM, Zen 5, burst)",
+	displayName: "Daytona (VM, burst)",
 	vendor: "Daytona",
 	quotaDomain: "daytona",
 	website: "https://daytona.io",

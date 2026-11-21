@@ -45,17 +45,16 @@ separates a fixed request from a bursting one:
 
 | Variant | Arch / region | CPU type | Guaranteed | Ceiling |
 |---|---|---|---|---|
-| `daytona-vm-zen5` | amd64, `us-east-ash-1` | `zen5` | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
-| `daytona-vm-zen5-burst` | amd64, `us-east-ash-1` | `zen5` | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap (10 cores, 20 vCPU); memory fixed at 8 GiB |
-| `daytona-vm-arm` | arm64, `us-east-iad-1` | none | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
-| `daytona-vm-arm-burst` | arm64, `us-east-iad-1` | none | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap; memory fixed at 8 GiB |
+| `daytona-vm-zen5` (Daytona (VM)) | amd64, `us-east-ash-1` | `zen5` | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
+| `daytona-vm-zen5-burst` (Daytona (VM, burst)) | amd64, `us-east-ash-1` | `zen5` | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap (10 cores, 20 vCPU); memory fixed at 8 GiB |
+| `daytona-vm-arm` (Daytona (VM, arm)) | arm64, `us-east-iad-1` | none | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
+| `daytona-vm-arm-burst` (Daytona (VM, arm, burst)) | arm64, `us-east-iad-1` | none | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap; memory fixed at 8 GiB |
 
 A fixed variant must hold `TARGET_SPEC` exactly, so `specMatched` is true by construction. A burst
 variant reserves memory at the spec (Daytona hotplugs memory too slowly to burst it, as Modal's VM
 runtime also reserves it) but guarantees only the smallest CPU Daytona grants beside 8 GiB, so its guest
 sees the burst ceiling rather than 4 vCPU. Like Modal, it is therefore compared on its own terms, not
-as a spec match. The pre-split `daytona-vm` id is retired: committed runs that carry it keep parsing,
-keep their "Daytona (VM)" label, and resolve to `daytona-vm-zen5-burst` for economics. The arm variants
+as a spec match. The pre-split `daytona-vm` id is retired: committed runs that carry it keep parsing and resolve to `daytona-vm-zen5-burst`, so they render as "Daytona (VM, burst)" (the unqualified "Daytona (VM)" now names the fixed Zen 5 variant) and take its economics. The arm variants
 need an arm64 build of the toolchain image, which does not exist yet, and stay best-effort until it does.
 
 ## Target spec

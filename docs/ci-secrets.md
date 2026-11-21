@@ -226,7 +226,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | Secret | Used by |
    | --- | --- |
    | `E2B_API_KEY` | E2B provider runtime and validation |
-   | `DAYTONA_API_KEY` | Daytona (VM, Zen 5, fixed), Daytona (VM, Zen 5, burst), Daytona (VM, arm64, fixed), Daytona (VM, arm64, burst), Daytona (container) provider runtime and validation |
+   | `DAYTONA_API_KEY` | Daytona (VM), Daytona (VM, burst), Daytona (VM, arm), Daytona (VM, arm, burst), Daytona (container) provider runtime and validation |
    | `BL_API_KEY` | Blaxel provider runtime and validation |
    | `BL_WORKSPACE` | Blaxel provider runtime and validation |
    | `MSB_API_KEY` | Microsandbox Cloud provider runtime and validation |

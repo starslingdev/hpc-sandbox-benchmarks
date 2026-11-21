@@ -291,26 +291,7 @@ export function getProvider(id: string): ProviderMeta | undefined {
 	// A linear scan over a handful of frozen entries — no module-load Map to drift out of sync, and
 	// the entries are immutable, so returning the reference directly is safe.
 	const canonical = LEGACY_PROVIDER_ALIASES[id] ?? id;
-	const meta = PROVIDERS.find((p) => p.id === canonical);
-	const legacyName = LEGACY_DISPLAY_NAMES[id];
-	if (meta === undefined || legacyName === undefined) return meta;
-	return legacyViews.get(id) ?? legacyView(id, { ...meta, displayName: legacyName });
-}
-
-/**
- * Display names a retired id keeps, so the committed runs that carry it (and the leaderboard and
- * figures rendered from them) read as they were published instead of taking the successor variant's
- * name: the pre-split Daytona runs were one unqualified "Daytona (VM)", not a Zen 5 burst variant.
- */
-const LEGACY_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze({
-	"daytona-vm": "Daytona (VM)",
-	daytona: "Daytona (VM)",
-});
-const legacyViews = new Map<string, ProviderMeta>();
-function legacyView(id: string, meta: ProviderMeta): ProviderMeta {
-	const view = Object.freeze(meta);
-	legacyViews.set(id, view);
-	return view;
+	return PROVIDERS.find((p) => p.id === canonical);
 }
 
 /**
