@@ -12,7 +12,8 @@ export { TANGLE_PROVENANCE };
 
 const MIN = 60_000;
 
-export default defineVendorDriver("tangle", {
+const api = "https://sandbox.tangle.tools";
+const driver = defineVendorDriver("tangle", {
 	provenance: TANGLE_PROVENANCE,
 	sandboxId: type(/^[A-Za-z0-9_-]{1,128}$/),
 	// data.prepare measures capacity at the workspace where PTS runs.
@@ -55,7 +56,7 @@ export default defineVendorDriver("tangle", {
 					offset: `${offset}`,
 				});
 				const { data } = await billingJson(
-					`https://sandbox.tangle.tools/v1/billing/transactions?${query}`,
+					`${api}/v1/billing/transactions?${query}`,
 					{ headers: { Authorization: `Bearer ${env.TANGLE_API_KEY}` }, signal },
 					page,
 				);
@@ -70,8 +71,13 @@ export default defineVendorDriver("tangle", {
 		},
 	},
 	vendor: ({ env, resolvedArtifact }) =>
-		tangleVendor(
-			new Sandbox({ apiKey: env.TANGLE_API_KEY, baseUrl: "https://sandbox.tangle.tools" }),
-			{ resolvedArtifact },
-		),
+		tangleVendor(new Sandbox({ apiKey: env.TANGLE_API_KEY, baseUrl: api }), { resolvedArtifact }),
 });
+
+/** Identifies the authenticated account even when its sandbox inventory is empty. */
+async function observeCustomer(apiKey: string): Promise<string> {
+	const client = new Sandbox({ apiKey, baseUrl: api });
+	return (await client.getIdentity()).customerId;
+}
+
+export default Object.freeze({ ...driver, observeCustomer });
