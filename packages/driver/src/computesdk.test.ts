@@ -1381,7 +1381,7 @@ describe("computeSdkDriver", () => {
 		expect(await driver.probes?.list?.()).toEqual(["sb-1"]);
 		expect(await driver.probes?.describe?.(session.sandboxRef)).toEqual({ id: "i2f3k4abc" });
 		await expect(
-			driver.probes?.observe({ provider: "daytona-vm", id: "i2f3k4abc" }),
+			driver.probes?.observe({ provider: "daytona-vm-zen5", id: "i2f3k4abc" }),
 		).rejects.toMatchObject({ code: "invalid-sandbox-ref", provider: "e2b" });
 		await expect(driver.probes?.observe({ provider: "e2b", id: "wrong-id" })).rejects.toMatchObject(
 			{ code: "invalid-sandbox-ref", provider: "e2b" },
@@ -1391,7 +1391,7 @@ describe("computeSdkDriver", () => {
 		await expect(
 			driver.snapshots?.create({
 				...session,
-				sandboxRef: { provider: "daytona-vm", id: "bad" },
+				sandboxRef: { provider: "daytona-vm-zen5", id: "bad" },
 			}),
 		).rejects.toMatchObject({ code: "invalid-sandbox-ref", provider: "e2b" });
 		await driver.snapshots?.delete("snap-1");
@@ -1417,7 +1417,7 @@ describe("computeSdkDriver", () => {
 		await driver.destroyById?.({ provider: "e2b", id: "i2f3k4abc" });
 		expect(destroyed).toEqual(["i2f3k4abc"]);
 		await expect(
-			driver.destroyById?.({ provider: "daytona-vm", id: "i2f3k4abc" }),
+			driver.destroyById?.({ provider: "daytona-vm-zen5", id: "i2f3k4abc" }),
 		).rejects.toMatchObject({ code: "invalid-sandbox-ref", provider: "e2b" });
 		await expect(driver.destroyById?.({ provider: "e2b", id: "wrong-id" })).rejects.toMatchObject({
 			code: "invalid-sandbox-ref",
@@ -2625,8 +2625,8 @@ describe("computeSdkDriver", () => {
 
 	test("never preserves a foreign provider ref from an already-typed wrapper error", async () => {
 		const foreign = new DriverError("destroy-failed", "wrong wrapper channel", {
-			provider: "daytona-vm",
-			ref: { provider: "daytona-vm", id: "wrong-id" },
+			provider: "daytona-vm-zen5",
+			ref: { provider: "daytona-vm-zen5", id: "wrong-id" },
 		});
 		const error = (await bridge({
 			sandbox: {
@@ -2647,7 +2647,7 @@ describe("computeSdkDriver", () => {
 			new Error("foreign cleanup failed"),
 			new Error("foreign create failed"),
 			{
-				provider: "daytona-vm",
+				provider: "daytona-vm-zen5",
 				locator: { kind: "id", value: "foreign-id" },
 				cleanup: async () => {
 					foreignCleanupCalls++;
@@ -2701,7 +2701,7 @@ describe("computeSdkDriver", () => {
 	test("normalizes foreign typed-error codes to the current operation boundary", async () => {
 		const wrongChannel = () =>
 			new DriverError("create-failed", "wrapper chose the create channel", {
-				provider: "daytona-vm",
+				provider: "daytona-vm-zen5",
 			});
 		const { compute } = fakeCompute({
 			...baseSandbox,

@@ -11,9 +11,9 @@ describe("forEachProviderWithCreds `only`", () => {
 				return null;
 			},
 			// No creds for daytona in this env → it skips, but nothing else is even considered.
-			{ only: ["daytona-vm"], env: {} },
+			{ only: ["daytona-vm-zen5"], env: {} },
 		);
-		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm"]);
+		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm-zen5"]);
 		expect(runs[0]?.status).toBe("skipped");
 		expect(bodyRan).toEqual([]); // skipped: the body never runs
 	});
@@ -26,14 +26,14 @@ describe("forEachProviderWithCreds `only`", () => {
 				return "smoked";
 			},
 			{
-				only: ["daytona-vm"],
+				only: ["daytona-vm-zen5"],
 				env: { DAYTONA_API_KEY: "present" },
 			},
 		);
-		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm"]);
+		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm-zen5"]);
 		expect(runs[0]?.status).toBe("ok");
 		expect(runs[0]?.value).toBe("smoked");
-		expect(visited).toEqual(["daytona-vm"]);
+		expect(visited).toEqual(["daytona-vm-zen5"]);
 	});
 
 	test("without `only`, drives every schema provider in registry order", async () => {
@@ -73,11 +73,11 @@ describe("forEachProviderWithCreds `only`", () => {
 				return null;
 			},
 			{
-				only: ["tama", "daytona-vm"],
+				only: ["tama", "daytona-vm-zen5"],
 				env: { TAMA_TOKEN: "tok", DAYTONA_API_KEY: "key" },
 			},
 		);
-		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm", "tama"]);
-		expect(visited).toEqual(["daytona-vm", "tama"]);
+		expect(runs.map((r) => r.provider)).toEqual(["daytona-vm-zen5", "tama"]);
+		expect(visited).toEqual(["daytona-vm-zen5", "tama"]);
 	});
 });

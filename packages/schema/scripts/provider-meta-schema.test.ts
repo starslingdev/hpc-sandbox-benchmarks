@@ -91,13 +91,15 @@ describe("Tier-3 provider metadata schema", () => {
 			),
 		).toThrow(/reserved word 'candidate'/);
 		expect(() =>
-			validateProviderModules(meta("daytona-container", { artifact: { kind: "baked" } })),
-		).toThrow(/daytona-vm\/daytona-container.*derive the same release name/);
+			validateProviderModules(
+				meta("daytona-container", { artifact: { kind: "baked", nameSuffix: "-zen5" } }),
+			),
+		).toThrow(/daytona-vm-zen5\/daytona-container.*derive the same release name/);
 	});
 
 	test("rejects a quota domain that splits providers sharing one credential", () => {
 		expect(() =>
-			validateProviderModules(meta("daytona-vm", { quotaDomain: "daytona-vm" })),
+			validateProviderModules(meta("daytona-vm-zen5", { quotaDomain: "daytona-vm-zen5" })),
 		).toThrow(/sharing secret DAYTONA_API_KEY must declare one quotaDomain/);
 		expect(() => validateProviderModules(meta("modal-vm", { quotaDomain: "modal vm" }))).toThrow(
 			/quota domain identifier/,
