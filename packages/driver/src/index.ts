@@ -59,6 +59,7 @@ export type {
 	ControlPlaneProbes,
 	CreateBudget,
 	CreateRequest,
+	DriverCreateOptions,
 	DriverOperationOptions,
 	ExecOptions,
 	ExecResult,

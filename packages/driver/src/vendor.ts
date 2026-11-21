@@ -5,6 +5,7 @@ import type {
 	CreateBudget,
 	CreateRequest,
 	DriverContext,
+	DriverCreateOptions,
 	EnvOf,
 	ExecOptions,
 	ExecutionPolicy,
@@ -177,7 +178,7 @@ export interface DataPlane<Raw, Native> {
 	prepare?(
 		handle: VendorHandle<Raw, Native>,
 		request: CreateRequest,
-		op: Op,
+		op: Op & DriverCreateOptions,
 	): Promise<Verification>;
 	exec(native: Native, command: string, options?: ExecOptions): Promise<ExecOutcome>;
 	/**

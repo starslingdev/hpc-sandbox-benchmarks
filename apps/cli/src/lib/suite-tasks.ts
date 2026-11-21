@@ -285,6 +285,7 @@ function joinPins(pins: PtsPin[], key: keyof PtsPin): string {
 export async function describeSuiteTasks(
 	suiteName: string,
 	root: string = process.cwd(),
+	filesOnly = false,
 ): Promise<SuiteTaskPlan> {
 	if (!(suiteName in SUITES)) {
 		throw new Error(`unknown suite "${suiteName}" — not in SUITE_NAMES`);
@@ -305,10 +306,10 @@ export async function describeSuiteTasks(
 	const tasks: SuiteTask[] = [];
 	const seen = new Set<string>();
 
-	const pushTask = async (taskName: string, role: "command" | "leaf"): Promise<string> => {
-		if (seen.has(taskName)) return "";
+	const pushTask = async (taskName: string, role: "command" | "leaf"): Promise<void> => {
+		if (seen.has(taskName)) return;
 		seen.add(taskName);
-		const info = await miseTaskInfo(taskName, root);
+		const info = filesOnly ? undefined : await miseTaskInfo(taskName, root);
 		const file = resolveTaskFile(taskName, info?.file, root);
 		const script = file ? readRepoFile(root, file) : undefined;
 		const pins = script ? ptsPinsFromScript(script, { fioProfile, realworldVersion }) : [];
@@ -317,24 +318,17 @@ export async function describeSuiteTasks(
 			// mise's answer wins when it has one; the script's own `#MISE description=` is the fallback
 			// so the summary is identical with or without a mise binary on PATH.
 			description: info?.description || (script ? descriptionFromScript(script) : ""),
-			file,
+			file: script ? file : "",
 			role,
 			ptsProfile: joinPins(pins, "ptsProfile"),
 			resultsPrefix: joinPins(pins, "resultsPrefix"),
 		});
-		return file;
+		for (const child of runTaskChildren(script ?? "")) await pushTask(child, "leaf");
 	};
 
 	for (const command of commands) {
 		const rootTask = miseTaskFromCommand(command);
-		if (!rootTask) continue;
-		const file = await pushTask(rootTask, "command");
-		if (!file) continue;
-		const script = readRepoFile(root, file);
-		if (!script) continue;
-		for (const child of runTaskChildren(script)) {
-			await pushTask(child, "leaf");
-		}
+		if (rootTask) await pushTask(rootTask, "command");
 	}
 
 	return {
@@ -343,4 +337,75 @@ export async function describeSuiteTasks(
 		tasks,
 		metrics: suiteMetricInfo(suiteName as SuiteName),
 	};
+}
+
+type BakedProfiles = readonly string[] | undefined;
+const preparationBySuite = new Map<string, Promise<BakedProfiles>>();
+
+/** Keep generic image preparation for unpinned checkouts or differing workload definitions. */
+async function sourceMatches(root: string, revision: string): Promise<boolean> {
+	try {
+		const inputs = [".mise/tasks/benchmark", "lib/bench.sh", "packages/schema/src"];
+		const opts = { cwd: root, stderr: "ignore" } as const;
+		const diff = Bun.spawn(
+			["git", "diff", "--quiet", "--no-ext-diff", revision, "--", ...inputs],
+			opts,
+		);
+		const untracked = Bun.spawn(
+			["git", "ls-files", "--others", "--exclude-standard", "--", ...inputs],
+			{
+				...opts,
+				stdout: "pipe",
+			},
+		);
+		const [changed, listed, additions] = await Promise.all([
+			diff.exited,
+			untracked.exited,
+			new Response(untracked.stdout).text(),
+		]);
+		return changed === 0 && listed === 0 && additions === "";
+	} catch {
+		return false;
+	}
+}
+
+/** A frozen suite's replicates share the same image profile selection. */
+export function suiteBakedPtsProfiles(
+	suite: SuiteName,
+	revision = process.env.BENCH_REPO_REF,
+	root = process.cwd(),
+): Promise<BakedProfiles> {
+	if (!revision || !/^[a-f0-9]{40}$/.test(revision)) return Promise.resolve(undefined);
+	const key = `${root}\0${revision}\0${suite}`;
+	const prior = preparationBySuite.get(key);
+	if (prior) return prior;
+	const pending = (async (): Promise<BakedProfiles> => {
+		if (!(await sourceMatches(root, revision))) return undefined;
+		const plan = await describeSuiteTasks(suite, root, true);
+		if (
+			!plan.commands.every(miseTaskFromCommand) ||
+			!plan.tasks.length ||
+			plan.tasks.some((task) => !task.file)
+		)
+			return undefined;
+		const pins = new Set(plan.tasks.flatMap((task) => task.ptsProfile.split(", ").filter(Boolean)));
+		const version = /-\d+(?:\.\d+)+$/;
+		const bases = new Set([...pins].map((pin) => pin.replace(version, "")));
+		if (
+			!pins.size ||
+			[...pins].some(
+				(pin) => !/^(?:pts|local)\/[a-z0-9][a-z0-9._-]*$/.test(pin) || !version.test(pin),
+			) ||
+			plan.metrics.some(
+				(metric) => !metric.dimension || (metric.ptsTest && !bases.has(metric.ptsTest)),
+			)
+		)
+			return undefined;
+		return [...pins]
+			.filter((pin) => pin.startsWith("pts/"))
+			.map((pin) => pin.slice(4))
+			.sort();
+	})();
+	preparationBySuite.set(key, pending);
+	return pending;
 }

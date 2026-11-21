@@ -11,6 +11,7 @@ import { capExecOutput, validateMaxOutputBytes } from "./output.ts";
 import type {
 	ControlPlaneProbes,
 	CreateRequest,
+	DriverCreateOptions,
 	DriverOperationOptions,
 	ExecOptions,
 	ExecResult,
@@ -51,7 +52,7 @@ export interface MethodTable<Handle, Ctx, Native = Handle> {
 	create(
 		ctx: Ctx,
 		request: CreateRequest,
-		options?: DriverOperationOptions,
+		options?: DriverCreateOptions,
 	): Promise<MethodTableCreateResult<Handle, Native>>;
 	/** Run a command. Options are forwarded unchanged; the kit still enforces output caps. */
 	exec(ctx: Ctx, handle: Handle, command: string, options?: ExecOptions): Promise<ExecResult>;

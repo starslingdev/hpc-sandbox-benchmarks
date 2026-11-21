@@ -9,6 +9,7 @@ import type { DriverPolicy } from "./policy.ts";
 import { normalizeDriverPolicy } from "./policy.ts";
 import type {
 	CreateRequest,
+	DriverCreateOptions,
 	DriverOperationOptions,
 	ResolvedArtifact,
 	SandboxDriver,
@@ -201,7 +202,7 @@ function policyGuardedDriver<P extends ProviderId, Handle>(
 	const snapshots = driverMember(provider, raw, "snapshots") as SandboxDriver<Handle>["snapshots"];
 	const inventory = driverMember(provider, raw, "inventory") as SandboxDriver<Handle>["inventory"];
 	return Object.freeze({
-		async create(request: CreateRequest, options?: DriverOperationOptions) {
+		async create(request: CreateRequest, options?: DriverCreateOptions) {
 			if (request.gpu !== undefined && policy.accelerator === undefined) {
 				throw new DriverError(
 					"invalid-create-request",
