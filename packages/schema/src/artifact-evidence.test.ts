@@ -8,13 +8,14 @@ import {
 	providerArtifactEvidenceSchema,
 } from "./artifact-evidence.ts";
 import { bakedArtifactName } from "./provider-artifacts.ts";
+import { TOOLCHAIN_VERSION } from "./toolchain.ts";
 
 const BAKED = { kind: "baked", ref: bakedArtifactName("e2b", "version") } as const;
 const CELL = { runId: "run-1", providerId: "e2b", suite: "cpu-node" } as const;
 const FINGERPRINT = {
 	authority: "toolchain-manifest-v1",
 	imageName: "sandbox-benchmarks-toolchain",
-	imageVersion: "v8",
+	imageVersion: TOOLCHAIN_VERSION,
 } as const;
 
 function parseProvenance(input: unknown) {
@@ -124,7 +125,28 @@ describe("authoritative guest fingerprints", () => {
 					fingerprint: { ...FINGERPRINT, imageVersion: "v7" },
 				}),
 			),
-		).toThrow(/matching sandbox-benchmarks-toolchain@v8/);
+		).toThrow(`matching sandbox-benchmarks-toolchain@${TOOLCHAIN_VERSION}`);
+	});
+
+	it("reads a released v8 artifact without admitting it on the current run path", () => {
+		const requested = { kind: "baked", ref: "sandbox-benchmarks-toolchain-v8" } as const;
+		const archived = { ...FINGERPRINT, imageVersion: "v8" };
+		expect(expectedToolchainFingerprint("e2b", requested)).toBeUndefined();
+		expect(
+			parseEvidence(evidence({ source: "guest-fingerprint", requested, fingerprint: archived }))
+				.provenance.source,
+		).toBe("guest-fingerprint");
+		expect(() =>
+			parseEvidence(evidence({ source: "guest-fingerprint", requested, fingerprint: FINGERPRINT })),
+		).toThrow("matching sandbox-benchmarks-toolchain@v8");
+		for (const ref of [
+			"sandbox-benchmarks-toolchain-v8-candidate",
+			"sandbox-benchmarks-toolchain-v999",
+		]) {
+			expect(
+				expectedToolchainFingerprint("e2b", { kind: "baked", ref }, "recorded"),
+			).toBeUndefined();
+		}
 	});
 
 	it("cannot verify an arbitrary ref even when its producer supplies the current fingerprint", () => {
