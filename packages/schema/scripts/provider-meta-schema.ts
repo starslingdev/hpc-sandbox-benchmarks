@@ -177,8 +177,9 @@ type StepProvidedInput = Omit<NormalizedProviderInput, "source"> & {
 };
 
 // Isolation variants billed from one rate card. Daytona's are not: daytona-container runs on the v0
-// control plane (per-vCPU rates) and daytona-vm on v2 (per-core rates by CPU generation).
-const SHARED_VARIANT_GROUPS = [["modal-gvisor", "modal-vm-fixed", "modal-vm-burst"]] as const;
+// control plane (per-vCPU rates) and daytona-vm on v2 (per-core rates by CPU generation). Modal's VM
+// variants share one card (1 vCPU = 1 core); modal-gvisor keeps its own (0.5 `cpu` unit per vCPU).
+const SHARED_VARIANT_GROUPS = [["modal-vm-fixed", "modal-vm-burst"]] as const;
 
 export function assertProviderIdSyntax(ids: readonly string[] = PROVIDER_IDS): void {
 	for (const id of ids) {
