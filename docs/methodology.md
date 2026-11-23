@@ -46,9 +46,9 @@ separates a fixed request from a bursting one:
 | Variant | Arch / region | CPU type | Guaranteed | Ceiling |
 |---|---|---|---|---|
 | `daytona-vm-zen5` (Daytona (VM)) | amd64, `us-east-ash-1` | `zen5` | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
-| `daytona-vm-zen5-burst` (Daytona (VM, burst)) | amd64, `us-east-ash-1` | `zen5` | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap (10 cores, 20 vCPU); memory fixed at 8 GiB |
+| `daytona-vm-zen5-burst` (Daytona (VM, burst)) | amd64, `us-east-ash-1` | `zen5` | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to 4 cores (8 vCPU), memory up to 16 GiB (the shared burst ceiling) |
 | `daytona-vm-arm` (Daytona (VM, arm)) | arm64, `us-east-iad-1` | none | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
-| `daytona-vm-arm-burst` (Daytona (VM, arm, burst)) | arm64, `us-east-iad-1` | none | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap; memory fixed at 8 GiB |
+| `daytona-vm-arm-burst` (Daytona (VM, arm, burst)) | arm64, `us-east-iad-1` | none | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to 4 cores (8 vCPU), memory up to 16 GiB (the shared burst ceiling) |
 
 A fixed variant must hold `TARGET_SPEC` exactly, so `specMatched` is true by construction. A burst
 variant reserves memory at the spec (Daytona hotplugs memory too slowly to burst it, as Modal's VM
@@ -57,6 +57,10 @@ sees the burst ceiling rather than 4 vCPU. Like Modal, it is therefore compared 
 as a spec match. The pre-split `daytona-vm` id is retired: committed runs that carry it keep parsing and resolve to `daytona-vm-zen5-burst`, so they render as "Daytona (VM, burst)" (the unqualified "Daytona (VM)" now names the fixed Zen 5 variant) and take its economics. The arm variants
 need an arm64 build of the toolchain image, which does not exist yet, and stay best-effort until it does.
 
+### Shared burst bounds
+
+Every burst variant (`daytona-vm-zen5-burst`, `daytona-vm-arm-burst`, `modal-vm-burst`) is created with the same floor and ceiling, `BURST_BOUNDS` in `packages/schema/src/target-spec.ts`: 2 vCPU to 8 vCPU and 8 GiB to 16 GiB. Daytona's smallest CPU guarantee is 1 core (2 vCPU) and it takes the ceiling as `cpuMax` (cores) and `memoryMax`; Modal takes `cpu`/`cpuLimit` and `memoryMiB`/`memoryLimitMiB`. Probed 2026-11-23: both guests report 8 processors, and under memory pressure MemTotal grows from the floor to about 16 GiB on both (neither VM exposes a cgroup `cpu.max`/`memory.max`, so the guest's processor count and MemTotal are the observable limits).
+
 ### Modal VM variants
 
 Modal's `runtime: "vm"` sandbox is a cloud-hypervisor microVM. Two first-class variants differ only in the CPU request:
@@ -64,7 +68,7 @@ Modal's `runtime: "vm"` sandbox is a cloud-hypervisor microVM. Two first-class v
 | Variant | CPU | Memory |
 |---|---|---|
 | `modal-vm-fixed` (Modal (VM)) | `cpu` = `cpuLimit` = 4 (the guest sees 4 vCPU): cannot burst | 8 GiB reserved and limited |
-| `modal-vm-burst` (Modal (VM, burst)) | request 0.125 core, no limit: bursts to the account ceiling | 8 GiB reserved and limited |
+| `modal-vm-burst` (Modal (VM, burst)) | `cpu` 2, `cpuLimit` 8 (the shared burst bounds) | request 8 GiB, limit 16 GiB |
 
 A fixed variant holds `TARGET_SPEC`; a burst variant is compared on its own terms. The pre-split `modal-vm` id is retired: committed runs that carry it keep parsing and resolve to `modal-vm-burst`, so they render as "Modal (VM, burst)" (the unqualified "Modal (VM)" now names the fixed variant). Both share the toolchain image with `modal-gvisor`, so neither needs its own bake.
 

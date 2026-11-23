@@ -27,6 +27,7 @@ import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import { instanceOfAny, isMintedMarker } from "@sandbox-benchmarks/driver/vendor";
 import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { BURST_BOUNDS } from "@sandbox-benchmarks/schema/target-spec";
 import { DAYTONA_VM_REGIONS } from "@sandbox-benchmarks/schema/toolchain";
 import { type } from "arktype";
 import { DAYTONA_CONTAINER_DISK_GB } from "./container-disk.ts";
@@ -344,11 +345,10 @@ const SPEC_CORES = TARGET_SPEC.vcpus / 2;
 /**
  * Fixed: guarantee and ceiling are both the benchmark spec, so the sandbox cannot burst.
  * Burst (mirrors modal-vm-burst): the smallest CPU guarantee Daytona grants beside 8 GiB of reserved memory
- * (1 core; a 0.125-core request is raised to it, probe 2026-11-20) with no CPU ceiling below the plan
- * cap (10 cores = 20 vCPU), and memory reserved at the spec. Memory is reserved rather than burstable because the VM boots with
- * about the guarantee + 1 GiB as MemTotal and hotplugs the rest too slowly: a 0.5 GiB guarantee had
- * STREAM's first trial global-OOM-killed at 3 GB RSS (run 43769189560). The guarantee is the billing
- * floor the cost hook prices against.
+ * (1 core; a 0.125-core request is raised to it, probe 2026-11-20) up to the shared BURST_BOUNDS ceiling (4 cores = 8 vCPU), and memory from the spec up to the shared 16 GiB ceiling. The VM boots with about the guarantee + 1 GiB as MemTotal and hotplugs
+ * up to the ceiling under pressure (probe 2026-11-23: an 8 GiB floor reached the 16 GiB ceiling within seconds), but a
+ * small floor is too slow: a 0.5 GiB guarantee had STREAM's first trial global-OOM-killed at 3 GB RSS
+ * (run 43769189560), hence the spec-sized floor. The guarantee is the billing floor the cost hook prices against.
  */
 const FIXED_RESOURCES = {
 	cpu: SPEC_CORES,
@@ -359,9 +359,10 @@ const FIXED_RESOURCES = {
 	diskMax: TARGET_SPEC.diskGb,
 } as const;
 const BURST_RESOURCES = {
-	cpu: 1,
-	memory: TARGET_SPEC.memoryGb,
-	memoryMax: TARGET_SPEC.memoryGb,
+	cpu: BURST_BOUNDS.vcpusMin / 2,
+	cpuMax: BURST_BOUNDS.vcpusMax / 2,
+	memory: BURST_BOUNDS.memoryGbMin,
+	memoryMax: BURST_BOUNDS.memoryGbMax,
 	disk: TARGET_SPEC.diskGb,
 	diskMax: TARGET_SPEC.diskGb,
 } as const;
@@ -503,9 +504,9 @@ export function daytonaV2Vendor(
 					: cpu * 2 === spec.vcpus && memory === spec.memoryGb;
 				return native.sandboxClass === "linux" &&
 					specMatches &&
-					memoryMax === memory &&
+					(native.memoryMax === undefined || native.memoryMax === memoryMax) &&
 					native.cpu === cpu &&
-					(variant.burst || native.cpuMax === cpuMax) &&
+					native.cpuMax === cpuMax &&
 					native.memory === memory &&
 					(native.disk ?? 0) >= (spec.diskGb ?? disk)
 					? { status: "honored" }

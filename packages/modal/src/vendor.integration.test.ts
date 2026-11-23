@@ -189,11 +189,11 @@ vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor(
 
 describe("Modal benchmark resource configuration", () => {
 	it.each([
-		["modal-gvisor", 8, 128, "7516192768"],
-		["modal-vm-burst", 8, 8192, "7516192768"],
-		["modal-gvisor", 16, 16_384, "16106127360"],
-		["modal-vm-burst", 16, 16_384, "16106127360"],
-	] as const)("%s at %d GiB requests minimum CPU and %d MiB of memory", async (provider, memoryGb, memoryMb, taskMemoryMaxBytes) => {
+		["modal-gvisor", 8, 128, 8, "7516192768", 125, 0],
+		["modal-vm-burst", 8, 8192, 16, "16106127360", 2000, 8000],
+		["modal-gvisor", 16, 16_384, 16, "16106127360", 125, 0],
+		["modal-vm-burst", 16, 8192, 16, "16106127360", 2000, 8000],
+	] as const)("%s at %d GiB requests %d MiB of memory up to %d GiB and %d/%d milli-CPU", async (provider, memoryGb, memoryMb, memoryMaxGb, taskMemoryMaxBytes, milliCpu, milliCpuMax) => {
 		const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
 		const app = new App("ap-prepared", MODAL_APP_NAME);
 		const image = new Image(client, "im-prepared", "");
@@ -247,10 +247,10 @@ describe("Modal benchmark resource configuration", () => {
 				definition: {
 					imageId: "im-prepared",
 					resources: {
-						milliCpu: 125,
-						milliCpuMax: 0,
+						milliCpu,
+						milliCpuMax,
 						memoryMb,
-						memoryMbMax: memoryGb * 1024,
+						memoryMbMax: memoryMaxGb * 1024,
 					},
 					runtime: provider === "modal-vm-burst" ? "vm" : "gvisor",
 					experimentalOptionsV2: { performance_sensitive: "true" },
