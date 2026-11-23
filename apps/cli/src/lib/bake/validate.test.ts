@@ -97,7 +97,7 @@ describe("candidateCreateOptions", () => {
 		// candidateCreateOptions returns only the candidate override; the vm_runtime flag lives in the
 		// adapter's base createOptions and is preserved by validate-run.ts's spread, so it isn't repeated
 		// here (matching modal-gvisor).
-		expect(candidateCreateOptions("modal-vm", refs)).toEqual({
+		expect(candidateCreateOptions("modal-vm-burst", refs)).toEqual({
 			templateId: "ghcr.io/o/tc:v1-candidate",
 		});
 	});

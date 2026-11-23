@@ -132,7 +132,7 @@ runnable without secrets. Writes the shard Run(s) under data/runs/ and updates d
 
 examples:
   bench-suite daytona-vm-zen5 cpu-node                 # one suite locally, auto runId
-  bench-suite modal-vm memory ci-1234             # a specific cell + runId
+  bench-suite modal-vm-burst memory ci-1234             # a specific cell + runId
   bench-suite e2b memory --require e2b            # fail (don't skip) if E2B_API_KEY is absent
   bench-suite e2b system spike-1                  # every provider runs through its DriverModule
   bench-suite e2b memory ci-1 --replicates 0,1,2  # 3 replicate sandboxes from this one process

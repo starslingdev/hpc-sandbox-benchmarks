@@ -39,7 +39,7 @@ import { isBuildMode } from "../lib/release-inputs.ts";
  * same set CI passes to `bake --promote --require …`, single-sourced here so the matrix's per-cell
  * `required` flags and promote's gate can't drift. e2b/daytona-vm-zen5/blaxel bake provider artifacts;
  * modal-gvisor is required because its `Image.fromRegistry` boot validates the published image. The new
- * isolation variants (daytona-container, the other daytona-vm-* variants, modal-vm) are best-effort until a committed run validates
+ * isolation variants (daytona-container, the other daytona-vm-* variants, the modal-vm-* variants) are best-effort until a committed run validates
  * them — like novita (optional control plane), a
  * missing secret or an unproven variant skips without failing the release.
  */

@@ -519,7 +519,7 @@ test("pre-execution recovery rejects unbound identities and measurement evidence
 		const allocation = JSON.parse(readFileSync(allocationPath, "utf8"));
 		if (change === "attempt") allocation.attempt = "other";
 		if (change === "account") allocation.account = "blaxel";
-		if (change === "provider") allocation.ref.provider = "modal-vm";
+		if (change === "provider") allocation.ref.provider = "modal-vm-burst";
 		writeFileSync(allocationPath, JSON.stringify(allocation));
 		const path = join(f.directory, "attempt.json");
 		const original = JSON.parse(readFileSync(path, "utf8"));

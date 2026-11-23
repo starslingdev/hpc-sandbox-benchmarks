@@ -22,7 +22,7 @@ packages adapt their vendor SDK directly; Microsandbox uses a local `defineProvi
 Vercel's local provider starts from ComputeSDK's upstream adapter but uses pinned `@vercel/sandbox`
 v2, because the published wrapper still pins a pre-VCR SDK. run.cloud also uses a local
 `defineProvider` adapter over `@run-cloud/sdk`, for which no `@computesdk/*` wrapper is published.
-e2b, tama, modal-gvisor, and modal-vm are registered DriverModules (`packages/drivers`); this
+e2b, tama, modal-gvisor, and the modal-vm-* variants are registered DriverModules (`packages/drivers`); this
 package keeps only the remaining waived adapters. The package also owns benchmark create-time
 policy — the pinned `TARGET_SPEC` and toolchain image. The assembled `providers` registry joins
 schema metadata with `Record<LegacyAdapterId, ProviderAdapter>`; a waived provider without an

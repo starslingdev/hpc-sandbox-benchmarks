@@ -546,7 +546,7 @@ test("Modal variants execute simultaneously through one account journal and pool
 		{
 			GITHUB_RUN_ID: "modal-pool",
 			GITHUB_SHA: plan.sha,
-			BENCH_PROVIDERS: "modal-gvisor,modal-vm",
+			BENCH_PROVIDERS: "modal-gvisor,modal-vm-burst",
 			BENCH_SUITES: "cpu-node",
 			BENCH_REPLICAS: "1",
 			BENCH_ACCOUNT_CAPACITY: '{"modal":{"sandboxes":2}}',
@@ -560,7 +560,9 @@ test("Modal variants execute simultaneously through one account journal and pool
 		...f.options,
 		plan: mixed,
 		open: async (provider) => {
-			const module = await loadDriverModule(provider === "modal-vm" ? "modal-vm" : "modal-gvisor");
+			const module = await loadDriverModule(
+				provider === "modal-vm-burst" ? "modal-vm-burst" : "modal-gvisor",
+			);
 			const artifact = resolveDriverArtifact(provider);
 			return {
 				...opened,
@@ -588,7 +590,7 @@ test("Modal variants execute simultaneously through one account journal and pool
 			};
 		},
 	});
-	expect(entered).toEqual(new Set(["modal-gvisor", "modal-vm"]));
+	expect(entered).toEqual(new Set(["modal-gvisor", "modal-vm-burst"]));
 	expect(f.peak()).toBe(2);
 	expect(f.present.size).toBe(0);
 	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(2);

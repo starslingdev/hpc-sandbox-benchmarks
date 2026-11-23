@@ -1,13 +1,13 @@
 import { defineProviderMeta } from "../provider-meta.ts";
 import { modalPricing, modalTransport } from "./_modal.ts";
 
-export default defineProviderMeta("modal-vm", {
-	displayName: "Modal (VM)",
+export default defineProviderMeta("modal-vm-burst", {
+	displayName: "Modal (VM, burst)",
 	vendor: "Modal",
 	quotaDomain: "modal",
 	website: "https://modal.com",
 	sdkPackage: "modal",
-	package: { directory: "modal", entry: "vm" },
+	package: { directory: "modal", entry: "vm-burst" },
 	artifact: { kind: "image" },
 	inputs: ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"],
 	isolation: {
@@ -20,7 +20,7 @@ export default defineProviderMeta("modal-vm", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Isolation variant sharing Modal credentials/pricing with modal-gvisor; selects runtime: vm at create. Carries committed runs and is in the default matrix set.",
+			"Isolation variant sharing Modal credentials/pricing with modal-gvisor; selects runtime: vm at create. Successor to the pre-split `modal-vm` runs (see LEGACY_PROVIDER_ALIASES), which bursted the same way. Carries committed runs and is in the default matrix set.",
 	},
 	specPinning: "settable",
 	transport: modalTransport,
