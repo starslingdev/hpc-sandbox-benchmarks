@@ -4,6 +4,16 @@ import {
 	evidenceIdentifierSchema as identifier,
 } from "./identifiers.ts";
 import { providerIdSchema } from "./provider-parsers.ts";
+import { LEGACY_PROVIDER_ALIASES } from "./providers.ts";
+
+/**
+ * A provider id as the account journal and cleanup receipts record it. The journal is append-only and
+ * outlives provider renames, so a retired id (`daytona-vm`, `daytona`) is resolved to the variant that
+ * subsumed it — the same account and driver — instead of rejecting the whole account's history.
+ */
+const journalProviderIdSchema = type("string")
+	.pipe((id) => LEGACY_PROVIDER_ALIASES[id] ?? id)
+	.to(providerIdSchema);
 
 /** Later ownership evidence never changes the original execution or measurement receipts. */
 export const cleanupRecoverySchema = type({
@@ -19,7 +29,7 @@ export const cleanupRecoverySchema = type({
 	observation: type.or(
 		type({
 			kind: "'sandbox'",
-			provider: providerIdSchema,
+			provider: journalProviderIdSchema,
 			sandboxId: "string >= 1",
 			state: "'terminal' | 'absent'",
 		}).onUndeclaredKey("reject"),
@@ -63,7 +73,7 @@ export const accountRecordBase = {
 	planDigest: digest,
 } as const;
 
-export const sandboxRefSchema = type({ provider: providerIdSchema, id: "string >= 1" });
+export const sandboxRefSchema = type({ provider: journalProviderIdSchema, id: "string >= 1" });
 
 /**
  * The journal's `allocated` record. The executor also retains it in the digest-verified raw tree
