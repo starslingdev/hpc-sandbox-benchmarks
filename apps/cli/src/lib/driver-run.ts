@@ -1,4 +1,5 @@
 import { executeSuite, measureLifecycleOperation } from "@sandbox-benchmarks/harness";
+import { suiteBakedPtsProfiles } from "./suite-tasks.ts";
 // The driver composition root (ADR-0007 §1).
 //
 // The kit deliberately splits three trust boundaries that a single `config` object used to blur:
@@ -591,6 +592,7 @@ export async function runDriverSuite(options: RunSuiteOptions): Promise<void> {
 			runId: options.runId,
 			...(options.replicateIndex === undefined ? {} : { replicateIndex: options.replicateIndex }),
 			suiteName,
+			preparation: { resolveBakedPtsProfiles: () => suiteBakedPtsProfiles(suiteName) },
 			resultsDir,
 		});
 		return;

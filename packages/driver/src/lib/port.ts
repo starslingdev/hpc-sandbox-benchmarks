@@ -59,6 +59,11 @@ export interface DriverOperationOptions {
 	readonly signal?: AbortSignal;
 }
 
+/** A driver that stages private PTS fixtures can ask which ones its frozen suite uses. */
+export interface DriverCreateOptions extends DriverOperationOptions {
+	readonly resolveBakedPtsProfiles?: () => Promise<readonly string[] | undefined>;
+}
+
 /* --------------------------------- Create requests --------------------------------- */
 
 export interface GpuSpec {
@@ -144,7 +149,7 @@ export interface InventoryCapability {
 }
 
 export interface SandboxDriver<Handle = unknown> {
-	create(request: CreateRequest, options?: DriverOperationOptions): Promise<SandboxSession<Handle>>;
+	create(request: CreateRequest, options?: DriverCreateOptions): Promise<SandboxSession<Handle>>;
 	destroyById?(ref: SandboxRef, options?: DriverOperationOptions): Promise<void>;
 	readonly probes?: ControlPlaneProbes;
 	readonly snapshots?: SnapshotCapability<Handle>;
