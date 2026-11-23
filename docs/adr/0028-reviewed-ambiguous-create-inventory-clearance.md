@@ -53,3 +53,28 @@ retained an allocation stay unresolved.
 Runcloud and freestyle admission can reopen for later smokes once every reviewed intent on that
 account is released. Any other unresolved intent still needs identity-based recovery or its own
 review. Freestyle inventory and r1 teardown still require `FREESTYLE_API_KEY`.
+
+## Tangle Better Auth, run 44468887637
+
+The v8 Better Auth create reached Tangle's host. The host reported unconfirmed cleanup,
+and the runner retained neither its generated sandbox name nor an allocation receipt.
+Tangle correlated the original workload to a single resource. Its controller later reaped
+the resource as absent. The host supplied no physical kill timestamp. Tangle's compute and
+customer ledgers show zero charges for the resource. [Original attempt artifact](https://github.com/starslingdev/hpc-sandbox-benchmarks/actions/runs/44468887637/artifacts/14504847110).
+
+The benchmark owner receives the reviewed vendor receipt privately. Stop local account
+writers and run the following with the Tangle account's credential and the original
+attempt artifact extracted into its own directory.
+
+```sh
+bun apps/cli/src/bin/recover-ambiguous-create-inventory.ts --exclusive-account \
+  --vendor-attestation /private/tangle-attestation.json \
+  tangle realworld-better-auth /path/to/original-attempt
+```
+
+The command checks the original attempt and receipt against the digests pinned in the
+review. Each pass checks that the authenticated customer matches the original, that a
+direct lookup returns absent, and that the account's complete inventory contains zero
+benchmark-owned sandboxes. It rechecks workflow quiescence and the intent before appending
+one `released/reconciled` record. The public journal retains the two digests. The original
+failed run contributes zero measurements.
