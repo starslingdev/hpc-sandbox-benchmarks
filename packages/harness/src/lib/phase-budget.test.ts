@@ -60,9 +60,16 @@ test("managed checkout gets the pinned tree in one commit when the branch has mo
 	const { SUITES } = await import("@sandbox-benchmarks/schema");
 	const home = mkdtempSync(join(tmpdir(), "bench-source-"));
 	try {
+		// Only this fixture's repositories: an inherited GIT_DIR (as in a git hook) would point the
+		// clone script's init, remote and fetch at the caller's checkout.
+		const env = Object.fromEntries(
+			Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+		);
 		const origin = join(home, "origin.git");
 		const checkout = join(home, "sandbox-benchmarks");
-		const init = Bun.spawnSync(["git", "init", "--bare", "--initial-branch=main", origin]);
+		const init = Bun.spawnSync(["git", "init", "--bare", "--initial-branch=main", origin], {
+			env,
+		});
 		expect(init.exitCode, init.stderr.toString()).toBe(0);
 		const history = [1, 2]
 			.map((n) =>
@@ -79,11 +86,12 @@ test("managed checkout gets the pinned tree in one commit when the branch has mo
 			)
 			.join("\n");
 		const write = Bun.spawnSync(["git", "-C", origin, "fast-import", "--quiet"], {
+			env,
 			stdin: Buffer.from(history),
 		});
 		expect(write.exitCode, write.stderr.toString()).toBe(0);
 		const git = (dir: string, ...args: string[]) =>
-			Bun.spawnSync(["git", "-C", dir, ...args], { stdout: "pipe" })
+			Bun.spawnSync(["git", "-C", dir, ...args], { env, stdout: "pipe" })
 				.stdout.toString()
 				.trim();
 		const sha = git(origin, "rev-parse", "main^");
@@ -91,7 +99,7 @@ test("managed checkout gets the pinned tree in one commit when the branch has mo
 		if (!clone) throw new Error("clone step missing");
 		const result = Bun.spawnSync(["bash", "-c", clone.script], {
 			env: {
-				...process.env,
+				...env,
 				HOME: home,
 				GIT_CONFIG_COUNT: "1",
 				GIT_CONFIG_KEY_0: `url.${pathToFileURL(origin).href}.insteadOf`,
