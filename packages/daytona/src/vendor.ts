@@ -17,6 +17,7 @@ import type { CreateSandboxOptions } from "@daytona/sdk/v2";
 import {
 	DISABLED,
 	DaytonaError as V2DaytonaError,
+	FileNotFoundError as V2FileNotFoundError,
 	NotFoundError as V2NotFoundError,
 	RateLimitError as V2RateLimitError,
 } from "@daytona/sdk/v2";
@@ -49,6 +50,13 @@ export const DAYTONA_LISTING_TIMEOUT_MS = 60_000;
 /** The create and waited-delete bounds the SDK takes, in seconds. */
 const CREATE_TIMEOUT_SECS = 300;
 const DELETE_TIMEOUT_SECS = 30;
+/**
+ * A v2 sandbox's wall-clock lifetime: the server deletes it `timeoutSeconds` after create whatever its
+ * activity (the platform default is 300 s; `idleExpirySeconds` is a separate, activity-based timer), so
+ * a cell would lose its sandbox five minutes in. Sized to the CI cell budget (BENCH_CELL_BUDGET_MINUTES,
+ * 330); the runner's own teardown still deletes it as soon as the cell ends.
+ */
+const SANDBOX_LIFETIME_SECS = 330 * 60;
 
 /** The SDK client surface the adapter translates; the package entry passes the real client. */
 export type DaytonaClient = Pick<Daytona, "create" | "get" | "list" | "delete" | "snapshot">;
@@ -441,7 +449,11 @@ export function daytonaV2Vendor(
 						...variant.create,
 						name: marker,
 						region: variant.region,
-						lifecyclePolicy: { idleExpirySeconds: DISABLED },
+						lifecyclePolicy: {
+							idleExpirySeconds: DISABLED,
+							timeoutSeconds: SANDBOX_LIFETIME_SECS,
+							onTimeout: "delete",
+						},
 						createTimeoutSeconds: CREATE_TIMEOUT_SECS,
 					}),
 				),
@@ -514,7 +526,9 @@ export function daytonaV2Vendor(
 						await native.fs.stat(path);
 						return true;
 					} catch (error) {
-						if (error instanceof V2NotFoundError) return false;
+						// Only a missing FILE is "no". A sandbox that is gone is also a NotFoundError, and answering
+						// "no" for it makes a poll for a result file wait forever on a dead guest.
+						if (error instanceof V2FileNotFoundError) return false;
 						throw error;
 					}
 				},
