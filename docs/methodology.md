@@ -63,7 +63,7 @@ Modal's `runtime: "vm"` sandbox is a cloud-hypervisor microVM. Two first-class v
 
 | Variant | CPU | Memory |
 |---|---|---|
-| `modal-vm-fixed` (Modal (VM)) | `cpu` = `cpuLimit` = 2 cores (4 vCPU): cannot burst | 8 GiB reserved and limited |
+| `modal-vm-fixed` (Modal (VM)) | `cpu` = `cpuLimit` = 4 (the guest sees 4 vCPU): cannot burst | 8 GiB reserved and limited |
 | `modal-vm-burst` (Modal (VM, burst)) | request 0.125 core, no limit: bursts to the account ceiling | 8 GiB reserved and limited |
 
 A fixed variant holds `TARGET_SPEC`; a burst variant is compared on its own terms. The pre-split `modal-vm` id is retired: committed runs that carry it keep parsing and resolve to `modal-vm-burst`, so they render as "Modal (VM, burst)" (the unqualified "Modal (VM)" now names the fixed variant). Both share the toolchain image with `modal-gvisor`, so neither needs its own bake.

@@ -68,12 +68,11 @@ export function modalAllocate(
 				memoryBytes >= 2 * 1024 ** 3 ? memoryBytes - 1024 ** 3 : memoryBytes / 2;
 			const memoryLimitMiB = spec.memoryGb * 1024;
 			const isVm = provider !== "modal-gvisor";
-			// `modal-vm-fixed` pins the CPU: reservation equals the hard limit, at the spec's physical cores
-			// (a Modal core is 2 vCPU). Every other variant requests the minimum and bursts.
+			// `modal-vm-fixed` pins the CPU: reservation equals the hard limit, at the spec's vCPUs
+			// (probed on the VM runtime: the guest sees exactly `cpu` vCPUs, so cpu 2 showed nproc 2 and missed
+			// the 4 vCPU spec; cpu 4 showed 4). Every other variant requests the minimum and bursts.
 			const cpuShape =
-				provider === "modal-vm-fixed"
-					? { cpu: spec.vcpus / 2, cpuLimit: spec.vcpus / 2 }
-					: { cpu: 0.125 };
+				provider === "modal-vm-fixed" ? { cpu: spec.vcpus, cpuLimit: spec.vcpus } : { cpu: 0.125 };
 			const params = {
 				name: marker,
 				timeoutMs: LEAK_EXPIRY_MS,
