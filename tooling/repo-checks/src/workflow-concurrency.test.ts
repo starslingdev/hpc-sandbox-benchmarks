@@ -40,7 +40,13 @@ test("all current allocating workflows share account queues across variants and 
 	const bake = jobQueue("toolchain-image.yml", "bake").group;
 	expect(bake).toStartWith("benchmark-account-${{ ");
 	expect(bake).toEndWith(" || matrix.provider }}");
-	for (const provider of ["modal-gvisor", "modal-vm", "daytona-vm", "daytona-container"] as const)
+	for (const provider of [
+		"modal-gvisor",
+		"modal-vm-fixed",
+		"modal-vm-burst",
+		"daytona-vm-zen5",
+		"daytona-container",
+	] as const)
 		expect(bake).toContain(`'${provider}'`);
 	// The GPU lane is Modal-only and names the account directly: the registry's domain, not a literal
 	// that could survive a rename.

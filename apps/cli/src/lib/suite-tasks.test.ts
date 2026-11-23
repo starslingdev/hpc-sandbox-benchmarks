@@ -1,5 +1,7 @@
-import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUITE_NAMES, SUITES } from "@sandbox-benchmarks/schema";
 import { suiteMetricSummaryRows, suiteTaskSummaryRows } from "./suite-summary.ts";
@@ -12,6 +14,8 @@ import {
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
+	SUITE_WORKLOAD_INPUTS,
+	suiteBakedPtsProfiles,
 } from "./suite-tasks.ts";
 
 // apps/cli/src/lib → repo root
@@ -204,5 +208,57 @@ describe("summary rows", () => {
 		const metricRows = suiteMetricSummaryRows(plan);
 		expect(metricRows[0]?.[0]).toEqual({ data: "Metric", header: true });
 		expect(metricRows.length).toBe(1 + plan.metrics.length);
+	});
+});
+
+describe("frozen suite image preparation", () => {
+	const copies: string[] = [];
+	afterAll(() => {
+		for (const dir of copies) rmSync(dir, { recursive: true, force: true });
+	});
+	// A committed copy of HEAD's workload inputs, so uncommitted edits in this checkout can't
+	// change the answer. Returns the copy's root and its commit.
+	// The copy is its own repository: no inherited GIT_DIR/GIT_INDEX_FILE may point at this checkout.
+	const gitFreeEnv = Object.fromEntries(
+		Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+	);
+	const frozenCopy = () => {
+		const dir = mkdtempSync(join(tmpdir(), "suite-tasks-"));
+		copies.push(dir);
+		const archive = join(dir, "inputs.tar");
+		execFileSync("git", ["archive", "-o", archive, "HEAD", "--", ...SUITE_WORKLOAD_INPUTS], {
+			cwd: root,
+		});
+		execFileSync("tar", ["-xf", archive, "-C", dir]);
+		rmSync(archive);
+		const git = (...args: string[]) =>
+			execFileSync(
+				"git",
+				["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args],
+				{ cwd: dir, encoding: "utf8", env: gitFreeEnv },
+			).trim();
+		git("init", "-q");
+		git("add", "-A");
+		git("-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-qm", "frozen");
+		return { dir, revision: git("rev-parse", "HEAD") };
+	};
+
+	it("selects installed fixtures from the actual suite tasks and keeps generic setup for other source revisions", async () => {
+		const { dir, revision } = frozenCopy();
+		expect(await suiteBakedPtsProfiles("network", revision, dir)).toEqual(["iperf-1.2.0"]);
+		expect(await suiteBakedPtsProfiles("pgbench", revision, dir)).toEqual(["pgbench-1.15.0"]);
+		for (const suite of ["realworld-better-auth", "realworld-openclaw"] as const)
+			expect(await suiteBakedPtsProfiles(suite, revision, dir)).toEqual([]);
+		expect(await suiteBakedPtsProfiles("pgbench", "main", dir)).toBeUndefined();
+		expect(await suiteBakedPtsProfiles("pgbench", "0".repeat(40), dir)).toBeUndefined();
+	});
+
+	it("keeps generic setup when the checkout's workload differs from the frozen revision", async () => {
+		const edited = frozenCopy();
+		appendFileSync(join(edited.dir, "lib/bench.sh"), "\n# local edit\n");
+		expect(await suiteBakedPtsProfiles("pgbench", edited.revision, edited.dir)).toBeUndefined();
+		const added = frozenCopy();
+		writeFileSync(join(added.dir, ".mise/tasks/benchmark/untracked"), "#!/bin/bash\n");
+		expect(await suiteBakedPtsProfiles("pgbench", added.revision, added.dir)).toBeUndefined();
 	});
 });

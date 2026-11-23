@@ -20,6 +20,7 @@ import type {
 	CreateBudget,
 	CreateRequest,
 	DriverContext,
+	DriverCreateOptions,
 	DriverErrorCode,
 	DriverModule,
 	DriverOperationOptions,
@@ -311,7 +312,7 @@ export interface ComputeSdkDriverSpec<TCompute extends ComputeSdkLike> {
 		sandbox: ComputeSdkSandboxOf<TCompute>,
 		native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>,
 		request: CreateRequest,
-		options: DriverOperationOptions,
+		options: DriverCreateOptions,
 		ref: SandboxRef,
 	) => Promise<ComputeSdkCreatedRequestVerification>;
 	/**
@@ -744,7 +745,7 @@ async function prepareAndVerifyComputeSdkCreatedRequest<TCompute extends Compute
 	sandbox: ComputeSdkSandboxOf<TCompute>,
 	native: ComputeSdkNativeOf<ComputeSdkSandboxOf<TCompute>>,
 	request: CreateRequest,
-	operationOptions: DriverOperationOptions | undefined,
+	operationOptions: DriverCreateOptions | undefined,
 	prepareAndVerify: NonNullable<ComputeSdkDriverSpec<TCompute>["prepareAndVerifyCreatedRequest"]>,
 	sensitiveValues: readonly string[],
 	ref: SandboxRef,
@@ -1062,7 +1063,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 		);
 	};
 	return {
-		async create(compute, request: CreateRequest, operationOptions?: DriverOperationOptions) {
+		async create(compute, request: CreateRequest, operationOptions?: DriverCreateOptions) {
 			if (operationOptions?.signal?.aborted) {
 				throw wrapperAborted(provider, operationOptions.signal.reason);
 			}
@@ -1109,7 +1110,7 @@ function computeSdkMethodTable<TCompute extends ComputeSdkLike>(
 			try {
 				created = (await compute.sandbox.create(
 					createOptions,
-					operationOptions,
+					operationOptions?.signal ? { signal: operationOptions.signal } : undefined,
 				)) as ComputeSdkSandboxOf<TCompute>;
 			} catch (caught) {
 				const primary = wrapperFailure(

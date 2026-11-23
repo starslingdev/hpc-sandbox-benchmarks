@@ -8,12 +8,16 @@ import { snapshotArtifactBuilder } from "@sandbox-benchmarks/driver/artifact";
 
 export interface DriverModuleMap {
 	e2b: typeof import("@sandbox-benchmarks/e2b").default;
-	"daytona-vm": typeof import("@sandbox-benchmarks/daytona/vm").default;
+	"daytona-vm-zen5": typeof import("@sandbox-benchmarks/daytona/vm-zen5").default;
+	"daytona-vm-zen5-burst": typeof import("@sandbox-benchmarks/daytona/vm-zen5-burst").default;
+	"daytona-vm-arm": typeof import("@sandbox-benchmarks/daytona/vm-arm").default;
+	"daytona-vm-arm-burst": typeof import("@sandbox-benchmarks/daytona/vm-arm-burst").default;
 	"daytona-container": typeof import("@sandbox-benchmarks/daytona/container").default;
 	blaxel: typeof import("@sandbox-benchmarks/blaxel").default;
 	"microsandbox-cloud": typeof import("@sandbox-benchmarks/microsandbox-cloud").default;
 	"modal-gvisor": typeof import("@sandbox-benchmarks/modal/gvisor").default;
-	"modal-vm": typeof import("@sandbox-benchmarks/modal/vm").default;
+	"modal-vm-fixed": typeof import("@sandbox-benchmarks/modal/vm-fixed").default;
+	"modal-vm-burst": typeof import("@sandbox-benchmarks/modal/vm-burst").default;
 	novita: typeof import("@sandbox-benchmarks/novita").default;
 	namespace: typeof import("@sandbox-benchmarks/namespace").default;
 	vercel: typeof import("@sandbox-benchmarks/vercel").default;
@@ -44,14 +48,24 @@ export const DRIVERS: {
 	readonly [P in DriverProviderId]: () => Promise<DriverModuleMap[P]>;
 } = Object.freeze({
 	e2b: () => import("@sandbox-benchmarks/e2b").then((module) => module.default),
-	"daytona-vm": () => import("@sandbox-benchmarks/daytona/vm").then((module) => module.default),
+	"daytona-vm-zen5": () =>
+		import("@sandbox-benchmarks/daytona/vm-zen5").then((module) => module.default),
+	"daytona-vm-zen5-burst": () =>
+		import("@sandbox-benchmarks/daytona/vm-zen5-burst").then((module) => module.default),
+	"daytona-vm-arm": () =>
+		import("@sandbox-benchmarks/daytona/vm-arm").then((module) => module.default),
+	"daytona-vm-arm-burst": () =>
+		import("@sandbox-benchmarks/daytona/vm-arm-burst").then((module) => module.default),
 	"daytona-container": () =>
 		import("@sandbox-benchmarks/daytona/container").then((module) => module.default),
 	blaxel: () => import("@sandbox-benchmarks/blaxel").then((module) => module.default),
 	"microsandbox-cloud": () =>
 		import("@sandbox-benchmarks/microsandbox-cloud").then((module) => module.default),
 	"modal-gvisor": () => import("@sandbox-benchmarks/modal/gvisor").then((module) => module.default),
-	"modal-vm": () => import("@sandbox-benchmarks/modal/vm").then((module) => module.default),
+	"modal-vm-fixed": () =>
+		import("@sandbox-benchmarks/modal/vm-fixed").then((module) => module.default),
+	"modal-vm-burst": () =>
+		import("@sandbox-benchmarks/modal/vm-burst").then((module) => module.default),
 	novita: () => import("@sandbox-benchmarks/novita").then((module) => module.default),
 	namespace: () => import("@sandbox-benchmarks/namespace").then((module) => module.default),
 	vercel: () => import("@sandbox-benchmarks/vercel").then((module) => module.default),
@@ -72,7 +86,10 @@ export const loadDriverModule = <P extends DriverProviderId>(id: P): Promise<Dri
 /** OCI bakers export `./artifact`; a native-snapshot baker's builder derives from its driver. */
 export interface ArtifactBuilderMap {
 	e2b: typeof import("@sandbox-benchmarks/e2b/artifact").default;
-	"daytona-vm": typeof import("@sandbox-benchmarks/daytona/vm/artifact").default;
+	"daytona-vm-zen5": typeof import("@sandbox-benchmarks/daytona/vm-zen5/artifact").default;
+	"daytona-vm-zen5-burst": typeof import("@sandbox-benchmarks/daytona/vm-zen5-burst/artifact").default;
+	"daytona-vm-arm": typeof import("@sandbox-benchmarks/daytona/vm-arm/artifact").default;
+	"daytona-vm-arm-burst": typeof import("@sandbox-benchmarks/daytona/vm-arm-burst/artifact").default;
 	"daytona-container": typeof import("@sandbox-benchmarks/daytona/container/artifact").default;
 	blaxel: typeof import("@sandbox-benchmarks/blaxel/artifact").default;
 	novita: typeof import("@sandbox-benchmarks/novita/artifact").default;
@@ -100,8 +117,14 @@ export const ARTIFACT_BUILDERS: {
 	readonly [P in ArtifactBuilderProviderId]: () => Promise<ArtifactBuilderMap[P]>;
 } = Object.freeze({
 	e2b: () => import("@sandbox-benchmarks/e2b/artifact").then((module) => module.default),
-	"daytona-vm": () =>
-		import("@sandbox-benchmarks/daytona/vm/artifact").then((module) => module.default),
+	"daytona-vm-zen5": () =>
+		import("@sandbox-benchmarks/daytona/vm-zen5/artifact").then((module) => module.default),
+	"daytona-vm-zen5-burst": () =>
+		import("@sandbox-benchmarks/daytona/vm-zen5-burst/artifact").then((module) => module.default),
+	"daytona-vm-arm": () =>
+		import("@sandbox-benchmarks/daytona/vm-arm/artifact").then((module) => module.default),
+	"daytona-vm-arm-burst": () =>
+		import("@sandbox-benchmarks/daytona/vm-arm-burst/artifact").then((module) => module.default),
 	"daytona-container": () =>
 		import("@sandbox-benchmarks/daytona/container/artifact").then((module) => module.default),
 	blaxel: () => import("@sandbox-benchmarks/blaxel/artifact").then((module) => module.default),

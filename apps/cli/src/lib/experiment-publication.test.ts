@@ -42,7 +42,7 @@ const sha = "a".repeat(40);
 const metricId = "node_web_tooling_runs_per_s";
 const profileXml = readFileSync(
 	new URL(
-		"../../../../packages/results/src/lib/__fixtures__/daytona-vm/pts_node-web-tooling.xml",
+		"../../../../packages/results/src/lib/__fixtures__/daytona-vm-zen5/pts_node-web-tooling.xml",
 		import.meta.url,
 	),
 	"utf8",

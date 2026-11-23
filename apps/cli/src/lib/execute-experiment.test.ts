@@ -1,9 +1,10 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExecResult, ProviderId, SandboxSession } from "@sandbox-benchmarks/driver";
 import { loadDriverModule } from "@sandbox-benchmarks/drivers";
+import { cleanupOwnedSandboxes } from "@sandbox-benchmarks/harness";
 import { aggregateExperiment, evaluateExperiment } from "@sandbox-benchmarks/results";
 import { parseRun } from "@sandbox-benchmarks/schema";
 import { TOOLCHAIN_VERSION } from "@sandbox-benchmarks/schema/toolchain";
@@ -21,6 +22,19 @@ import { readExperimentAttempt, writeImmutableJson } from "./experiment-artifact
 import { workflowExperiment } from "./workflow-experiment.ts";
 
 const root = mkdtempSync(join(tmpdir(), "experiment-integration-"));
+
+// Several tests leave a sandbox whose cleanup fails, which keeps it in the harness's process-wide
+// owner registry. Under `bun test --no-isolate` that registry is shared with other files, so let
+// those cleanups succeed after each test and drain what this file left behind.
+let cleanupRecovered = false;
+afterEach(async () => {
+	cleanupRecovered = true;
+	try {
+		await cleanupOwnedSandboxes({ attempts: 1 });
+	} finally {
+		cleanupRecovered = false;
+	}
+});
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const plan = workflowExperiment(
 	{
@@ -64,7 +78,7 @@ async function fixture(name: string, failCleanup = false) {
 		join(payloadRoot, "benchmark-results", "pts_node-web-tooling.xml"),
 		readFileSync(
 			new URL(
-				"../../../../packages/results/src/lib/__fixtures__/daytona-vm/pts_node-web-tooling.xml",
+				"../../../../packages/results/src/lib/__fixtures__/daytona-vm-zen5/pts_node-web-tooling.xml",
 				import.meta.url,
 			),
 			"utf8",
@@ -134,7 +148,7 @@ async function fixture(name: string, failCleanup = false) {
 					},
 					destroy: async () => {
 						events.push("destroy");
-						if (failCleanup) throw new Error("cleanup unavailable");
+						if (failCleanup && !cleanupRecovered) throw new Error("cleanup unavailable");
 						present.delete(id);
 					},
 				};
@@ -228,7 +242,7 @@ test("ambiguous creates and unacknowledged releases stop rolling admission", asy
 									provider: "tama",
 									locator: { kind: "name", value: "bench-unknown" },
 									cleanup: async () => {
-										throw new Error("cleanup unknown");
+										if (!cleanupRecovered) throw new Error("cleanup unknown");
 									},
 								},
 							);
@@ -283,7 +297,7 @@ test("successful cleanup refills slots and a stopped account still releases heal
 							return session.exec(command, options);
 						},
 						destroy: async (options) => {
-							if (first) throw new Error("cleanup uncertain");
+							if (first && !cleanupRecovered) throw new Error("cleanup uncertain");
 							await session.destroy(options);
 						},
 					};
@@ -546,7 +560,7 @@ test("Modal variants execute simultaneously through one account journal and pool
 		{
 			GITHUB_RUN_ID: "modal-pool",
 			GITHUB_SHA: plan.sha,
-			BENCH_PROVIDERS: "modal-gvisor,modal-vm",
+			BENCH_PROVIDERS: "modal-gvisor,modal-vm-burst",
 			BENCH_SUITES: "cpu-node",
 			BENCH_REPLICAS: "1",
 			BENCH_ACCOUNT_CAPACITY: '{"modal":{"sandboxes":2}}',
@@ -560,7 +574,9 @@ test("Modal variants execute simultaneously through one account journal and pool
 		...f.options,
 		plan: mixed,
 		open: async (provider) => {
-			const module = await loadDriverModule(provider === "modal-vm" ? "modal-vm" : "modal-gvisor");
+			const module = await loadDriverModule(
+				provider === "modal-vm-burst" ? "modal-vm-burst" : "modal-gvisor",
+			);
 			const artifact = resolveDriverArtifact(provider);
 			return {
 				...opened,
@@ -588,7 +604,7 @@ test("Modal variants execute simultaneously through one account journal and pool
 			};
 		},
 	});
-	expect(entered).toEqual(new Set(["modal-gvisor", "modal-vm"]));
+	expect(entered).toEqual(new Set(["modal-gvisor", "modal-vm-burst"]));
 	expect(f.peak()).toBe(2);
 	expect(f.present.size).toBe(0);
 	expect(f.records.filter((record) => record.kind === "released")).toHaveLength(2);
@@ -652,7 +668,7 @@ test("a create-failed releases its intent while a failed-create cleanup keeps ow
 					provider: "tama",
 					locator: { kind: "name", value: "bench-orphan" },
 					cleanup: async () => {
-						throw new Error("destroy unavailable");
+						if (!cleanupRecovered) throw new Error("destroy unavailable");
 					},
 				});
 		f.options.open = async () => {
@@ -860,7 +876,7 @@ test("retains a verified allocation when post-create preparation and rollback bo
 							provider: "tama",
 							locator: { kind: "id", value: ref.id },
 							cleanup: async () => {
-								throw new Error("cleanup unavailable");
+								if (!cleanupRecovered) throw new Error("cleanup unavailable");
 							},
 						},
 					);
@@ -926,7 +942,7 @@ test.each([
 								value: kind === "mismatched-id" ? "other-id" : "known-id",
 							},
 							cleanup: async () => {
-								throw new Error("cleanup unknown");
+								if (!cleanupRecovered) throw new Error("cleanup unknown");
 							},
 						},
 					);

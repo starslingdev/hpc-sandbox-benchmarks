@@ -12,7 +12,16 @@ export { TANGLE_PROVENANCE };
 
 const MIN = 60_000;
 
-export default defineVendorDriver("tangle", {
+const api = "https://sandbox.tangle.tools";
+
+/**
+ * Every call goes through the public Sandbox API. The SDK's default direct runtime route stalled
+ * result collection on the v9 image, so setup, timed commands and collection share this one route.
+ */
+export function tangleClient(apiKey: string): Sandbox {
+	return new Sandbox({ apiKey, baseUrl: api, directExec: false });
+}
+const driver = defineVendorDriver("tangle", {
 	provenance: TANGLE_PROVENANCE,
 	sandboxId: type(/^[A-Za-z0-9_-]{1,128}$/),
 	// data.prepare measures capacity at the workspace where PTS runs.
@@ -55,7 +64,7 @@ export default defineVendorDriver("tangle", {
 					offset: `${offset}`,
 				});
 				const { data } = await billingJson(
-					`https://sandbox.tangle.tools/v1/billing/transactions?${query}`,
+					`${api}/v1/billing/transactions?${query}`,
 					{ headers: { Authorization: `Bearer ${env.TANGLE_API_KEY}` }, signal },
 					page,
 				);
@@ -70,12 +79,12 @@ export default defineVendorDriver("tangle", {
 		},
 	},
 	vendor: ({ env, resolvedArtifact }) =>
-		tangleVendor(
-			new Sandbox({
-				apiKey: env.TANGLE_API_KEY,
-				baseUrl: "https://sandbox.tangle.tools",
-				directExec: false,
-			}),
-			{ resolvedArtifact },
-		),
+		tangleVendor(tangleClient(env.TANGLE_API_KEY), { resolvedArtifact }),
 });
+
+/** Identifies the authenticated account even when its sandbox inventory is empty. */
+async function observeCustomer(apiKey: string): Promise<string> {
+	return (await tangleClient(apiKey).getIdentity()).customerId;
+}
+
+export default Object.freeze({ ...driver, observeCustomer });

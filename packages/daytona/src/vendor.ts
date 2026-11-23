@@ -17,6 +17,7 @@ import type { CreateSandboxOptions } from "@daytona/sdk/v2";
 import {
 	DISABLED,
 	DaytonaError as V2DaytonaError,
+	FileNotFoundError as V2FileNotFoundError,
 	NotFoundError as V2NotFoundError,
 	RateLimitError as V2RateLimitError,
 } from "@daytona/sdk/v2";
@@ -25,10 +26,18 @@ import { shellQuote } from "@sandbox-benchmarks/driver";
 import { matchesAnyCause } from "@sandbox-benchmarks/driver/errors";
 import type { Phase, Vendor, VendorRecord } from "@sandbox-benchmarks/driver/vendor";
 import { instanceOfAny, isMintedMarker } from "@sandbox-benchmarks/driver/vendor";
+import { TARGET_SPEC } from "@sandbox-benchmarks/schema";
+import { BURST_BOUNDS } from "@sandbox-benchmarks/schema/target-spec";
+import { DAYTONA_VM_REGIONS } from "@sandbox-benchmarks/schema/toolchain";
 import { type } from "arktype";
 import { DAYTONA_CONTAINER_DISK_GB } from "./container-disk.ts";
 
-export type DaytonaId = "daytona-vm" | "daytona-container";
+export type DaytonaVmId =
+	| "daytona-vm-zen5"
+	| "daytona-vm-zen5-burst"
+	| "daytona-vm-arm"
+	| "daytona-vm-arm-burst";
+export type DaytonaId = DaytonaVmId | "daytona-container";
 /** v0 ids are UUIDs; v2 ids are `sbx_<id>-<region>`. */
 export const DAYTONA_SANDBOX_ID = type("string.uuid | /^sbx_[A-Za-z0-9-]+$/");
 /** The bound on one SDK request. */
@@ -42,6 +51,13 @@ export const DAYTONA_LISTING_TIMEOUT_MS = 60_000;
 /** The create and waited-delete bounds the SDK takes, in seconds. */
 const CREATE_TIMEOUT_SECS = 300;
 const DELETE_TIMEOUT_SECS = 30;
+/**
+ * A v2 sandbox's wall-clock lifetime: the server deletes it `timeoutSeconds` after create whatever its
+ * activity (the platform default is 300 s; `idleExpirySeconds` is a separate, activity-based timer), so
+ * a cell would lose its sandbox five minutes in. Sized to the CI cell budget (BENCH_CELL_BUDGET_MINUTES,
+ * 330); the runner's own teardown still deletes it as soon as the cell ends.
+ */
+const SANDBOX_LIFETIME_SECS = 330 * 60;
 
 /** The SDK client surface the adapter translates; the package entry passes the real client. */
 export type DaytonaClient = Pick<Daytona, "create" | "get" | "list" | "delete" | "snapshot">;
@@ -304,16 +320,82 @@ export function daytonaVendor(
 
 type V2Sandbox = import("@daytona/sdk/v2").Sandbox;
 
+/** The v2 create shape and placement of one daytona-vm variant. */
+export interface DaytonaVmVariant {
+	/** The v2 region the variant boots and imports its image in. */
+	readonly region: string;
+	/** A burst variant guarantees a minimal CPU floor; a fixed one guarantees the whole benchmark spec. */
+	readonly burst: boolean;
+	/** The placement and resource request, spread into every create. */
+	readonly create: CreateSandboxOptions & {
+		readonly resources: {
+			readonly cpu: number;
+			readonly cpuMax?: number;
+			readonly memory: number;
+			readonly memoryMax: number;
+			readonly disk: number;
+			readonly diskMax: number;
+		};
+	};
+}
+
+/** CPU cores (1 core = 2 vCPU) and GiB at the benchmark spec every fixed variant must match exactly. */
+const SPEC_CORES = TARGET_SPEC.vcpus / 2;
+
 /**
- * daytona-vm's create shape: a 2-core guarantee bursting to a 4-core ceiling, 8 GiB, pinned to Zen 5.
- * The guarantee is the billing floor the cost hook prices against. Memory is reserved at the ceiling:
- * the VM boots with about the guarantee + 1 GiB as MemTotal and hotplugs the rest too slowly, so a
- * 0.5 GiB guarantee had STREAM's first trial global-OOM-killed at 3 GB RSS (run 43769189560).
+ * Fixed: guarantee and ceiling are both the benchmark spec, so the sandbox cannot burst.
+ * Burst (mirrors modal-vm-burst): the smallest CPU guarantee Daytona grants beside 8 GiB of reserved memory
+ * (1 core; a 0.125-core request is raised to it, probe 2026-11-20) up to the shared BURST_BOUNDS ceiling (4 cores = 8 vCPU), and memory from the spec up to the shared 16 GiB ceiling. The VM boots with about the guarantee + 1 GiB as MemTotal and hotplugs
+ * up to the ceiling under pressure (probe 2026-11-23: an 8 GiB floor reached the 16 GiB ceiling within seconds), but a
+ * small floor is too slow: a 0.5 GiB guarantee had STREAM's first trial global-OOM-killed at 3 GB RSS
+ * (run 43769189560), hence the spec-sized floor. The guarantee is the billing floor the cost hook prices against.
  */
-export const DAYTONA_V2_BURST = {
-	cpuType: "zen5",
-	resources: { cpu: 2, cpuMax: 4, memory: 8, memoryMax: 8, disk: 40 },
-} as const satisfies CreateSandboxOptions;
+const FIXED_RESOURCES = {
+	cpu: SPEC_CORES,
+	cpuMax: SPEC_CORES,
+	memory: TARGET_SPEC.memoryGb,
+	memoryMax: TARGET_SPEC.memoryGb,
+	disk: TARGET_SPEC.diskGb,
+	diskMax: TARGET_SPEC.diskGb,
+} as const;
+const BURST_RESOURCES = {
+	cpu: BURST_BOUNDS.vcpusMin / 2,
+	cpuMax: BURST_BOUNDS.vcpusMax / 2,
+	memory: BURST_BOUNDS.memoryGbMin,
+	memoryMax: BURST_BOUNDS.memoryGbMax,
+	disk: TARGET_SPEC.diskGb,
+	diskMax: TARGET_SPEC.diskGb,
+} as const;
+
+/** Zen 5 is the only amd64 CPU type this org's catalog offers (us-east-ash-1). */
+const ZEN5 = { cpuType: "zen5" } as const;
+/** arm64 exists only in us-east-iad-1 (DAYTONA_VM_REGIONS), and no cpuType is pinned: a graviton pin stays in `creating`
+ *  while an unpinned arm64 create boots aarch64 (probe 2026-11-20). */
+const ARM = { cpuArch: "arm64" } as const;
+
+export const DAYTONA_VM_VARIANTS = {
+	"daytona-vm-zen5": {
+		region: DAYTONA_VM_REGIONS["daytona-vm-zen5"],
+		burst: false,
+		create: { cpuType: ZEN5.cpuType, resources: FIXED_RESOURCES },
+	},
+	"daytona-vm-zen5-burst": {
+		region: DAYTONA_VM_REGIONS["daytona-vm-zen5-burst"],
+		burst: true,
+		create: { cpuType: ZEN5.cpuType, resources: BURST_RESOURCES },
+	},
+	"daytona-vm-arm": {
+		region: DAYTONA_VM_REGIONS["daytona-vm-arm"],
+		burst: false,
+		create: { cpuArch: ARM.cpuArch, resources: FIXED_RESOURCES },
+	},
+	"daytona-vm-arm-burst": {
+		region: DAYTONA_VM_REGIONS["daytona-vm-arm-burst"],
+		burst: true,
+		create: { cpuArch: ARM.cpuArch, resources: BURST_RESOURCES },
+	},
+} as const satisfies Record<DaytonaVmId, DaytonaVmVariant>;
+
 /** The v2 client surface the VM adapter translates (`new Daytona(...).v2`). */
 export type DaytonaV2 = Pick<
 	DaytonaV2Client,
@@ -340,13 +422,13 @@ function v2Record(sandbox: V2Sandbox): VendorRecord<V2Sandbox> {
 }
 
 /**
- * daytona-vm over the v2 control plane, where every Linux sandbox is a VM, created with the
- * {@link DAYTONA_V2_BURST} shape; the boot image is the v2 image the bake imported under the
- * artifact name, in `region`.
+ * A daytona-vm variant over the v2 control plane, where every Linux sandbox is a VM, created with the
+ * variant's {@link DAYTONA_VM_VARIANTS} shape; the boot image is the v2 image the bake imported under
+ * the artifact name, in the variant's region.
  */
 export function daytonaV2Vendor(
 	{ resolvedArtifact }: Pick<DriverContext<DaytonaId>, "resolvedArtifact">,
-	region: string,
+	variant: DaytonaVmVariant,
 	client: DaytonaV2,
 ): Vendor<V2Sandbox, V2Sandbox> {
 	const run = async (sandbox: V2Sandbox, command: string, options?: ExecOptions) => {
@@ -365,10 +447,14 @@ export function daytonaV2Vendor(
 			create: async ({ marker }) =>
 				v2Record(
 					await client.create(resolvedArtifact.ref, {
-						...DAYTONA_V2_BURST,
+						...variant.create,
 						name: marker,
-						region,
-						lifecyclePolicy: { idleExpirySeconds: DISABLED },
+						region: variant.region,
+						lifecyclePolicy: {
+							idleExpirySeconds: DISABLED,
+							timeoutSeconds: SANDBOX_LIFETIME_SECS,
+							onTimeout: "delete",
+						},
 						createTimeoutSeconds: CREATE_TIMEOUT_SECS,
 					}),
 				),
@@ -377,7 +463,8 @@ export function daytonaV2Vendor(
 				v2Record(
 					idOrName.startsWith("sbx_")
 						? await client.get(idOrName)
-						: ((await client.findByName(idOrName, { region }))[0] ?? (await client.get(idOrName))),
+						: ((await client.findByName(idOrName, { region: variant.region }))[0] ??
+								(await client.get(idOrName))),
 				),
 			remove: async (id) => {
 				await client.delete(id, { timeoutSeconds: DELETE_TIMEOUT_SECS });
@@ -404,13 +491,20 @@ export function daytonaV2Vendor(
 		data: {
 			attach: ({ raw }) => raw,
 			// The create response omits resources; a fresh read reports the guarantee the VM was given.
-			// The burst shape serves only the cell it was sized for: guarantee = spec CPU, ceiling = spec memory.
+			// A fixed variant must hold the spec exactly (guarantee = ceiling = spec); a burst variant
+			// must hold its minimal CPU floor and spec memory, and may then run above the floor.
 			prepare: async ({ native }, { spec }) => {
 				await native.refreshData();
-				const { cpu, cpuMax, memory, memoryMax, disk } = DAYTONA_V2_BURST.resources;
+				const { resources } = variant.create;
+				const { cpu, memory, disk } = resources;
+				const { cpuMax } = resources;
+				const memoryMax = resources.memoryMax;
+				const specMatches = variant.burst
+					? memory === spec.memoryGb
+					: cpu * 2 === spec.vcpus && memory === spec.memoryGb;
 				return native.sandboxClass === "linux" &&
-					cpu * 2 === spec.vcpus &&
-					memoryMax === spec.memoryGb &&
+					specMatches &&
+					(native.memoryMax === undefined || native.memoryMax === memoryMax) &&
 					native.cpu === cpu &&
 					native.cpuMax === cpuMax &&
 					native.memory === memory &&
@@ -433,7 +527,9 @@ export function daytonaV2Vendor(
 						await native.fs.stat(path);
 						return true;
 					} catch (error) {
-						if (error instanceof V2NotFoundError) return false;
+						// Only a missing FILE is "no". A sandbox that is gone is also a NotFoundError, and answering
+						// "no" for it makes a poll for a result file wait forever on a dead guest.
+						if (error instanceof V2FileNotFoundError) return false;
 						throw error;
 					}
 				},

@@ -1,5 +1,5 @@
 // The Daytona DriverModules: the kit's driver over Daytona's adapter, bound to the real SDK here
-// and nowhere else. daytona-vm runs on the v2 plane (Linux sandboxes are VMs), daytona-container on v0.
+// and nowhere else. the daytona-vm-* variants run on the v2 plane (Linux sandboxes are VMs), daytona-container on v0.
 // Tests lower the same module over a stub client through `vendorDriver`.
 
 import { Daytona } from "@daytona/sdk";
@@ -9,11 +9,12 @@ import type { Vendor } from "@sandbox-benchmarks/driver/vendor";
 import { defineVendorDriver, pinned, VERBATIM_MARKER } from "@sandbox-benchmarks/driver/vendor";
 import { daytonaCostEvidence } from "./cost.ts";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
-import type { DaytonaId } from "./vendor.ts";
+import type { DaytonaId, DaytonaVmId } from "./vendor.ts";
 import {
 	DAYTONA_CONTROL_TIMEOUT_MS,
 	DAYTONA_LISTING_TIMEOUT_MS,
 	DAYTONA_SANDBOX_ID,
+	DAYTONA_VM_VARIANTS,
 	daytonaV2Vendor,
 	daytonaVendor,
 } from "./vendor.ts";
@@ -49,12 +50,12 @@ function defineDaytonaDriver<P extends DaytonaId, Raw, Native>(
 	});
 }
 
-/** daytona-vm boots on the v2 control plane, where every Linux sandbox is a VM. */
-export const defineDaytonaVmDriver = () =>
-	defineDaytonaDriver("daytona-vm", ({ env, resolvedArtifact }) =>
+/** The daytona-vm variants boot on the v2 control plane, where every Linux sandbox is a VM. */
+export const defineDaytonaVmDriver = <P extends DaytonaVmId>(id: P) =>
+	defineDaytonaDriver(id, ({ env, resolvedArtifact }) =>
 		daytonaV2Vendor(
 			{ resolvedArtifact },
-			env.DAYTONA_TARGET,
+			DAYTONA_VM_VARIANTS[id],
 			new Daytona({
 				apiKey: env.DAYTONA_API_KEY,
 				requestTimeoutSeconds: DAYTONA_CONTROL_TIMEOUT_MS / 1000,

@@ -182,11 +182,10 @@ export function vendorSpec<P extends ProviderId, Raw, Native>(
 			const ready = await awaitReady(handle.record, operation.signal);
 			const reason = control.admit?.(ready);
 			if (reason) throw new Error(`${provider} rejected the allocation: ${reason}`);
-			const prepared = await data.prepare?.(
-				{ record: ready, native: handle.native },
-				request,
-				op(operation.signal),
-			);
+			const prepared = await data.prepare?.({ record: ready, native: handle.native }, request, {
+				...operation,
+				...op(operation.signal),
+			});
 			if (prepared?.status === "unsupported") return prepared;
 			const honored = prepared ?? { status: "honored" };
 			const { diskProof } = traits;

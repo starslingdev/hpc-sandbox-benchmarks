@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +23,32 @@ afterEach(() => {
 const reviewedRuncloud = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[0];
 const reviewedFreestyle = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[2];
 const reviewedFreestyleTimeout = AMBIGUOUS_CREATE_INVENTORY_CLEARANCES[4];
+
+test("the frozen Tangle artifact and vendor attestation are checked before account access", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "tangle-original-"));
+	directories.push(directory);
+	// The four original files from Actions artifact 14504847110, packed for Bun.Archive.
+	const archive = join(import.meta.dir, "__fixtures__", "tangle-v8-better-auth.tar.gz");
+	await new Bun.Archive(await Bun.file(archive).bytes()).extract(directory);
+	const path = join(directory, "attempt.json");
+	expect(createHash("sha256").update(readFileSync(path)).digest("hex")).toBe(
+		"8ac579b6de31fa480f8bac0b3b1f9caa46b78cf30d01dfc0b38f66d749fcde90",
+	);
+	const options = { directory, provider: "tangle", suite: "realworld-better-auth" } as const;
+	await expect(recoverAmbiguousCreateInventory(options)).rejects.toThrow(
+		/reviewed Tangle vendor attestation/,
+	);
+	const vendorAttestation = join(directory, "unverified-claim.json");
+	writeFileSync(vendorAttestation, JSON.stringify({ state: "absent", amountUsd: 0 }));
+	await expect(recoverAmbiguousCreateInventory({ ...options, vendorAttestation })).rejects.toThrow(
+		/file does not match the reviewed Tangle vendor attestation/,
+	);
+	const attempt = JSON.parse(readFileSync(path, "utf8"));
+	writeFileSync(path, JSON.stringify({ ...attempt, passes: attempt.passes + 1 }));
+	await expect(recoverAmbiguousCreateInventory({ ...options, vendorAttestation })).rejects.toThrow(
+		/attempt differs from the reviewed artifact/,
+	);
+});
 
 type FixtureProvider = "runcloud" | "freestyle" | "tama";
 type FixtureRefList = { provider: FixtureProvider; id: string }[];

@@ -19,6 +19,7 @@ import type { ProviderId } from "./provider-ids.ts";
 import { REGISTRY } from "./provider-meta/index.ts";
 import { isProviderId } from "./provider-parsers.ts";
 import {
+	FINGERPRINTED_TOOLCHAIN_RELEASES,
 	TOOLCHAIN_IMAGE_NAME,
 	TOOLCHAIN_IMAGE_REPOSITORY,
 	TOOLCHAIN_VERSION,
@@ -53,50 +54,58 @@ export const guestFingerprintSchema = type({
 export type GuestFingerprint = typeof guestFingerprintSchema.infer;
 const sandboxIdString = boundedString(256);
 
-const EXPECTED_TOOLCHAIN_FINGERPRINT: GuestFingerprint = Object.freeze({
-	authority: "toolchain-manifest-v1",
-	imageName: TOOLCHAIN_IMAGE_NAME,
-	imageVersion: TOOLCHAIN_VERSION,
-});
-
 /**
- * Release-owned fingerprint for a canonical provider artifact.
- *
- * Returning `undefined` is intentional for stock boots and arbitrary overrides: those can still be
- * recorded as request fallback (or driver-reported), but a producer cannot upgrade them to guest
- * verification without first adding an authoritative release mapping here.
+ * Live runs verify the current release. Stored runs can also identify an older release by its
+ * immutable versioned ref. An unversioned digest or a candidate cannot identify an old release.
  */
 export function expectedToolchainFingerprint(
 	providerId: ProviderId,
 	requested: DriverResolvedArtifact,
+	scope: "current" | "recorded" = "current",
 ): GuestFingerprint | undefined {
-	const descriptor = REGISTRY[providerId].artifact;
-	if (descriptor.kind !== requested.kind || requested.kind === "none") return;
-	let canonical = false;
-	switch (requested.kind) {
-		case "image":
-			canonical =
-				requested.ref === toolchainImageRef("version") ||
-				requested.ref === toolchainImageRef("candidate") ||
-				isRepositoryDigest(requested.ref, TOOLCHAIN_IMAGE_REPOSITORY);
-			break;
-		case "baked":
-			if (isBakedProviderId(providerId)) {
+	if (REGISTRY[providerId].artifact.kind !== requested.kind || requested.kind === "none") return;
+	const releases = scope === "recorded" ? FINGERPRINTED_TOOLCHAIN_RELEASES : [TOOLCHAIN_VERSION];
+	for (const release of releases) {
+		const current = release === TOOLCHAIN_VERSION;
+		let canonical: boolean;
+		switch (requested.kind) {
+			case "image":
 				canonical =
-					requested.ref === bakedArtifactName(providerId, "version") ||
-					requested.ref === bakedArtifactName(providerId, "candidate");
+					requested.ref === toolchainImageRef("version", release) ||
+					(current &&
+						(requested.ref === toolchainImageRef("candidate") ||
+							isRepositoryDigest(requested.ref, TOOLCHAIN_IMAGE_REPOSITORY)));
+				break;
+			case "baked":
+				canonical =
+					isBakedProviderId(providerId) &&
+					(requested.ref === bakedArtifactName(providerId, "version", release) ||
+						(current && requested.ref === bakedArtifactName(providerId, "candidate")));
+				break;
+			case "mirror": {
+				const refs = vercelVcrImageRefs(
+					VERCEL_TEAM_SLUG_DEFAULT,
+					VERCEL_PROJECT_NAME_DEFAULT,
+					release,
+				);
+				canonical =
+					requested.ref === refs.version ||
+					(current &&
+						(requested.ref === refs.candidate ||
+							isRepositoryDigest(requested.ref, refs.repository)));
+				break;
 			}
-			break;
-		case "mirror": {
-			const refs = vercelVcrImageRefs(VERCEL_TEAM_SLUG_DEFAULT, VERCEL_PROJECT_NAME_DEFAULT);
-			canonical =
-				requested.ref === refs.version ||
-				requested.ref === refs.candidate ||
-				isRepositoryDigest(requested.ref, refs.repository);
-			break;
+			default:
+				return;
+		}
+		if (canonical) {
+			return {
+				authority: "toolchain-manifest-v1",
+				imageName: TOOLCHAIN_IMAGE_NAME,
+				imageVersion: release,
+			};
 		}
 	}
-	return canonical ? EXPECTED_TOOLCHAIN_FINGERPRINT : undefined;
 }
 
 /** A content-addressed image inside a release-owned repository (the bake validation path). */
@@ -178,7 +187,7 @@ export const providerArtifactEvidenceSchema = type({
 			);
 		}
 		if (evidence.provenance.source !== "guest-fingerprint") return true;
-		const expected = expectedToolchainFingerprint(providerId, requested);
+		const expected = expectedToolchainFingerprint(providerId, requested, "recorded");
 		if (expected === undefined) {
 			return ctx.mustBe(
 				`guest fingerprint evidence for a canonical ${providerId} release artifact (got ${JSON.stringify(requested)})`,

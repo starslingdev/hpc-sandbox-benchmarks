@@ -6,7 +6,10 @@
 // pays its module init, and the barrel arktype-compiles every Run/suite/catalog schema at load — 474 ms
 // against 17 ms for these two, which carry no arktype at all. The constants are identical either way.
 import { bakedArtifactName, TARGET_SPEC } from "@sandbox-benchmarks/schema/providers";
+import type { DaytonaVmVariantId } from "@sandbox-benchmarks/schema/toolchain";
 import {
+	DAYTONA_VM_IDS,
+	DAYTONA_VM_REGIONS,
 	TOOLCHAIN_VERSION,
 	toolchainImageRef,
 	VERCEL_PROJECT_NAME_DEFAULT,
@@ -17,16 +20,15 @@ import {
 import { type } from "arktype";
 
 // 1. Env schema — only the variables this app reads, validated at the boundary. All optional; an
-//    explicitly-set but empty value is a misconfiguration and is rejected. DAYTONA_TARGET /
-//    DAYTONA_CONTAINER_TARGET override each variant's region; the defaults below always pin one.
+//    explicitly-set but empty value is a misconfiguration and is rejected. DAYTONA_CONTAINER_TARGET
+//    overrides the container variant's region; the defaults below always pin one. The daytona-vm
+//    variants take their region from DAYTONA_VM_REGIONS and have no environment override.
 const envSchema = type({
 	"FREESTYLE_SNAPSHOT_ID?": "string >= 1",
 	"FREESTYLE_BASE_SNAPSHOT_ID?": "string >= 1",
 	"BENCH_TOOLCHAIN_IMAGE?": "string >= 1",
 	"E2B_TEMPLATE?": "string >= 1",
 	"DAYTONA_API_KEY?": "string >= 1",
-	"DAYTONA_TARGET?": "string >= 1",
-	"DAYTONA_SNAPSHOT?": "string >= 1",
 	// The container variant boots a container-class snapshot in the same us-west-2 region as the VM
 	// variant, sharing DAYTONA_API_KEY. Both overrides are optional — the defaults are computed below.
 	"DAYTONA_CONTAINER_TARGET?": "string >= 1",
@@ -61,8 +63,6 @@ export const ENV_KEYS = [
 	"BENCH_TOOLCHAIN_IMAGE",
 	"E2B_TEMPLATE",
 	"DAYTONA_API_KEY",
-	"DAYTONA_TARGET",
-	"DAYTONA_SNAPSHOT",
 	"DAYTONA_CONTAINER_TARGET",
 	"DAYTONA_CONTAINER_SNAPSHOT",
 	"NOVITA_API_KEY",
@@ -81,7 +81,7 @@ export const ENV_KEYS = [
 //    value is treated as unset, not a misconfiguration: GitHub Actions materializes an unconfigured
 //    secret as an empty-string env var (`FOO: ${{ secrets.MISSING }}` sets FOO=""), so throwing here
 //    would crash EVERY provider's bench job at module load the moment one optional secret is
-//    unsynced — the exact hazard the workflows' `DAYTONA_TARGET || 'us-west-2'` default papered
+//    unsynced — the exact hazard the workflows' old `DAYTONA_TARGET || 'us-west-2'` default papered
 //    over. Empty ⇒ unset keeps a missing credential what it is everywhere else in the harness
 //    (missingCreds treats "" as missing): a downstream skip decision, never an import-time crash.
 const rawEnv: Record<string, string> = {};
@@ -103,7 +103,7 @@ export interface NovitaConfig {
 /**
  * One Daytona isolation variant's account/target — the same shape for both the VM and container
  * variants, which share DAYTONA_API_KEY and the us-west-2 region but differ in the sandbox class
- * baked into their snapshot (`daytona-vm` LINUX_VM, `daytona-container` CONTAINER). The sandbox
+ * baked into their snapshot (the `daytona-vm-*` variants LINUX_VM, `daytona-container` CONTAINER). The sandbox
  * class itself is fixed at bake time, not carried here.
  */
 export interface DaytonaConfig {
@@ -134,8 +134,15 @@ const toolchainImageCandidate = toolchainImageRef("candidate");
 // share a namespace declare a suffix (daytona-container). A new baked provider gets naming for free.
 const e2bTemplateVersion = bakedArtifactName("e2b", "version");
 const e2bTemplateCandidate = bakedArtifactName("e2b", "candidate");
-const daytonaSnapshotDefault = bakedArtifactName("daytona-vm", "version");
-const daytonaSnapshotCandidate = bakedArtifactName("daytona-vm", "candidate");
+const daytonaVmArtifacts = Object.fromEntries(
+	DAYTONA_VM_IDS.map((id) => [
+		id,
+		{
+			version: bakedArtifactName(id, "version"),
+			candidate: bakedArtifactName(id, "candidate"),
+		},
+	]),
+) as Record<DaytonaVmVariantId, { version: string; candidate: string }>;
 const daytonaContainerSnapshotDefault = bakedArtifactName("daytona-container", "version");
 const daytonaContainerSnapshotCandidate = bakedArtifactName("daytona-container", "candidate");
 const novitaTemplateVersion = bakedArtifactName("novita", "version");
@@ -174,23 +181,27 @@ export const config = {
 	e2bTemplateVersion,
 	/** Candidate e2b template name the bake builds while iterating. */
 	e2bTemplateCandidate,
-	/** Canonical (version-scoped) daytona-vm snapshot name; the promote target. */
-	daytonaSnapshotDefault,
-	/** Candidate daytona-vm snapshot name the bake creates while iterating. */
-	daytonaSnapshotCandidate,
+	/** Per daytona-vm variant: the canonical (version-scoped) v2 image name (the promote target) and
+	 *  the candidate name the bake creates while iterating. */
+	daytonaVmArtifacts,
 	/** Canonical (version-scoped) daytona-container snapshot name; the promote target. */
 	daytonaContainerSnapshotDefault,
 	/** Candidate daytona-container snapshot name the bake creates while iterating. */
 	daytonaContainerSnapshotCandidate,
-	/** The daytona-vm account/target the adapter boots from: API key, runner target
-	 *  (`DAYTONA_TARGET` override, else the v2 Zen 5 region `us-east-ash-1`), and the v2 image to boot
-	 *  (`DAYTONA_SNAPSHOT` override, else the version-scoped default). */
-	daytonaVm: {
-		apiKey: env.DAYTONA_API_KEY,
-		target: env.DAYTONA_TARGET ?? "us-east-ash-1",
-		snapshot: env.DAYTONA_SNAPSHOT ?? daytonaSnapshotDefault,
-	} satisfies DaytonaConfig,
-	/** The daytona-container account/target: the SAME API key as daytona-vm, on the v0 plane
+	/** Each daytona-vm variant's account/target the adapter boots from: the shared API key, the v2
+	 *  region its image is imported in and its sandboxes boot in (DAYTONA_VM_REGIONS), and the version-scoped
+	 *  v2 image to boot. */
+	daytonaVm: Object.fromEntries(
+		DAYTONA_VM_IDS.map((id) => [
+			id,
+			{
+				apiKey: env.DAYTONA_API_KEY,
+				target: DAYTONA_VM_REGIONS[id],
+				snapshot: daytonaVmArtifacts[id].version,
+			} satisfies DaytonaConfig,
+		]),
+	) as Record<DaytonaVmVariantId, DaytonaConfig>,
+	/** The daytona-container account/target: the SAME API key as the daytona-vm variants, on the v0 plane
 	 *  (`DAYTONA_CONTAINER_TARGET` override, else `us`), and the container-class snapshot to
 	 *  boot (`DAYTONA_CONTAINER_SNAPSHOT` override, else the version-scoped `-container` default). */
 	daytonaContainer: {

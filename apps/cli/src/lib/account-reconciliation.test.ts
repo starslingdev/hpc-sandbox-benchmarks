@@ -6,11 +6,11 @@ import { openDriver } from "./driver-run.ts";
 const ref: SandboxRef = { provider: "tama", id: "machine-owned" };
 
 for (const id of [
-	"daytona-vm",
+	"daytona-vm-zen5",
 	"daytona-container",
 	"novita",
 	"modal-gvisor",
-	"modal-vm",
+	"modal-vm-burst",
 ] as const) {
 	test(`${id} permits foreign churn but removes only benchmark-owned sandboxes`, async () => {
 		const owned: SandboxRef = { provider: id, id: "benchmark-owned" };
@@ -35,7 +35,7 @@ for (const id of [
 	});
 }
 
-for (const id of ["novita", "modal-gvisor", "modal-vm"] as const) {
+for (const id of ["novita", "modal-gvisor", "modal-vm-burst"] as const) {
 	test(`${id} still rejects malformed inventory, uncertain cleanup and new owned allocations`, async () => {
 		const owned: SandboxRef = { provider: id, id: "benchmark-owned" };
 		for (const candidate of [

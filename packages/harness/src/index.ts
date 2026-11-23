@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import type {
 	BoundCostEvidenceCapability,
 	CreateRequest,
+	DriverCreateOptions,
 	DriverModule,
 	ProviderId,
 	SandboxDriver,
@@ -87,7 +88,14 @@ import {
 	withCleanupPreservingPrimaryError,
 	withOwnedSandbox,
 } from "./lib/sandbox-owner.ts";
-import { DIR, OBSERVED_SPECS_SCRIPT, REPO_REF, REPO_URL, setupSteps } from "./lib/setup.ts";
+import {
+	DIR,
+	OBSERVED_SPECS_SCRIPT,
+	PTS_FREE_DISK_KB,
+	REPO_REF,
+	REPO_URL,
+	setupSteps,
+} from "./lib/setup.ts";
 
 export { collectResults } from "./lib/collect.ts";
 // The sandbox shape `StepRunner` drives. Exported so a caller that builds one from a driver session
@@ -800,6 +808,7 @@ export interface DriverAllocation<Handle = unknown> {
 }
 
 export interface ExecuteSuiteOptions {
+	readonly preparation?: Omit<DriverCreateOptions, "signal">;
 	readonly allocation: DriverAllocation;
 	readonly runId: RunId;
 	readonly replicateIndex?: number;
@@ -832,7 +841,8 @@ export async function executeSuite(options: ExecuteSuiteOptions): Promise<void> 
 			: (timeoutMs ?? SUITE_CREATE_ATTEMPT_TIMEOUT_MS);
 	const session = await createSuiteSandboxFromPlan(
 		{
-			create: (signal) => driver.create({ ...request, deadlineMs }, { signal }),
+			create: (signal) =>
+				driver.create({ ...request, deadlineMs }, { ...options.preparation, signal }),
 			isRetryable: isRetryableDriverCreate,
 			destroy: (destroy, destroyOptions) => destroy(destroyOptions),
 		},
@@ -1005,18 +1015,7 @@ async function runSuiteWork(
 			});
 		}
 		if (suite.minDiskGb) {
-			// Measure free space where the disk-heavy suites actually write, not the sandbox root. The
-			// heavy PTS data (realworld clones/builds, pgbench cluster, fio test files, installed-tests)
-			// lives under the PTS data dir; on Blaxel a 40 GiB volume is mounted there while / stays a
-			// small RAM-overlay tmpfs, so gating on `/` would wrongly skip suites the volume has room for.
-			// The dir exists on every baked-image provider (on the root fs → identical to `/`) and on
-			// Blaxel (the mount); it's absent only pre-PTS on a stock gVisor root (Modal), where the `/`
-			// fallback preserves today's behavior.
-			const df = await runner.run(
-				"check free disk",
-				'd=/var/lib/phoronix-test-suite; [ -d "$d" ] || d=/; df -Pk "$d" | awk \'NR==2 {print $4}\'',
-				MIN,
-			);
+			const df = await runner.run("check free disk", PTS_FREE_DISK_KB, MIN);
 			// Treat non-numeric df output as 0 free (skip) — a NaN comparison would silently pass the check.
 			const freeKb = Number.parseInt((df.stdout || "").trim(), 10);
 			const freeGb = Number.isNaN(freeKb) ? 0 : freeKb / 1024 / 1024;

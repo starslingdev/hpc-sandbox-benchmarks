@@ -44,6 +44,13 @@ const suiteWf = readWorkflow(SUITE_WORKFLOW);
 const suiteInput = dispatchInput(smoke, "suite", SMOKE_WORKFLOW);
 const suiteEnv = stepEnv(suiteWf, SUITE_JOB, RUN_STEP, SUITE_WORKFLOW);
 
+const DAYTONA_VMS = [
+	"daytona-vm-zen5",
+	"daytona-vm-zen5-burst",
+	"daytona-vm-arm",
+	"daytona-vm-arm-burst",
+] as const;
+
 describe("parsers against the real workflow files", () => {
 	test("dispatchInput extracts the smoke suite choice", () => {
 		expect(new Set(suiteInput.options)).toEqual(new Set(SUITE_NAMES));
@@ -160,8 +167,12 @@ describe("requiredCredentialKeys", () => {
 		const required = requiredCredentialKeys();
 		expect(required.get("E2B_API_KEY")).toEqual(["e2b"]);
 		// A credential shared by a vendor's isolation variants records every owner, in registry order.
-		expect(required.get("MODAL_TOKEN_ID")).toEqual(["modal-gvisor", "modal-vm"]);
-		expect(required.get("DAYTONA_API_KEY")).toEqual(["daytona-vm", "daytona-container"]);
+		expect(required.get("MODAL_TOKEN_ID")).toEqual([
+			"modal-gvisor",
+			"modal-vm-fixed",
+			"modal-vm-burst",
+		]);
+		expect(required.get("DAYTONA_API_KEY")).toEqual([...DAYTONA_VMS, "daytona-container"]);
 	});
 });
 

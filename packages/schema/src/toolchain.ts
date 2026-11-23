@@ -40,7 +40,9 @@ export const VERCEL_VCR_REPOSITORY = `${TOOLCHAIN_IMAGE_NAME}-vercel`;
 // a directory mode. Re-bake all providers before the runs that consume v8.
 // v9 packages the image's initialized pgbench cluster for providers that run as an
 // unprivileged user. The tool pins, workload and scoring are the same as v8.
-export const TOOLCHAIN_VERSION = "v9";
+// Newest first. Each entry has a release-owned guest manifest in published benchmark evidence.
+export const FINGERPRINTED_TOOLCHAIN_RELEASES = ["v9", "v8"] as const;
+export const TOOLCHAIN_VERSION = FINGERPRINTED_TOOLCHAIN_RELEASES[0];
 
 /** Public registry repository the shared toolchain image is published to. */
 export const TOOLCHAIN_IMAGE_REPOSITORY = `ghcr.io/starslingdev/${TOOLCHAIN_IMAGE_NAME}`;
@@ -56,8 +58,11 @@ export const TOOLCHAIN_CANDIDATE_SUFFIX = "-candidate";
  * runtime config gatekeeper and the driver composition root derive the same ref instead of each
  * rebuilding the repository string.
  */
-export function toolchainImageRef(phase: "candidate" | "version"): string {
-	const version = `${TOOLCHAIN_IMAGE_REPOSITORY}:${TOOLCHAIN_VERSION}`;
+export function toolchainImageRef(
+	phase: "candidate" | "version",
+	release: string = TOOLCHAIN_VERSION,
+): string {
+	const version = `${TOOLCHAIN_IMAGE_REPOSITORY}:${release}`;
 	return phase === "candidate" ? `${version}${TOOLCHAIN_CANDIDATE_SUFFIX}` : version;
 }
 
@@ -80,7 +85,11 @@ export const VERCEL_PROJECT_NAME_DEFAULT = "hpc-sandbox-benchmarks";
  * Build canonical VCR refs from human-readable Vercel namespace names. API IDs (`team_*`, `prj_*`)
  * are deliberately rejected so they can never accidentally become Docker path segments.
  */
-export function vercelVcrImageRefs(teamSlug: string, projectName: string) {
+export function vercelVcrImageRefs(
+	teamSlug: string,
+	projectName: string,
+	release: string = TOOLCHAIN_VERSION,
+) {
 	for (const [label, value, idPrefix] of [
 		["team slug", teamSlug, "team_"],
 		["project name", projectName, "prj_"],
@@ -92,7 +101,7 @@ export function vercelVcrImageRefs(teamSlug: string, projectName: string) {
 		}
 	}
 	const repository = `vcr.vercel.com/${teamSlug}/${projectName}/${VERCEL_VCR_REPOSITORY}`;
-	const version = `${repository}:${TOOLCHAIN_VERSION}`;
+	const version = `${repository}:${release}`;
 	return Object.freeze({
 		repository,
 		version,
@@ -249,3 +258,20 @@ export const PTS_STATE_SELECT_SH =
 	`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/; ` +
 	`if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/; ` +
 	`else unset PTS_USER_PATH_OVERRIDE; fi ;; esac; fi`;
+
+/**
+ * The Daytona v2 region each daytona-vm variant boots and imports its toolchain image in. Zen 5, the
+ * only amd64 CPU type the org's catalog offers, is in us-east-ash-1; arm64 exists only in
+ * us-east-iad-1. A v2 image lives in one narrow region (Daytona refuses a broad one such as `us`), so
+ * the bake and the boot must agree — one table, read by both.
+ */
+export const DAYTONA_VM_REGIONS = {
+	"daytona-vm-zen5": "us-east-ash-1",
+	"daytona-vm-zen5-burst": "us-east-ash-1",
+	"daytona-vm-arm": "us-east-iad-1",
+	"daytona-vm-arm-burst": "us-east-iad-1",
+} as const;
+
+export type DaytonaVmVariantId = keyof typeof DAYTONA_VM_REGIONS;
+
+export const DAYTONA_VM_IDS = Object.keys(DAYTONA_VM_REGIONS) as DaytonaVmVariantId[];

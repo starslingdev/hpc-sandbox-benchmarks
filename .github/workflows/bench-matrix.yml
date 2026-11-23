@@ -7,7 +7,7 @@ on:
         description: 'Comma-separated providers to benchmark (blank = every registered provider).'
         required: false
         type: string
-        default: e2b,daytona-vm,blaxel,microsandbox-cloud,modal-gvisor,modal-vm,novita,namespace,vercel,runcloud,tama,boat,freestyle,digitalocean
+        default: e2b,daytona-vm-zen5,daytona-vm-zen5-burst,blaxel,microsandbox-cloud,modal-gvisor,modal-vm-fixed,modal-vm-burst,novita,namespace,vercel,runcloud,tama,boat,freestyle,digitalocean
       suites:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false
@@ -76,7 +76,6 @@ jobs:
           BENCH_PTS_PASSES: ${{ inputs.pts_passes }}
           BENCH_ACCOUNT_CAPACITY: ${{ vars.BENCH_ACCOUNT_CAPACITY }}
           BENCH_ARTIFACT_E2B: ${{ vars.E2B_TEMPLATE }}
-          BENCH_ARTIFACT_DAYTONA_VM: ${{ vars.DAYTONA_SNAPSHOT }}
           BENCH_ARTIFACT_DAYTONA_CONTAINER: ${{ vars.DAYTONA_CONTAINER_SNAPSHOT }}
           BENCH_ARTIFACT_VERCEL: ${{ vars.BENCH_ARTIFACT_VERCEL }}
           BENCH_ARTIFACT_FREESTYLE: ${{ vars.FREESTYLE_SNAPSHOT_ID }}
