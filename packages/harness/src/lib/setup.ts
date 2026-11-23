@@ -6,20 +6,25 @@
  * Env:
  *   BENCH_REPO_URL    Repo to clone (default: this repo, so the cloned producer matches the harness).
  *   BENCH_REPO_REF    Ref to check out (default: main; CI passes the commit SHA).
- *   BENCH_REPO_TOKEN  Token for cloning a private repo; stripped from the remote right after clone.
+ *   BENCH_REPO_TOKEN  Token for fetching a private repo; never written to the checkout config.
  */
 import type { Suite } from "@sandbox-benchmarks/schema";
 import { PTS_APT_DEPS, PTS_BAKED_ROOT } from "@sandbox-benchmarks/schema";
-import { MIN } from "./execute.ts";
+import { MIN, shellQuote } from "./execute.ts";
 
 export const REPO_URL =
-	process.env.BENCH_REPO_URL || "https://github.com/starslingdev/sandbox-benchmarks";
+	process.env.BENCH_REPO_URL || "https://github.com/starslingdev/hpc-sandbox-benchmarks";
 export const REPO_REF = process.env.BENCH_REPO_REF || "main";
 const REPO_TOKEN = process.env.BENCH_REPO_TOKEN || "";
 
-const CLONE_URL = REPO_TOKEN
-	? REPO_URL.replace(/^https:\/\//, `https://x-access-token:${encodeURIComponent(REPO_TOKEN)}@`)
-	: REPO_URL;
+const cloneUrl = REPO_URL.replace(
+	/^https:\/\//,
+	`https://x-access-token:${encodeURIComponent(REPO_TOKEN)}@`,
+);
+const networkGit =
+	REPO_TOKEN && cloneUrl !== REPO_URL
+		? `git -c ${shellQuote(`url.${cloneUrl}.insteadOf=${REPO_URL}`)}`
+		: "git";
 
 // Resolved in-sandbox: images differ on user (root vs daytona), so the checkout lives under $HOME.
 export const DIR = '"$HOME/sandbox-benchmarks"';
@@ -65,9 +70,30 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 		},
 		{
 			label: "clone repo",
-			// Drop the token from the remote immediately so later steps can't leak it. Branch refs need
-			// the origin/ fallback: bare `checkout --detach <branch>` DWIMs a remote branch into -b mode.
-			script: `rm -rf ${DIR} && git clone "${CLONE_URL}" ${DIR} && cd ${DIR} && git remote set-url origin "${REPO_URL}" && (git checkout --detach "${ref}" 2>/dev/null || git checkout --detach "origin/${ref}") && git log -1 --oneline${sourceRevision ? ` && test "$(git rev-parse HEAD)" = "${sourceRevision}"` : ""}`,
+			// The producer uses the complete tree of one revision. Fetching its history copies every
+			// prior dataset into every sandbox. Retain clone semantics for relative refs and servers
+			// that do not advertise a requested commit. Only network commands receive credentials.
+			script: [
+				"set -eu",
+				`repo=${shellQuote(REPO_URL)}`,
+				`ref=${shellQuote(ref)}`,
+				`target=${DIR}`,
+				'rm -rf "$target"',
+				'git init -q "$target"',
+				'cd "$target"',
+				'git remote add origin "$repo"',
+				`if git check-ref-format --allow-onelevel "$ref" && ${networkGit} fetch --quiet --no-tags --depth=1 -- origin "$ref"; then`,
+				"  git checkout --quiet --detach FETCH_HEAD",
+				"else",
+				'  cd "$HOME"',
+				'  rm -rf "$target"',
+				`  ${networkGit} clone --quiet -- "$repo" "$target"`,
+				'  cd "$target"',
+				'  git checkout --detach "$ref" 2>/dev/null || git checkout --detach "origin/$ref"',
+				"fi",
+				"git log -1 --oneline",
+				...(sourceRevision ? [`test "$(git rev-parse HEAD)" = "${sourceRevision}"`] : []),
+			].join("\n"),
 			timeoutMs: 5 * MIN,
 		},
 		{

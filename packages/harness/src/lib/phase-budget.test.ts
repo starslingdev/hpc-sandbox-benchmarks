@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { SandboxSession } from "@sandbox-benchmarks/driver";
 import { SessionStepRunner } from "./execute.ts";
 
@@ -51,20 +55,63 @@ test("foreground transport failure preserves attempted phase with unknown exit",
 	expect(runner.stepLog).toMatchObject([{ label: "workload", phase: "benchmark", exitCode: null }]);
 });
 
-test("managed setup pins and verifies the experiment commit, independent of ambient branch defaults", async () => {
-	const { setupSteps } = await import("./setup.ts");
-	const sha = "a".repeat(40);
-	const clone = setupSteps(
-		{
-			wave: "synthetic-system",
-			commands: [],
-			commandTimeoutMinutes: 1,
-			timeoutMinutes: 1,
-			dimensions: [],
-			metrics: [],
-		},
-		sha,
-	).find((step) => step.label === "clone repo");
-	expect(clone?.script).toContain(`git checkout --detach "${sha}"`);
-	expect(clone?.script).toContain(`test "$(git rev-parse HEAD)" = "${sha}"`);
+test("managed checkout gets the pinned tree in one commit when the branch has moved", async () => {
+	const { REPO_URL, setupSteps } = await import("./setup.ts");
+	const { SUITES } = await import("@sandbox-benchmarks/schema");
+	const home = mkdtempSync(join(tmpdir(), "bench-source-"));
+	try {
+		// Only this fixture's repositories: an inherited GIT_DIR (as in a git hook) would point the
+		// clone script's init, remote and fetch at the caller's checkout.
+		const env = Object.fromEntries(
+			Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+		);
+		const origin = join(home, "origin.git");
+		const checkout = join(home, "sandbox-benchmarks");
+		const init = Bun.spawnSync(["git", "init", "--bare", "--initial-branch=main", origin], {
+			env,
+		});
+		expect(init.exitCode, init.stderr.toString()).toBe(0);
+		const history = [1, 2]
+			.map((n) =>
+				[
+					"commit refs/heads/main",
+					`committer Fixture <fixture@example.com> 100000000${n} +0000`,
+					"data 1",
+					String(n),
+					"M 100644 inline workload",
+					"data 1",
+					String(n),
+					"",
+				].join("\n"),
+			)
+			.join("\n");
+		const write = Bun.spawnSync(["git", "-C", origin, "fast-import", "--quiet"], {
+			env,
+			stdin: Buffer.from(history),
+		});
+		expect(write.exitCode, write.stderr.toString()).toBe(0);
+		const git = (dir: string, ...args: string[]) =>
+			Bun.spawnSync(["git", "-C", dir, ...args], { env, stdout: "pipe" })
+				.stdout.toString()
+				.trim();
+		const sha = git(origin, "rev-parse", "main^");
+		const clone = setupSteps(SUITES.pgbench, sha).find((step) => step.label === "clone repo");
+		if (!clone) throw new Error("clone step missing");
+		const result = Bun.spawnSync(["bash", "-c", clone.script], {
+			env: {
+				...env,
+				HOME: home,
+				GIT_CONFIG_COUNT: "1",
+				GIT_CONFIG_KEY_0: `url.${pathToFileURL(origin).href}.insteadOf`,
+				GIT_CONFIG_VALUE_0: REPO_URL,
+			},
+		});
+		expect(result.exitCode, result.stderr.toString()).toBe(0);
+		expect(git(checkout, "rev-parse", "HEAD")).toBe(sha);
+		expect(git(checkout, "rev-parse", "--is-shallow-repository")).toBe("true");
+		expect(readFileSync(join(checkout, "workload"), "utf8")).toBe("1");
+		expect(git(checkout, "config", "--get", "remote.origin.url")).toBe(REPO_URL);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
 });
