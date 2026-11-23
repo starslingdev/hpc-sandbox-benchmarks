@@ -4,6 +4,7 @@
 
 import type { CreateAttempt, Op } from "@sandbox-benchmarks/driver/vendor";
 import { coverage, defineVendorDriver, LEAK_EXPIRY_MS } from "@sandbox-benchmarks/driver/vendor";
+import { BURST_BOUNDS } from "@sandbox-benchmarks/schema/target-spec";
 import { ModalClient } from "modal";
 import type { ClientMiddleware } from "nice-grpc";
 import { MODAL_MARKER_TAG, modalCostEvidence } from "./cost.ts";
@@ -63,26 +64,34 @@ export function modalAllocate(
 	return ({ request: { spec, env }, marker }: CreateAttempt, { signal }: Op) =>
 		runner.run({ signal }, async (client) => {
 			const app = await client.apps.fromName(modalAppName(provider), { createIfMissing: true });
-			const memoryBytes = spec.memoryGb * 1024 ** 3;
+			const isVm = provider !== "modal-gvisor";
+			// The shared burst bounds (BURST_BOUNDS) apply to the burst VM only: it is requested at the floor
+			// and may rise to the ceiling. Every other variant is limited at the spec.
+			const burstVm = provider === "modal-vm-burst";
+			const memoryLimitMiB = (burstVm ? BURST_BOUNDS.memoryGbMax : spec.memoryGb) * 1024;
+			const memoryRequestMiB = (burstVm ? BURST_BOUNDS.memoryGbMin : spec.memoryGb) * 1024;
+			const memoryBytes = memoryLimitMiB * 1024 ** 2;
 			const taskMemoryBytes =
 				memoryBytes >= 2 * 1024 ** 3 ? memoryBytes - 1024 ** 3 : memoryBytes / 2;
-			const memoryLimitMiB = spec.memoryGb * 1024;
-			const isVm = provider !== "modal-gvisor";
 			// `modal-vm-fixed` pins the CPU: reservation equals the hard limit, at the spec's vCPUs
 			// (probed on the VM runtime: the guest sees exactly `cpu` vCPUs, so cpu 2 showed nproc 2 and missed
 			// the 4 vCPU spec; cpu 4 showed 4). Every other variant requests the minimum and bursts.
 			const cpuShape =
-				provider === "modal-vm-fixed" ? { cpu: spec.vcpus, cpuLimit: spec.vcpus } : { cpu: 0.125 };
+				provider === "modal-vm-fixed"
+					? { cpu: spec.vcpus, cpuLimit: spec.vcpus }
+					: burstVm
+						? { cpu: BURST_BOUNDS.vcpusMin, cpuLimit: BURST_BOUNDS.vcpusMax }
+						: { cpu: 0.125 };
 			const params = {
 				name: marker,
 				timeoutMs: LEAK_EXPIRY_MS,
 				// Modal bills max(request, usage) and bursts above the request
 				// (https://modal.com/docs/guide/sandbox-resources), so a burst variant requests the
-				// 0.125-core minimum.
+				// BURST_BOUNDS floor.
 				...cpuShape,
 				// Modal supports memory bursting, with an SLO up to MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB. But disable for vms because of observed OOMs
 				memoryMiB:
-					isVm || memoryLimitMiB > MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB ? memoryLimitMiB : 128,
+					isVm || memoryLimitMiB > MODAL_BURST_EVICTION_SLO_MAX_MEMORY_MIB ? memoryRequestMiB : 128,
 				// Bound memory bursting by the benchmark's memory ceiling.
 				memoryLimitMiB,
 				env: {

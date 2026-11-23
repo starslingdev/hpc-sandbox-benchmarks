@@ -14,7 +14,7 @@ export default defineProviderMeta("modal-vm-burst", {
 		class: "microVM",
 		technology: "microVM (VM runtime)",
 		notes:
-			"Modal's VM runtime — a gVisor-free KVM microVM, selected per-create via runtime: vm with CPU and memory bursting and experimentalOptions.performance_sensitive (same pushed toolchain image as modal-gvisor; https://modal.com/docs/guide/performance-sensitive-sandboxes).",
+			"Modal's VM runtime — a gVisor-free KVM microVM, selected per-create via runtime: vm with CPU and memory bursting between the shared BURST_BOUNDS floor and ceiling (2-8 vCPU, 8-16 GiB) and experimentalOptions.performance_sensitive (same pushed toolchain image as modal-gvisor; https://modal.com/docs/guide/performance-sensitive-sandboxes).",
 	},
 	pricing: modalPricing,
 	maturity: {
