@@ -218,6 +218,10 @@ describe("frozen suite image preparation", () => {
 	});
 	// A committed copy of HEAD's workload inputs, so uncommitted edits in this checkout can't
 	// change the answer. Returns the copy's root and its commit.
+	// The copy is its own repository: no inherited GIT_DIR/GIT_INDEX_FILE may point at this checkout.
+	const gitFreeEnv = Object.fromEntries(
+		Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+	);
 	const frozenCopy = () => {
 		const dir = mkdtempSync(join(tmpdir(), "suite-tasks-"));
 		copies.push(dir);
@@ -231,7 +235,7 @@ describe("frozen suite image preparation", () => {
 			execFileSync(
 				"git",
 				["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args],
-				{ cwd: dir, encoding: "utf8", env: { ...process.env, GIT_DIR: undefined } },
+				{ cwd: dir, encoding: "utf8", env: gitFreeEnv },
 			).trim();
 		git("init", "-q");
 		git("add", "-A");

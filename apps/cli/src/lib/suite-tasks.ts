@@ -349,6 +349,7 @@ export const SUITE_WORKLOAD_INPUTS = [
 	"packages/schema/src",
 ] as const;
 
+const GIT_LOCATION_ENV = new Set(["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]);
 const sourceByRevision = new Map<string, Promise<boolean>>();
 const preparationBySuite = new Map<string, Promise<BakedProfiles>>();
 const PIN = /^(?:pts|local)\/[a-z0-9][a-z0-9._-]*-\d+(?:\.\d+)+$/;
@@ -365,7 +366,11 @@ const memo = <T>(cache: Map<string, Promise<T>>, key: string, compute: () => Pro
 /** Keep generic image preparation for unpinned checkouts or differing workload definitions. */
 async function sourceMatches(root: string, revision: string): Promise<boolean> {
 	try {
-		const git = (args: string[]) => Bun.$`git ${args}`.cwd(root).quiet().nothrow();
+		// Inspect `root` itself, even when invoked from a git hook that exports GIT_DIR and friends.
+		const env = Object.fromEntries(
+			Object.entries(process.env).filter(([name]) => !GIT_LOCATION_ENV.has(name)),
+		);
+		const git = (args: string[]) => Bun.$`git ${args}`.cwd(root).env(env).quiet().nothrow();
 		const [diff, untracked] = await Promise.all([
 			git(["diff", "--quiet", "--no-ext-diff", revision, "--", ...SUITE_WORKLOAD_INPUTS]),
 			git(["ls-files", "--others", "--exclude-standard", "--", ...SUITE_WORKLOAD_INPUTS]),
