@@ -66,3 +66,8 @@ test("the preflight stages only a frozen suite's profiles and otherwise stages e
 		`set -- ${root}/iperf-1.2.0\n`,
 	);
 });
+
+test("the driver keeps every sandbox call on the public Sandbox API", async () => {
+	const { tangleClient } = await import("./index.ts");
+	expect(tangleClient("key").directExec).toBe(false);
+});
