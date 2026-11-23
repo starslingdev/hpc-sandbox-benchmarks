@@ -258,3 +258,20 @@ export const PTS_STATE_SELECT_SH =
 	`export PTS_TEST_INSTALL_ROOT_PATH=${PTS_BAKED_ROOT}/installed-tests/; ` +
 	`if [ "$(id -u)" -eq 0 ]; then export PTS_USER_PATH_OVERRIDE=${PTS_BAKED_ROOT}/; ` +
 	`else unset PTS_USER_PATH_OVERRIDE; fi ;; esac; fi`;
+
+/**
+ * The Daytona v2 region each daytona-vm variant boots and imports its toolchain image in. Zen 5, the
+ * only amd64 CPU type the org's catalog offers, is in us-east-ash-1; arm64 exists only in
+ * us-east-iad-1. A v2 image lives in one narrow region (Daytona refuses a broad one such as `us`), so
+ * the bake and the boot must agree — one table, read by both.
+ */
+export const DAYTONA_VM_REGIONS = {
+	"daytona-vm-zen5": "us-east-ash-1",
+	"daytona-vm-zen5-burst": "us-east-ash-1",
+	"daytona-vm-arm": "us-east-iad-1",
+	"daytona-vm-arm-burst": "us-east-iad-1",
+} as const;
+
+export type DaytonaVmVariantId = keyof typeof DAYTONA_VM_REGIONS;
+
+export const DAYTONA_VM_IDS = Object.keys(DAYTONA_VM_REGIONS) as DaytonaVmVariantId[];

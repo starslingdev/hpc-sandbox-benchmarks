@@ -7,11 +7,17 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./vm": "./src/vm.ts",
     "./container": "./src/container.ts",
+    "./vm-zen5": "./src/vm-zen5.ts",
+    "./vm-zen5-burst": "./src/vm-zen5-burst.ts",
+    "./vm-arm": "./src/vm-arm.ts",
+    "./vm-arm-burst": "./src/vm-arm-burst.ts",
     "./package.json": "./package.json",
-    "./vm/artifact": "./src/vm/artifact.ts",
-    "./container/artifact": "./src/container/artifact.ts"
+    "./container/artifact": "./src/container/artifact.ts",
+    "./vm-zen5/artifact": "./src/vm-zen5/artifact.ts",
+    "./vm-zen5-burst/artifact": "./src/vm-zen5-burst/artifact.ts",
+    "./vm-arm/artifact": "./src/vm-arm/artifact.ts",
+    "./vm-arm-burst/artifact": "./src/vm-arm-burst/artifact.ts"
   },
   "scripts": {
     "test": "bun test"

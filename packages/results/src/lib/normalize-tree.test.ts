@@ -38,7 +38,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 	let providerDir: string;
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "norm-dedupe-"));
-		providerDir = join(root, "daytona-vm");
+		providerDir = join(root, "daytona-vm-zen5");
 		mkdirSync(providerDir);
 	});
 	afterEach(() => {
@@ -51,7 +51,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 		writeFileSync(join(providerDir, "pts_compress_zstd.xml"), composite("10.5:10.6:10.4"));
 		writeFileSync(join(providerDir, "pts_node-web-tooling.xml"), composite("10.5:10.6:10.4"));
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		const matches = run.metrics.filter((m) => m.metricId === "node_web_tooling_runs_per_s");
 		// The leaked metric is kept exactly once (other catalogued metrics — e.g. derived economics — may
 		// also be present; this asserts the de-dup, not the total count).
@@ -68,7 +68,7 @@ describe("normalizeProviderDir de-dupes a metric leaked into two composites", ()
 		try {
 			writeFileSync(join(providerDir, "pts_compress_zstd.xml"), composite("10.5:10.6:10.4"));
 			writeFileSync(join(providerDir, "pts_node-web-tooling.xml"), composite("99.9:99.8"));
-			normalizeProviderDir(root, "daytona-vm");
+			normalizeProviderDir(root, "daytona-vm-zen5");
 			expect(warn.mock.calls.flat().join("\n")).toMatch(/DIFFERENT samples/);
 		} finally {
 			warn.mockRestore();
@@ -81,7 +81,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 	let providerDir: string;
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "norm-tagged-"));
-		providerDir = join(root, "daytona-vm");
+		providerDir = join(root, "daytona-vm-zen5");
 		mkdirSync(providerDir);
 	});
 	afterEach(() => {
@@ -94,7 +94,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
 		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 4, memoryGb: 8 }));
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.validationStatus).toBe("validated");
 		const metric = run.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		// sourceFile is prefixed with the suite so a number stays traceable to the suite that wrote it.
@@ -112,7 +112,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		mkdirSync(suiteDir);
 		const evidence = {
 			kind: "missing",
-			cell: { runId: "run-cost", providerId: "daytona-vm", suite: "cpu-node" },
+			cell: { runId: "run-cost", providerId: "daytona-vm-zen5", suite: "cpu-node" },
 			subject: { kind: "sandbox", sandboxId: "sb-1" },
 			capturedAt: "2026-08-08T00:00:00.000Z",
 			sdk: { packageName: "sdk", version: "1.0.0" },
@@ -121,7 +121,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		} as const;
 		writeFileSync(join(suiteDir, "provider-cost-evidence.json"), JSON.stringify(evidence));
 		const artifactEvidence = {
-			cell: { runId: "run-cost", providerId: "daytona-vm", suite: "cpu-node" },
+			cell: { runId: "run-cost", providerId: "daytona-vm-zen5", suite: "cpu-node" },
 			sandboxId: "sb-1",
 			provenance: {
 				source: "request-fallback",
@@ -140,10 +140,10 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		});
 		expect(run.schemaVersion).toBe("6");
 		expect(
-			run.providers.find((provider) => provider.providerId === "daytona-vm")?.costEvidence,
+			run.providers.find((provider) => provider.providerId === "daytona-vm-zen5")?.costEvidence,
 		).toEqual([evidence]);
 		expect(
-			run.providers.find((provider) => provider.providerId === "daytona-vm")?.artifactEvidence,
+			run.providers.find((provider) => provider.providerId === "daytona-vm-zen5")?.artifactEvidence,
 		).toEqual([artifactEvidence]);
 		expect(run.providers.every((provider) => Array.isArray(provider.costEvidence))).toBe(true);
 		expect(run.providers.every((provider) => Array.isArray(provider.artifactEvidence))).toBe(true);
@@ -153,7 +153,9 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		const suiteDir = join(providerDir, "cpu-node");
 		mkdirSync(suiteDir);
 		writeFileSync(join(suiteDir, "provider-cost-evidence.json"), '{"kind":"observed"}');
-		expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(/invalid daytona-vm\/cpu-node/);
+		expect(() => normalizeProviderDir(root, "daytona-vm-zen5")).toThrow(
+			/invalid daytona-vm-zen5\/cpu-node/,
+		);
 	});
 
 	it("rejects an oversized recognized evidence file before JSON parsing", () => {
@@ -163,7 +165,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			join(suiteDir, "provider-cost-evidence.json"),
 			`{"padding":"${"x".repeat(97 * 1024)}"}`,
 		);
-		expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(/exceeds 96 KiB/);
+		expect(() => normalizeProviderDir(root, "daytona-vm-zen5")).toThrow(/exceeds 96 KiB/);
 	});
 
 	it("opens recognized evidence with no-follow semantics and rejects a symlink", () => {
@@ -172,8 +174,8 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		const outside = join(root, "outside-evidence.json");
 		writeFileSync(outside, "{}\n");
 		symlinkSync(outside, join(suiteDir, "provider-cost-evidence.json"), "file");
-		expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(
-			/invalid daytona-vm\/cpu-node\/provider-cost-evidence\.json/,
+		expect(() => normalizeProviderDir(root, "daytona-vm-zen5")).toThrow(
+			/invalid daytona-vm-zen5\/cpu-node\/provider-cost-evidence\.json/,
 		);
 	});
 
@@ -185,7 +187,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			const evidencePath = join(suiteDir, "provider-cost-evidence.json");
 			const created = spawnSync("mkfifo", [evidencePath]);
 			if (created.status !== 0) return;
-			expect(() => normalizeProviderDir(root, "daytona-vm")).toThrow(
+			expect(() => normalizeProviderDir(root, "daytona-vm-zen5")).toThrow(
 				/evidence path is not a regular file/,
 			);
 		},
@@ -203,7 +205,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			JSON.stringify({ systems: { sandbox: { hardware: { Processor: "AMD EPYC" } } } }),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.observedSpecs).toMatchObject({
 			egressAsn: "AS64500",
 			manufacturer: "Amazon EC2",
@@ -228,7 +230,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		mkdirSync(barren);
 		writeFileSync(join(barren, "observed-specs.json"), JSON.stringify({ vcpus: 4 }));
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.suitesCovered).toEqual(["cpu-node"]);
 		// `memory` produced neither a metric nor a marker, so it is accounted for nowhere on this provider
 		// — the Run cannot describe it, and buildLeaderboard derives it as `missing` across the whole run.
@@ -241,14 +243,14 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		writeFileSync(
 			join(suiteDir, "sandbox-daytona-cpu-node--failed.json"),
 			JSON.stringify({
-				provider: "daytona-vm",
+				provider: "daytona-vm-zen5",
 				suite: "cpu-node",
 				outcome: "failed",
 				reason: "PTS produced no pts_*.xml",
 			}),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -316,7 +318,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 		// The in-sandbox probe reports the EFFECTIVE 2-vCPU cgroup quota.
 		writeFileSync(join(suiteDir, "observed-specs.json"), JSON.stringify({ vcpus: 2, memoryGb: 8 }));
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		// Host disclosure from <System> lands on the host side…
 		expect(run.observedSpecs.hostVcpus).toBe(48);
 		expect(run.observedSpecs.hostMemoryGb).toBe(64);
@@ -330,7 +332,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 
 	it("does NOT attach economics to a pending provider (no measured metrics)", () => {
 		// Empty provider dir → pending; economics must not promote it or appear.
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.validationStatus).toBe("pending");
 		expect(run.metrics).toEqual([]);
 	});
@@ -342,7 +344,7 @@ describe("normalizeProviderDir reads the suite-tagged layout", () => {
 			mkdirSync(bogusDir);
 			writeFileSync(join(bogusDir, "pts_node-web-tooling.xml"), composite("16.1:16.3:16.0"));
 
-			const run = normalizeProviderDir(root, "daytona-vm");
+			const run = normalizeProviderDir(root, "daytona-vm-zen5");
 			// The unknown subdir is skipped, so nothing is attributed and the provider stays pending.
 			expect(run.metrics).toEqual([]);
 			expect(run.validationStatus).toBe("pending");
@@ -421,7 +423,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 	let providerDir: string;
 	beforeEach(() => {
 		root = mkdtempSync(join(tmpdir(), "norm-shortfall-"));
-		providerDir = join(root, "daytona-vm");
+		providerDir = join(root, "daytona-vm-zen5");
 		mkdirSync(providerDir);
 	});
 	afterEach(() => {
@@ -452,7 +454,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 </PhoronixTestSuite>`,
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -473,7 +475,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		mkdirSync(suiteDir);
 		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), emptyNodeComposite);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -498,10 +500,10 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		writeFileSync(join(suiteDir, "pts_node-web-tooling.xml"), emptyNodeComposite);
 		writeFileSync(
 			join(suiteDir, "sandbox-daytona-vm-cpu-node--failed.json"),
-			harnessGapMarkerJson("daytona-vm", "cpu-node", "failed", "PTS produced no result"),
+			harnessGapMarkerJson("daytona-vm-zen5", "cpu-node", "failed", "PTS produced no result"),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		// Exactly ONE cpu-node gap — the marker's reason wins; the shortfall stays suppressed.
 		expect(run.gaps).toEqual([
 			{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "PTS produced no result" },
@@ -516,10 +518,10 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		// provider root. Its registered suite id is enough to retain whole-suite suppression.
 		writeFileSync(
 			join(providerDir, "sandbox-daytona-vm-cpu-node--failed.json"),
-			harnessGapMarkerJson("daytona-vm", "cpu-node", "failed", "legacy flat failure"),
+			harnessGapMarkerJson("daytona-vm-zen5", "cpu-node", "failed", "legacy flat failure"),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{ scope: "suite", id: "cpu-node", outcome: "failed", reason: "legacy flat failure" },
 		]);
@@ -537,7 +539,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		);
 		writeFileSync(join(suiteDir, "pts_pybench.xml"), emptyPybenchComposite);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -572,7 +574,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		);
 		writeFileSync(join(suiteDir, "pts_pybench.xml"), emptyPybenchComposite);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -595,7 +597,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		// pts/pybench identity — not this misleading filename — decides which marker owns the loss.
 		writeFileSync(join(suiteDir, "pts_git.xml"), emptyPybenchComposite);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{ scope: "suite", id: "system", outcome: "failed", reason: "pts_git: git failed" },
 			{
@@ -619,7 +621,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			'{"outcome":"failed","benchmark":"pts_git","reason":"legacy git failure"}\n',
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -650,7 +652,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 </PhoronixTestSuite>`,
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([]);
 		expect(run.metrics.map((m) => m.metricId)).toContain("pybench_milliseconds");
 	});
@@ -670,7 +672,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			]),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.suitesCovered).toEqual(["memory"]);
 		expect(run.metrics.map((m) => m.metricId)).toContain("stream_type_copy");
 		expect(run.gaps).toEqual([
@@ -703,7 +705,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			]),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.suitesCovered).toEqual(["memory"]);
 		expect(run.gaps).toEqual([]);
 	});
@@ -731,7 +733,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 </PhoronixTestSuite>`,
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{ scope: "suite", id: "system", outcome: "skipped", reason: "pts_git: PTS unavailable" },
 			{
@@ -758,7 +760,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		mkdirSync(suiteDir);
 		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.suitesCovered).toEqual(["disk"]);
 		expect(run.metrics.map((m) => m.metricId)).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
 		expect(run.gaps).toEqual([
@@ -785,7 +787,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			]),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		const ids = run.metrics.map((m) => m.metricId);
 		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_mb_per_s`);
 		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
@@ -803,7 +805,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			]),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.metrics.map((m) => m.metricId)).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
 		expect(run.uncatalogued).toHaveLength(1);
 		expect(run.gaps).toEqual([]);
@@ -818,7 +820,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			fioSeqReadComposite([["MB/s", "11650"]]),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		const ids = run.metrics.map((m) => m.metricId);
 		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_mb_per_s`);
 		expect(ids).toContain(`${SEQ_READ_DIRECT_YES}_iops`);
@@ -843,7 +845,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 </PhoronixTestSuite>`,
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.suitesCovered).toEqual(["disk"]);
 		expect(run.gaps).toEqual([]);
 	});
@@ -868,7 +870,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 </PhoronixTestSuite>`,
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.suitesCovered).toEqual(["disk"]);
 		expect(run.gaps).toEqual([]);
 	});
@@ -879,10 +881,10 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 		writeFileSync(join(suiteDir, "pts_fio-seq-read.xml"), fioSeqReadComposite([["IOPS", "11650"]]));
 		writeFileSync(
 			join(suiteDir, "sandbox-daytona-vm-disk--failed.json"),
-			harnessGapMarkerJson("daytona-vm", "disk", "failed", "fio timed out mid-suite"),
+			harnessGapMarkerJson("daytona-vm-zen5", "disk", "failed", "fio timed out mid-suite"),
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{ scope: "suite", id: "disk", outcome: "failed", reason: "fio timed out mid-suite" },
 		]);
@@ -897,7 +899,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			'{"outcome":"failed","benchmark":"pts_fio-rand-read","reason":"random read failed"}\n',
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -929,7 +931,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			'{"outcome":"failed","benchmark":"pts_fio-rand-read","reason":"random read failed"}\n',
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -956,7 +958,7 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			'{"outcome":"failed","benchmark":"pts_fio-seq-read","reason":"sequential read failed"}\n',
 		);
 
-		const run = normalizeProviderDir(root, "daytona-vm");
+		const run = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(run.gaps).toEqual([
 			{
 				scope: "suite",
@@ -980,8 +982,8 @@ describe("normalizeProviderDir suite-shortfall gaps and leaf-marker folding", ()
 			]),
 		);
 
-		const first = normalizeProviderDir(root, "daytona-vm");
-		const second = normalizeProviderDir(root, "daytona-vm");
+		const first = normalizeProviderDir(root, "daytona-vm-zen5");
+		const second = normalizeProviderDir(root, "daytona-vm-zen5");
 		expect(first.gaps).toEqual(second.gaps);
 		expect(first.gaps[0]?.reason).toBe(
 			"PTS ran but every trial failed for 2 of 4 declared metrics: stream_type_add (memory/pts_stream.xml), stream_type_triad (memory/pts_stream.xml) — attempted, no value recorded",

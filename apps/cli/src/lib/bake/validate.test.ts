@@ -6,7 +6,12 @@ import { baseImageUse, candidateCreateOptions, candidateResolvedArtifact } from 
 const refs: CandidateRefs = {
 	freestyleSnapshotCandidate: "sh-freestyle-candidate",
 	e2bTemplateCandidate: "tc-v1-candidate",
-	daytonaSnapshotCandidate: "snap-v1-candidate",
+	daytonaVmSnapshotCandidate: {
+		"daytona-vm-zen5": "snap-v1-zen5-candidate",
+		"daytona-vm-zen5-burst": "snap-v1-zen5-burst-candidate",
+		"daytona-vm-arm": "snap-v1-arm-candidate",
+		"daytona-vm-arm-burst": "snap-v1-arm-burst-candidate",
+	},
 	daytonaContainerSnapshotCandidate: "snap-v1-container-candidate",
 	// Distinct from the e2b value so the novita case fails if it ever reads the e2b field.
 	novitaTemplateCandidate: "tc-v1-novita-candidate",
@@ -14,7 +19,12 @@ const refs: CandidateRefs = {
 	basetenImageCandidate: "tc-v1-baseten-candidate",
 	toolchainImageCandidate: "ghcr.io/o/tc:v1-candidate",
 	vercelImageCandidate: "sandbox-benchmarks-toolchain-vercel:v1-candidate",
-	daytonaVmTarget: "us-west-2",
+	daytonaVmTarget: {
+		"daytona-vm-zen5": "us-east-ash-1",
+		"daytona-vm-zen5-burst": "us-east-ash-1",
+		"daytona-vm-arm": "us-east-iad-1",
+		"daytona-vm-arm-burst": "us-east-iad-1",
+	},
 	daytonaContainerTarget: "us-west-2",
 };
 
@@ -33,13 +43,6 @@ describe("candidateCreateOptions", () => {
 		expect(candidateCreateOptions("e2b", refs)).toEqual({ snapshotId: "tc-v1-candidate" });
 	});
 
-	it("points daytona-vm at its candidate snapshot + region target", () => {
-		expect(candidateCreateOptions("daytona-vm", refs)).toEqual({
-			snapshotId: "snap-v1-candidate",
-			target: "us-west-2",
-		});
-	});
-
 	it("points daytona-container at its own candidate snapshot + region target", () => {
 		expect(candidateCreateOptions("daytona-container", refs)).toEqual({
 			snapshotId: "snap-v1-container-candidate",
@@ -47,9 +50,14 @@ describe("candidateCreateOptions", () => {
 		});
 	});
 
-	it("omits the daytona-vm target when the region has none (account default)", () => {
-		expect(candidateCreateOptions("daytona-vm", { ...refs, daytonaVmTarget: undefined })).toEqual({
-			snapshotId: "snap-v1-candidate",
+	it("boots each daytona-vm variant from its own image in its own region", () => {
+		expect(candidateCreateOptions("daytona-vm-zen5", refs)).toEqual({
+			snapshotId: "snap-v1-zen5-candidate",
+			target: "us-east-ash-1",
+		});
+		expect(candidateCreateOptions("daytona-vm-arm-burst", refs)).toEqual({
+			snapshotId: "snap-v1-arm-burst-candidate",
+			target: "us-east-iad-1",
 		});
 	});
 

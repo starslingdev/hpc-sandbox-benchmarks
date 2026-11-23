@@ -64,7 +64,7 @@ async function fixture(name: string, failCleanup = false) {
 		join(payloadRoot, "benchmark-results", "pts_node-web-tooling.xml"),
 		readFileSync(
 			new URL(
-				"../../../../packages/results/src/lib/__fixtures__/daytona-vm/pts_node-web-tooling.xml",
+				"../../../../packages/results/src/lib/__fixtures__/daytona-vm-zen5/pts_node-web-tooling.xml",
 				import.meta.url,
 			),
 			"utf8",

@@ -10,7 +10,7 @@ import {
 const env = {
 	GITHUB_RUN_ID: "123",
 	GITHUB_SHA: "a".repeat(40),
-	BENCH_PROVIDERS: "daytona-vm,daytona-container,tama",
+	BENCH_PROVIDERS: "daytona-vm-zen5,daytona-container,tama",
 	BENCH_SUITES: "system,realworld-mastra",
 };
 test("workflow planning preserves samples and defaults shared accounts to one sandbox", () => {
@@ -23,10 +23,10 @@ test("workflow planning preserves samples and defaults shared accounts to one sa
 	expect(workflowWaves(plan)).toEqual(["synthetic-system", "realworld"]);
 	expect(workflowAxes(plan, "daytona")).toEqual(["synthetic-system", "realworld"]);
 	expect(workflowAxes(plan, "daytona", "synthetic-system")).toEqual([
-		{ batch: "batch-0", providers: ["daytona-vm"], suite: "system", wave: "synthetic-system" },
+		{ batch: "batch-0", providers: ["daytona-vm-zen5"], suite: "system", wave: "synthetic-system" },
 		{
 			batch: "batch-1",
-			providers: ["daytona-vm", "daytona-container"],
+			providers: ["daytona-vm-zen5", "daytona-container"],
 			suite: "system",
 			wave: "synthetic-system",
 		},

@@ -226,7 +226,7 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | Secret | Used by |
    | --- | --- |
    | `E2B_API_KEY` | E2B provider runtime and validation |
-   | `DAYTONA_API_KEY` | Daytona (VM), Daytona (container) provider runtime and validation |
+   | `DAYTONA_API_KEY` | Daytona (VM), Daytona (VM, burst), Daytona (VM, arm), Daytona (VM, arm, burst), Daytona (container) provider runtime and validation |
    | `BL_API_KEY` | Blaxel provider runtime and validation |
    | `BL_WORKSPACE` | Blaxel provider runtime and validation |
    | `MSB_API_KEY` | Microsandbox Cloud provider runtime and validation |
@@ -293,8 +293,6 @@ Do this in the GitHub UI (Settings → Environments / Rules / Actions), then del
    | Variable | Used by | Default |
    | --- | --- | --- |
    | `E2B_TEMPLATE` | E2B | — |
-   | `DAYTONA_TARGET` | Daytona (VM) | <code>us-east-ash-1</code> |
-   | `DAYTONA_SNAPSHOT` | Daytona (VM) | — |
    | `DAYTONA_CONTAINER_TARGET` | Daytona (container) | <code>us</code> |
    | `DAYTONA_CONTAINER_SNAPSHOT` | Daytona (container) | — |
    | `MSB_API_URL` | Microsandbox Cloud | — |

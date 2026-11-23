@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { normalizeResultsTree, summarizeRun } from "./index.ts";
 
-// The committed fixture tree has one provider directory (daytona-vm) holding a real node-web-tooling
+// The committed fixture tree has one provider directory (daytona-vm-zen5) holding a real node-web-tooling
 // composite, a bench.sh skip marker, and observed specs. This is the offline end-to-end proof.
 const rawRoot = join(import.meta.dir, "lib/__fixtures__");
 
@@ -22,8 +22,8 @@ describe("normalizeResultsTree", () => {
 		);
 	});
 
-	it("normalizes daytona-vm's node-web-tooling into an aggregated, validated metric", () => {
-		const daytona = run.providers.find((provider) => provider.providerId === "daytona-vm");
+	it("normalizes daytona-vm-zen5's node-web-tooling into an aggregated, validated metric", () => {
+		const daytona = run.providers.find((provider) => provider.providerId === "daytona-vm-zen5");
 		expect(daytona?.validationStatus).toBe("validated");
 		const metric = daytona?.metrics.find((m) => m.metricId === "node_web_tooling_runs_per_s");
 		expect(metric?.samples).toEqual([16.19, 16.3, 16.08]);
@@ -33,7 +33,7 @@ describe("normalizeResultsTree", () => {
 	});
 
 	it("records the bench.sh skip and matches the pinned target spec", () => {
-		const daytona = run.providers.find((provider) => provider.providerId === "daytona-vm");
+		const daytona = run.providers.find((provider) => provider.providerId === "daytona-vm-zen5");
 		expect(daytona?.gaps).toEqual([
 			{
 				scope: "suite",
@@ -60,6 +60,6 @@ describe("normalizeResultsTree", () => {
 		// Same status text the CI job summary prints (shared providerStatusText): a never-dispatched
 		// provider must not read like a freshly-attempted shard that also shows `pending metrics=0`.
 		expect(lines.find((l) => l.startsWith("e2b"))).toContain("pending (no shard data)");
-		expect(lines.find((l) => l.startsWith("daytona-vm"))).not.toContain("(no shard data)");
+		expect(lines.find((l) => l.startsWith("daytona-vm-zen5"))).not.toContain("(no shard data)");
 	});
 });

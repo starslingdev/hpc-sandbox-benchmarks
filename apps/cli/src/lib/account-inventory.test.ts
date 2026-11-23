@@ -22,7 +22,7 @@ const capable = (owned: readonly string[], foreignCount: number): SandboxDriver 
 
 test("benchmark-scoped inventory reports foreign counts without blocking admission", async () => {
 	const rows = await inventoryAccounts(
-		["daytona-vm", "daytona-container", "novita", "modal-gvisor", "modal-vm"],
+		["daytona-vm-zen5", "daytona-container", "novita", "modal-gvisor", "modal-vm"],
 		async () => ({ driver: capable([], 42) }),
 		String,
 	);

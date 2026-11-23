@@ -47,52 +47,52 @@ describe("parseDriverEnv", () => {
 	});
 
 	test("applies registry defaults while leaving genuinely optional inputs absent", () => {
-		expect(parseDriverEnv("daytona-vm", { DAYTONA_API_KEY: "key" })).toEqual({
+		expect(parseDriverEnv("daytona-container", { DAYTONA_API_KEY: "key" })).toEqual({
 			DAYTONA_API_KEY: "key",
-			DAYTONA_TARGET: "us-east-ash-1",
+			DAYTONA_CONTAINER_TARGET: "us",
 		});
 	});
 
 	test("ambient values override defaults and empty optional values stay absent", () => {
 		expect(
-			parseDriverEnv("daytona-vm", {
+			parseDriverEnv("daytona-container", {
 				DAYTONA_API_KEY: "key",
-				DAYTONA_TARGET: "eu-west-1",
-				DAYTONA_SNAPSHOT: "",
+				DAYTONA_CONTAINER_TARGET: "eu-west-1",
+				DAYTONA_CONTAINER_SNAPSHOT: "",
 			}),
-		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_TARGET: "eu-west-1" });
+		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_CONTAINER_TARGET: "eu-west-1" });
 	});
 
 	test("reports only missing required, non-defaulted inputs in registry order", () => {
 		expect(missingDriverEnvNames("blaxel", { BL_API_KEY: "key" })).toEqual(["BL_WORKSPACE"]);
-		expect(missingDriverEnvNames("daytona-vm", {})).toEqual(["DAYTONA_API_KEY"]);
+		expect(missingDriverEnvNames("daytona-container", {})).toEqual(["DAYTONA_API_KEY"]);
 		expect(
-			missingDriverEnvNames("daytona-vm", {
+			missingDriverEnvNames("daytona-container", {
 				DAYTONA_API_KEY: "key",
-				DAYTONA_TARGET: "",
-				DAYTONA_SNAPSHOT: "",
+				DAYTONA_CONTAINER_TARGET: "",
+				DAYTONA_CONTAINER_SNAPSHOT: "",
 			}),
 		).toEqual([]);
 	});
 
 	test("the direct schema deletes foreign provider secrets and resolves defaults", () => {
 		expect(
-			envSchemaFor("daytona-vm")({
+			envSchemaFor("daytona-container")({
 				DAYTONA_API_KEY: "key",
 				E2B_API_KEY: "must-not-escape",
 			}),
-		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_TARGET: "us-east-ash-1" });
+		).toEqual({ DAYTONA_API_KEY: "key", DAYTONA_CONTAINER_TARGET: "us" });
 	});
 
 	test("the direct schema exposes distinct raw input and resolved output types", () => {
-		const schema = envSchemaFor("daytona-vm");
+		const schema = envSchemaFor("daytona-container");
 		type _input = Expect<
 			Equal<
 				typeof schema.inferIn,
 				{
 					readonly DAYTONA_API_KEY: string;
-					readonly DAYTONA_TARGET?: string;
-					readonly DAYTONA_SNAPSHOT?: string;
+					readonly DAYTONA_CONTAINER_TARGET?: string;
+					readonly DAYTONA_CONTAINER_SNAPSHOT?: string;
 				}
 			>
 		>;
@@ -101,8 +101,8 @@ describe("parseDriverEnv", () => {
 				typeof schema.infer,
 				{
 					readonly DAYTONA_API_KEY: string;
-					readonly DAYTONA_TARGET: string;
-					readonly DAYTONA_SNAPSHOT?: string;
+					readonly DAYTONA_CONTAINER_TARGET: string;
+					readonly DAYTONA_CONTAINER_SNAPSHOT?: string;
 				}
 			>
 		>;

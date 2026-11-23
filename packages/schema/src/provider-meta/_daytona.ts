@@ -49,37 +49,73 @@ export const daytonaPricing: ProviderPricing = {
 	],
 };
 
-/** Daytona's v2 (Linux VM) card: per core-hour by CPU generation (a core is 2 vCPU), billed per
- *  minute at max(measured, guarantee). daytona-vm pins Zen 5; ephemeral NVMe is free. */
-export const daytonaV2Pricing: ProviderPricing = {
-	model: "published",
-	components: [
-		{
-			id: "cpu-zen5",
-			resource: "cpu",
-			billingBasis: "max_request_or_usage",
-			vendorUnit: "core (2 vCPU), AMD Zen 5",
-			usdPerUnitHour: 0.235,
-			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 0.5 },
-			tier: "on-demand",
-		},
-		{
-			id: "memory",
-			resource: "memory",
-			billingBasis: "max_request_or_usage",
-			vendorUnit: "GiB",
-			usdPerUnitHour: 0.0162,
-			quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
-			tier: "on-demand",
-		},
-	],
-	targetHourlyCost: { kind: "usage_dependent", reason: "Bursts above the guarantee bill extra." },
-	notes:
-		"v2 on-demand rates: benchmark sandboxes are not preemptible, so the cheaper preemptible card ($0.164/core-hr Zen 5, $0.0113/GiB-hr) never applies. Ephemeral NVMe is free.",
-	sources: [
-		{ label: "Daytona pricing", url: "https://www.daytona.com/pricing", checkedAt: "2026-11-16" },
-	],
-};
+/** Daytona's v2 (Linux VM) card: per core-hour by CPU tier (a core is 2 vCPU), billed per second at
+ *  max(measured, guarantee). A fixed variant's guarantee equals its ceiling, so its cost is exact; a
+ *  burst variant bills extra above its guarantee. Ephemeral NVMe is free. */
+function daytonaV2Card(
+	cpu: { readonly id: string; readonly vendorUnit: string; readonly usdPerCoreHour: number },
+	targetHourlyCost: Extract<ProviderPricing, { model: "published" }>["targetHourlyCost"],
+	notes: string,
+): ProviderPricing {
+	return {
+		model: "published",
+		components: [
+			{
+				id: cpu.id,
+				resource: "cpu",
+				billingBasis: "max_request_or_usage",
+				vendorUnit: cpu.vendorUnit,
+				usdPerUnitHour: cpu.usdPerCoreHour,
+				quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 0.5 },
+				tier: "on-demand",
+			},
+			{
+				id: "memory",
+				resource: "memory",
+				billingBasis: "max_request_or_usage",
+				vendorUnit: "GiB",
+				usdPerUnitHour: 0.0162,
+				quantityRule: { kind: "linear", dimension: "memoryGb", unitsPerTargetUnit: 1 },
+				tier: "on-demand",
+			},
+		],
+		targetHourlyCost,
+		notes,
+		sources: [
+			{ label: "Daytona pricing", url: "https://www.daytona.com/pricing", checkedAt: "2026-11-20" },
+		],
+	};
+}
+
+const ZEN5_CPU = { id: "cpu-zen5", vendorUnit: "core (2 vCPU), AMD Zen 5", usdPerCoreHour: 0.235 };
+// Unverified: the arm variants pin no cpuType, so the CPU generation iad-1 hands out is unknown. The
+// catalog lists Graviton 4 in the lowest price tier, so this is the tier-1 rate (0.101 $/core-hr).
+const ARM_CPU = { id: "cpu-arm", vendorUnit: "core (2 vCPU), arm64 tier 1", usdPerCoreHour: 0.101 };
+const V2_NOTES =
+	"v2 on-demand rates: benchmark sandboxes are not preemptible, so the cheaper preemptible card never applies. Ephemeral NVMe is free.";
+
+export const daytonaV2Pricing = {
+	zen5Fixed: daytonaV2Card(
+		ZEN5_CPU,
+		{ kind: "exact", componentIds: ["cpu-zen5", "memory"] },
+		V2_NOTES,
+	),
+	zen5Burst: daytonaV2Card(
+		ZEN5_CPU,
+		{ kind: "usage_dependent", reason: "Bursts above the guarantee bill extra." },
+		V2_NOTES,
+	),
+	armFixed: daytonaV2Card(
+		ARM_CPU,
+		{ kind: "exact", componentIds: ["cpu-arm", "memory"] },
+		`${V2_NOTES} The arm CPU rate assumes the lowest price tier; the generation iad-1 assigns to an unpinned arm64 sandbox is not confirmed.`,
+	),
+	armBurst: daytonaV2Card(
+		ARM_CPU,
+		{ kind: "usage_dependent", reason: "Bursts above the guarantee bill extra." },
+		`${V2_NOTES} The arm CPU rate assumes the lowest price tier; the generation iad-1 assigns to an unpinned arm64 sandbox is not confirmed.`,
+	),
+} as const satisfies Record<string, ProviderPricing>;
 
 export const daytonaTransport: ProviderTransport = {
 	// The single-round-trip-capped reference case: the Daytona server returns HTTP 408 on a

@@ -66,6 +66,13 @@ function workflowDispatchOptions(file: string, inputName: string): unknown[] {
 	return input.options;
 }
 
+const DAYTONA_VMS = [
+	"daytona-vm-zen5",
+	"daytona-vm-zen5-burst",
+	"daytona-vm-arm",
+	"daytona-vm-arm-burst",
+] as const;
+
 describe("provider wiring projections", () => {
 	test("deduplicates shared inputs without changing their normalized contract", () => {
 		const expected = new Map<string, { input: NormalizedProviderInput; owners: ProviderId[] }>();
@@ -102,7 +109,7 @@ describe("provider wiring projections", () => {
 		// Every provider is charged to exactly one domain; only shared-credential variants share one.
 		expect(bindings.flatMap(({ owners }) => owners)).toEqual([...PROVIDER_IDS]);
 		expect(bindings.filter(({ owners }) => owners.length > 1)).toEqual([
-			{ domain: "daytona", owners: ["daytona-vm", "daytona-container"] },
+			{ domain: "daytona", owners: [...DAYTONA_VMS, "daytona-container"] },
 			{ domain: "modal", owners: ["modal-gvisor", "modal-vm"] },
 		]);
 		// A provider that shares no credential is its own domain — never a stray custom name.
@@ -110,7 +117,7 @@ describe("provider wiring projections", () => {
 			bindings.filter(({ domain, owners }) => owners.length === 1 && owners[0] !== domain),
 		).toEqual([]);
 		expect(renderAccountConcurrencyGroup("")).toBe(
-			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}`,
+			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm-zen5' || matrix.provider == 'daytona-vm-zen5-burst' || matrix.provider == 'daytona-vm-arm' || matrix.provider == 'daytona-vm-arm-burst' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}`,
 		);
 	});
 
@@ -120,7 +127,7 @@ describe("provider wiring projections", () => {
 			`E2B_API_KEY: \${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}`,
 		);
 		expect(matrix).toContain(
-			`DAYTONA_API_KEY: \${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}`,
+			`DAYTONA_API_KEY: \${{ (matrix.provider == 'daytona-vm-zen5' || matrix.provider == 'daytona-vm-zen5-burst' || matrix.provider == 'daytona-vm-arm' || matrix.provider == 'daytona-vm-arm-burst' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}`,
 		);
 		expect(matrix).not.toContain("MICROSANDBOX_LOCAL_BENCH");
 		expect(matrix).toContain(`NSC_TOKEN_FILE: \${{ steps.namespace.outputs.token-file }}`);
@@ -257,7 +264,10 @@ describe("provider wiring projections", () => {
 		const fleet = driverFleetProjection();
 		expect(fleet.moduleIds).toEqual([
 			"e2b",
-			"daytona-vm",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
 			"daytona-container",
 			"blaxel",
 			"microsandbox-cloud",

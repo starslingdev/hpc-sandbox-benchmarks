@@ -33,6 +33,8 @@ import { config } from "@sandbox-benchmarks/providers/config";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
+import type { DaytonaVmVariantId } from "@sandbox-benchmarks/schema/toolchain";
+import { DAYTONA_VM_IDS, DAYTONA_VM_REGIONS } from "@sandbox-benchmarks/schema/toolchain";
 import { isPartialScope } from "../matrix.ts";
 import type { ProviderRun } from "../providers-run.ts";
 import { forEachProviderWithCreds } from "../providers-run.ts";
@@ -175,7 +177,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	if (force) {
 		log(
 			`>>> force-republish: regenerating ${config.toolchainImageVersion}, overwriting if present ` +
-				`(daytona: both ${config.daytonaSnapshotDefault} and ${config.daytonaContainerSnapshotDefault} ` +
+				`(daytona: each of ${DAYTONA_VM_IDS.map((id) => config.daytonaVmArtifacts[id].version).join(", ")} and ${config.daytonaContainerSnapshotDefault} ` +
 				`are deleted and rebuilt, so each is briefly absent — and left absent if its rebuild fails)`,
 		);
 	} else {
@@ -254,14 +256,16 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	}
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
-		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		daytonaVmSnapshotCandidate: Object.fromEntries(
+			DAYTONA_VM_IDS.map((id) => [id, config.daytonaVmArtifacts[id].candidate]),
+		) as Record<DaytonaVmVariantId, string>,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
 		basetenImageCandidate: bakedArtifactName("baseten", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
-		daytonaVmTarget: config.daytonaVm.target,
+		daytonaVmTarget: DAYTONA_VM_REGIONS,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};
 	if (
@@ -385,7 +389,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 	}
 
 	// Required-providers gate (D1), enforced HERE — before step 4 writes the immutable base — not
-	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona-vm,modal-gvisor`; a required
+	// post-hoc in bake.ts. At the publish boundary CI passes `--require e2b,daytona-vm-zen5,modal-gvisor`; a required
 	// provider whose version artifact was skipped (missing/misnamed secret) or failed is `skipped`/
 	// `failed`, so the artifact-failed check above does NOT catch a pure skip. Were the base published
 	// first and the gap detected only in bake.ts, the immutable `:v1` would already be tagged and a
