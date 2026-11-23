@@ -69,8 +69,8 @@ test("Daytona release over the real API pins imageName and reclaims accepted can
 		sleep: async () => {},
 	};
 	const builder = daytonaArtifactBuilder(
-		"daytona-vm",
-		{ sandboxClass: SandboxClass.LINUX_VM, target: (env) => env.DAYTONA_TARGET },
+		"daytona-vm-zen5",
+		{ sandboxClass: SandboxClass.LINUX_VM, target: () => "us-west-2" },
 		transport,
 	);
 	const request = () => ({
@@ -78,7 +78,7 @@ test("Daytona release over the real API pins imageName and reclaims accepted can
 		name: "candidate",
 		base: { digestRef: `ghcr.io/toolchain@sha256:${"a".repeat(64)}` },
 		spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
-		env: { DAYTONA_API_KEY: "test-key", DAYTONA_TARGET: "us-west-2" },
+		env: { DAYTONA_API_KEY: "test-key" },
 		replace: "allowed" as const,
 		imagesDir: "unused",
 		dockerConfig: "unused",

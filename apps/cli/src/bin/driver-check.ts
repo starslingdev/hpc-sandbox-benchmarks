@@ -15,7 +15,7 @@
 // Usage:
 //   bun apps/cli/src/bin/driver-check.ts --provider e2b
 //   bun apps/cli/src/bin/driver-check.ts --provider tama --phase candidate --workload-seconds 10
-//   bun apps/cli/src/bin/driver-check.ts --provider modal-vm --artifact-ref ghcr.io/…:v8-candidate
+//   bun apps/cli/src/bin/driver-check.ts --provider modal-vm-burst --artifact-ref ghcr.io/…:v8-candidate
 //
 // Credentials come from the environment (bun auto-loads `.env`). A provider whose credentials are
 // absent SKIPS with exit 0 — the same skip-vs-fail contract the rest of the fleet uses.

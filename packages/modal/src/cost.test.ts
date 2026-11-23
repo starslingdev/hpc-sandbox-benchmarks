@@ -9,8 +9,13 @@ const ENV = { MODAL_TOKEN_ID: "ak-test", MODAL_TOKEN_SECRET: "as-test" };
 const ATTEMPTED_AT = "2026-11-14T03:47:12.000Z";
 
 const input = (completed = true) => ({
-	cell: { runId: "run-1", providerId: "modal-vm", suite: "system", replicateIndex: 0 } as const,
-	providerId: "modal-vm" as const,
+	cell: {
+		runId: "run-1",
+		providerId: "modal-vm-burst",
+		suite: "system",
+		replicateIndex: 0,
+	} as const,
+	providerId: "modal-vm-burst" as const,
 	sandboxId: "sb-01M7C9GJ34MR5YMSSRR66P6VN0",
 	teardown: { completed, attemptedAt: ATTEMPTED_AT },
 });
@@ -38,7 +43,7 @@ async function capture(
 		lifetime,
 		close: () => {},
 	};
-	const capability = modalCostEvidence("modal-vm", {
+	const capability = modalCostEvidence("modal-vm-burst", {
 		billing: () => billing,
 		sleep: async () => {},
 	});

@@ -1,4 +1,4 @@
-// daytona-vm bakes a v2 image (bakeDaytonaVmSnapshot, below). daytona-container bakes a v0 snapshot by uploading the already-built local Docker image to Daytona's
+// The daytona-vm-* variants each bake a v2 image (bakeDaytonaVmSnapshot, below). daytona-container bakes a v0 snapshot by uploading the already-built local Docker image to Daytona's
 // transient registry, then registering that private image through the SDK. Both public-GHCR paths are
 // broken for this valid image: the direct importer returns an opaque inspection error, while the
 // declarative builder cannot authenticate its FROM pull. Daytona's CLI local-image path successfully
@@ -30,6 +30,8 @@ import { RootOnlyClientV0, SandboxClass } from "@daytona/sdk/v0";
 import { ImageNameTakenError } from "@daytona/sdk/v2";
 import { withCleanupPreservingPrimaryError } from "@sandbox-benchmarks/harness";
 import { config } from "@sandbox-benchmarks/providers/config";
+import type { DaytonaVmVariantId } from "@sandbox-benchmarks/schema/toolchain";
+import { DAYTONA_VM_REGIONS } from "@sandbox-benchmarks/schema/toolchain";
 import type { Log } from "./types.ts";
 
 export { withCleanupPreservingPrimaryError };
@@ -465,30 +467,33 @@ export async function bakeDaytonaSnapshot(
 	throw new Error(snapshotDestroyedMessage(name, deleted, reason), { cause: lastErr });
 }
 
-/** A v2 image lives in one narrow region (Daytona refuses a broad one such as `us`). Zen 5, the only
- *  amd64 CPU type the org's catalog offers, is in us-east-ash-1, and a create in `us` from an image
- *  here lands there (n=8, 2026-11-15). */
-const DAYTONA_V2_IMAGE_REGION = "us-east-ash-1";
-
-/** Bake the daytona-vm artifact `name`: v2 has no snapshot registration, so the public toolchain image
- *  is imported as a named v2 image in {@link DAYTONA_V2_IMAGE_REGION}. An identical named import returns the
- *  existing image; a name held by other content is deleted and imported again, and a failure after
- *  that delete reports the name destroyed, as the v0 bake does. */
-export async function bakeDaytonaVmSnapshot(name: string, image: string, log: Log): Promise<void> {
-	const { images } = new Daytona({ apiKey: config.daytonaVm.apiKey }).v2;
-	const options = { name, region: DAYTONA_V2_IMAGE_REGION, timeoutSeconds: 15 * 60 };
-	log(`>>> daytona v2 image pull ${image} as ${name} (region ${options.region})`);
-	try {
-		await images.pull(image, options);
-	} catch (error) {
-		if (!(error instanceof ImageNameTakenError)) throw error;
-		log(`    ${name} holds other content; deleting it and importing again`);
-		await images.delete((await images.get(name)).id);
-		await images.pull(image, options).catch((retry: unknown) => {
-			throw new Error(snapshotDestroyedMessage(name, 1, String(retry)), { cause: retry });
-		});
-	}
-	log(`<<< daytona v2 image ${name} ready`);
+/** Bake a daytona-vm variant's artifact `name`: v2 has no snapshot registration, so the public toolchain
+ *  image is imported as a named v2 image in the variant's region (a v2 image lives in one narrow region;
+ *  Daytona refuses a broad one such as `us`; Zen 5 is in us-east-ash-1 and a create in `us` from an
+ *  image there lands there, n=8, 2026-11-15; arm64 is only in us-east-iad-1). An identical named import
+ *  returns the existing image; a name held by other content is deleted and imported again, and a
+ *  failure after that delete reports the name destroyed, as the v0 bake does. The arm variants need an
+ *  arm64 build of the toolchain image; the published image is amd64 only, so their import or boot fails
+ *  until one exists. */
+export function bakeDaytonaVmSnapshot(
+	id: DaytonaVmVariantId,
+): (name: string, image: string, log: Log) => Promise<void> {
+	return async (name, image, log) => {
+		const { images } = new Daytona({ apiKey: config.daytonaVm[id].apiKey }).v2;
+		const options = { name, region: DAYTONA_VM_REGIONS[id], timeoutSeconds: 15 * 60 };
+		log(`>>> daytona v2 image pull ${image} as ${name} (region ${options.region})`);
+		try {
+			await images.pull(image, options);
+		} catch (error) {
+			if (!(error instanceof ImageNameTakenError)) throw error;
+			log(`    ${name} holds other content; deleting it and importing again`);
+			await images.delete((await images.get(name)).id);
+			await images.pull(image, options).catch((retry: unknown) => {
+				throw new Error(snapshotDestroyedMessage(name, 1, String(retry)), { cause: retry });
+			});
+		}
+		log(`<<< daytona v2 image ${name} ready`);
+	};
 }
 
 /** Bake the daytona-container snapshot `name`: CONTAINER class in the daytona-container region (us-west-2). */

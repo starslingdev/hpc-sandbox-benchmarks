@@ -18,6 +18,8 @@ import { config } from "@sandbox-benchmarks/providers";
 import type { ProviderId } from "@sandbox-benchmarks/schema";
 import { PROVIDERS } from "@sandbox-benchmarks/schema";
 import { bakedArtifactName } from "@sandbox-benchmarks/schema/providers";
+import type { DaytonaVmVariantId } from "@sandbox-benchmarks/schema/toolchain";
+import { DAYTONA_VM_IDS, DAYTONA_VM_REGIONS } from "@sandbox-benchmarks/schema/toolchain";
 import { buildAndPushCandidate, resolveImageDigestRef } from "../lib/bake/image.ts";
 import { promoteAll } from "../lib/bake/promote.ts";
 import {
@@ -150,7 +152,9 @@ if (import.meta.main) {
 			version: {
 				image: config.toolchainImageVersion,
 				e2bTemplate: config.e2bTemplateVersion,
-				daytonaSnapshot: config.daytonaSnapshotDefault,
+				daytonaVmSnapshots: Object.fromEntries(
+					DAYTONA_VM_IDS.map((id) => [id, config.daytonaVmArtifacts[id].version]),
+				),
 				daytonaContainerSnapshot: config.daytonaContainerSnapshotDefault,
 				novitaTemplate: config.novitaTemplateVersion,
 				blaxelImage: bakedArtifactName("blaxel", "version"),
@@ -197,14 +201,16 @@ if (import.meta.main) {
 	}
 	const candidateRefs: CandidateRefs = {
 		e2bTemplateCandidate: config.e2bTemplateCandidate,
-		daytonaSnapshotCandidate: config.daytonaSnapshotCandidate,
+		daytonaVmSnapshotCandidate: Object.fromEntries(
+			DAYTONA_VM_IDS.map((id) => [id, config.daytonaVmArtifacts[id].candidate]),
+		) as Record<DaytonaVmVariantId, string>,
 		daytonaContainerSnapshotCandidate: config.daytonaContainerSnapshotCandidate,
 		novitaTemplateCandidate: config.novitaTemplateCandidate,
 		blaxelImageCandidate: bakedArtifactName("blaxel", "candidate"),
 		basetenImageCandidate: bakedArtifactName("baseten", "candidate"),
 		toolchainImageCandidate: pinnedBaseImage,
 		vercelImageCandidate: config.vercelImageCandidate,
-		daytonaVmTarget: config.daytonaVm.target,
+		daytonaVmTarget: DAYTONA_VM_REGIONS,
 		daytonaContainerTarget: config.daytonaContainer.target,
 	};
 
@@ -262,7 +268,9 @@ if (import.meta.main) {
 			freestyleSnapshotId: candidateRefs.freestyleSnapshotCandidate,
 			image: pinnedBaseImage,
 			e2bTemplate: config.e2bTemplateCandidate,
-			daytonaSnapshot: config.daytonaSnapshotCandidate,
+			daytonaVmSnapshots: Object.fromEntries(
+				DAYTONA_VM_IDS.map((id) => [id, config.daytonaVmArtifacts[id].candidate]),
+			),
 			daytonaContainerSnapshot: config.daytonaContainerSnapshotCandidate,
 			novitaTemplate: config.novitaTemplateCandidate,
 		},
@@ -271,7 +279,7 @@ if (import.meta.main) {
 
 	if (anyFailed(runs)) await exitAfterSandboxCleanup(1);
 
-	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm,modal-gvisor`) a required provider that was
+	// D1: at the publish boundary (CI passes `--require e2b,daytona-vm-zen5,modal-gvisor`) a required provider that was
 	// skipped for a missing/misnamed secret — or failed to validate — must fail the bake loudly, so a
 	// candidate is never blessed while a provider was silently never built. Lenient locally (none required).
 	const required = requiredProviders();

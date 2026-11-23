@@ -3,7 +3,9 @@ import { config } from "@sandbox-benchmarks/providers/config";
 import type { TemplateSpec } from "./lib/internal.ts";
 import { makeTemplateSpec } from "./lib/internal.ts";
 
-/** Build the Daytona sandbox template — defaults to the pre-baked toolchain snapshot (config). */
-export function buildDaytonaTemplate(tag: string = config.daytonaSnapshotDefault): TemplateSpec {
+/** Build the Daytona sandbox template — defaults to the daytona-vm-zen5 pre-baked toolchain image (config). */
+export function buildDaytonaTemplate(
+	tag: string = config.daytonaVmArtifacts["daytona-vm-zen5"].version,
+): TemplateSpec {
 	return makeTemplateSpec("daytona", tag);
 }

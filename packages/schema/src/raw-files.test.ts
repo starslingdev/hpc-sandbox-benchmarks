@@ -353,7 +353,7 @@ describe("parseGapMarker", () => {
 // files are the evidence trail, and this predicate is what consumers use when NO trail exists.
 describe("providerReportedNothing", () => {
 	const empty = (): ProviderRun => ({
-		providerId: "modal-vm",
+		providerId: "modal-vm-burst",
 		validationStatus: "pending",
 		observedSpecs: {},
 		metrics: [],
@@ -405,7 +405,7 @@ describe("providerReportedNothing", () => {
 					{
 						cell: {
 							runId: "run-1",
-							providerId: "modal-vm",
+							providerId: "modal-vm-burst",
 							suite: "cpu-node",
 						},
 						sandboxId: "isandbox",
@@ -423,7 +423,7 @@ describe("providerReportedNothing", () => {
 				costEvidence: [
 					{
 						kind: "missing",
-						cell: { runId: "run-1", providerId: "modal-vm", suite: "cpu-node" },
+						cell: { runId: "run-1", providerId: "modal-vm-burst", suite: "cpu-node" },
 						subject: { kind: "sandbox", sandboxId: "sb-1" },
 						capturedAt: "2026-06-20T00:00:00.000Z",
 						sdk: { packageName: "modal", version: "0.9.0" },

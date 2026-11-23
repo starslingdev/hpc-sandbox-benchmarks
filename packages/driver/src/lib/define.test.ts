@@ -59,11 +59,11 @@ describe("EnvOf", () => {
 		>;
 		type _daytona = Expect<
 			Equal<
-				EnvOf<"daytona-vm">,
+				EnvOf<"daytona-container">,
 				{
 					readonly DAYTONA_API_KEY: string;
-					readonly DAYTONA_TARGET: string;
-					readonly DAYTONA_SNAPSHOT?: string;
+					readonly DAYTONA_CONTAINER_TARGET: string;
+					readonly DAYTONA_CONTAINER_SNAPSHOT?: string;
 				}
 			>
 		>;

@@ -42,7 +42,10 @@ export type BakeProviderArtifact = (
  */
 export const BAKED_ARTIFACT_BUILDERS = {
 	e2b: bakeE2bTemplate,
-	"daytona-vm": bakeDaytonaVmSnapshot,
+	"daytona-vm-zen5": bakeDaytonaVmSnapshot("daytona-vm-zen5"),
+	"daytona-vm-zen5-burst": bakeDaytonaVmSnapshot("daytona-vm-zen5-burst"),
+	"daytona-vm-arm": bakeDaytonaVmSnapshot("daytona-vm-arm"),
+	"daytona-vm-arm-burst": bakeDaytonaVmSnapshot("daytona-vm-arm-burst"),
 	"daytona-container": bakeDaytonaContainerSnapshot,
 	blaxel: bakeBlaxelImage,
 	novita: bakeNovitaTemplate,

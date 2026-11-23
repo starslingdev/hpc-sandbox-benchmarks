@@ -9,6 +9,7 @@ import {
 	retainedAllocationSchema,
 } from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
+import { reviewedTangleCleanup as tangle } from "./reviewed-tangle-cleanup.ts";
 
 export const accountRecordSchema = type.or(
 	type({ ...base, kind: "'intent'" }).onUndeclaredKey("reject"),
@@ -24,6 +25,21 @@ export const accountRecordSchema = type.or(
 		"recovery?": cleanupRecoverySchema,
 	}).onUndeclaredKey("reject"),
 	type({ ...base, kind: "'released'", outcome: "'not-allocated'" }).onUndeclaredKey("reject"),
+	type({
+		...base,
+		account: "'tangle'",
+		attempt: `'${tangle.attemptId}'`,
+		cellId: `'${tangle.cellId}'`,
+		planDigest: `'${tangle.planDigest}'`,
+		kind: "'released'",
+		outcome: "'reconciled'",
+		evidence: type({
+			kind: "'tangle-vendor-cleanup'",
+			attemptDigest: `'${tangle.attemptDigest}'`,
+			attestationDigest: `'${tangle.attestationDigest}'`,
+			confirmedAt: "string.date.iso",
+		}).onUndeclaredKey("reject"),
+	}).onUndeclaredKey("reject"),
 	type({
 		...base,
 		kind: "'released'",

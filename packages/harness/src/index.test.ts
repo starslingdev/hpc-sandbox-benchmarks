@@ -427,7 +427,7 @@ const ctx = (s: Suite, resultsDir: string): SuiteRunContext => ({
 	artifact: { kind: "baked", ref: "test-template" },
 	suite: s,
 	suiteName: "cpu-node",
-	providerName: "daytona-vm",
+	providerName: "daytona-vm-zen5",
 	resultsDir,
 	// Daytona-shaped: synchronous execs capped, detached+poll available. The fake sandbox has no
 	// filesystem, so a detached selection drives the cat-poll fallback (done-file read over exec).
@@ -439,7 +439,7 @@ describe("runSuite (resolution + credential gate)", () => {
 		await expect(
 			runSuite({
 				runId: "test",
-				providerName: "daytona-vm",
+				providerName: "daytona-vm-zen5",
 				suiteName: "nope",
 				resultsDir: freshDir(),
 			}),
@@ -826,7 +826,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			readFileSync(join(resultsDir, "provider-artifact-evidence.json"), "utf8"),
 		);
 		expect(evidence).toEqual({
-			cell: { runId: "run-test-1", providerId: "daytona-vm", suite: "cpu-node" },
+			cell: { runId: "run-test-1", providerId: "daytona-vm-zen5", suite: "cpu-node" },
 			sandboxId: "sb-test-1",
 			provenance: {
 				source: "request-fallback",
@@ -838,7 +838,10 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 
 	it("upgrades a canonical release artifact only after the guest manifest matches", async () => {
 		const resultsDir = freshDir();
-		const artifact = { kind: "baked", ref: bakedArtifactName("daytona-vm", "version") } as const;
+		const artifact = {
+			kind: "baked",
+			ref: bakedArtifactName("daytona-vm-zen5", "version"),
+		} as const;
 		await runSuiteOnSandbox(
 			makeSandbox({
 				destroyed: { hit: false },
@@ -866,7 +869,10 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 	it("fails before benchmarking when a canonical artifact carries a stale guest manifest", async () => {
 		const resultsDir = freshDir();
 		const destroyed = { hit: false };
-		const artifact = { kind: "baked", ref: bakedArtifactName("daytona-vm", "version") } as const;
+		const artifact = {
+			kind: "baked",
+			ref: bakedArtifactName("daytona-vm-zen5", "version"),
+		} as const;
 		await expect(
 			runSuiteOnSandbox(
 				makeSandbox({
@@ -1133,8 +1139,10 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 			}),
 		).rejects.toThrow(/never ready/);
 		expect(destroyed.hit).toBe(true);
-		const marker = join(resultsDir, sandboxFailureMarkerFile("daytona-vm", "cpu-node"));
-		expect(parseGapMarker(marker, JSON.parse(readFileSync(marker, "utf8")), "daytona-vm")).toEqual({
+		const marker = join(resultsDir, sandboxFailureMarkerFile("daytona-vm-zen5", "cpu-node"));
+		expect(
+			parseGapMarker(marker, JSON.parse(readFileSync(marker, "utf8")), "daytona-vm-zen5"),
+		).toEqual({
 			scope: "suite",
 			id: "cpu-node",
 			outcome: "failed",
@@ -1227,7 +1235,9 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		// 1 KiB free, suite needs 50 GiB.
 		const sandbox = makeSandbox({ destroyed, freeKb: "1" });
 		await runSuiteOnSandbox(sandbox, ctx(suite({ minDiskGb: 50 }), resultsDir));
-		expect(existsSync(join(resultsDir, "sandbox-daytona-vm-cpu-node--skipped.json"))).toBe(true);
+		expect(existsSync(join(resultsDir, "sandbox-daytona-vm-zen5-cpu-node--skipped.json"))).toBe(
+			true,
+		);
 		expect(destroyed.hit).toBe(true);
 	});
 
@@ -1236,7 +1246,7 @@ describe("runSuiteOnSandbox (orchestration + teardown)", () => {
 		// Collect succeeds (a skip marker satisfies collection) but yields no pts_*.xml.
 		const sandbox = makeSandbox({
 			destroyed,
-			collectFiles: { "sandbox-daytona-vm-cpu-node--skipped.json": '{"skipped":true}' },
+			collectFiles: { "sandbox-daytona-vm-zen5-cpu-node--skipped.json": '{"skipped":true}' },
 		});
 		await expect(
 			runSuiteOnSandbox(sandbox, ctx(suite({ setupPts: true }), freshDir())),

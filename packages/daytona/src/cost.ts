@@ -3,7 +3,7 @@
 //
 //  - v0 (daytona-container): the analytics API reports each sandbox's billed USD, its allocation
 //    times its wall clock, so v0 has no burst. Recorded as `provider_reported`.
-//  - v2 (daytona-vm, burstable): usage history reports measured core-seconds and memory byte-seconds but no
+//  - v2 (the daytona-vm-* variants): usage history reports measured core-seconds and memory byte-seconds but no
 //    price, so the bill is `calculated_from_provider_usage` at the dated list rates.
 
 import type { ModelsUsagePeriod } from "@daytona/analytics-api-client";
@@ -28,7 +28,7 @@ import {
 import { type } from "arktype";
 import { DAYTONA_PROVENANCE } from "./provenance.ts";
 import type { DaytonaId } from "./vendor.ts";
-import { DAYTONA_V2_BURST } from "./vendor.ts";
+import { DAYTONA_VM_VARIANTS } from "./vendor.ts";
 
 // On-demand list rates; a `cpuType` multiplies CPU only, and ephemeral disk is free:
 // https://www.daytona.com/docs/billing#pricing-dimensions
@@ -36,6 +36,8 @@ const V2_RATES = {
 	coreHourUsd: 0.101,
 	memoryGibHourUsd: 0.0162,
 	cpuTypeMultiplier: { zen5: 0.235 / 0.101 } as Record<string, number>,
+	// An unpinned arm64 sandbox bills at the lowest tier (the base rate) — unverified: no cpuType is
+	// pinned, so the generation iad-1 assigns is not confirmed.
 	calculation: {
 		componentIds: ["linux.cpu.core_hour.on_demand", "linux.memory.gib_hour.on_demand"],
 		rateVerifiedAt: "2026-11-15T05:20:00.000Z",
@@ -240,7 +242,7 @@ async function capture<T>(
 		: { ...base, kind: "missing", reason: "provider_api_error", detail: bill.unsettled(value) };
 }
 
-/** The cost hook for a Daytona cell: daytona-vm prices v2 usage history, daytona-container reads v0. */
+/** The cost hook for a Daytona cell: the daytona-vm-* variants price v2 usage history, daytona-container reads v0. */
 export function daytonaCostEvidence(
 	provider: DaytonaId,
 ): ProviderCostEvidenceCapability<DaytonaId> {
@@ -262,9 +264,9 @@ export function daytonaCostEvidence(
 					detail: "Sandbox teardown was not confirmed; no provider usage was considered.",
 				};
 			}
-			return provider === "daytona-vm"
-				? capture(v2Bill(input, env, DAYTONA_V2_BURST), record)
-				: capture(await v0Bill(input, env), record);
+			return provider === "daytona-container"
+				? capture(await v0Bill(input, env), record)
+				: capture(v2Bill(input, env, DAYTONA_VM_VARIANTS[provider].create), record);
 		},
 	};
 }

@@ -63,7 +63,7 @@ function run(providers: ProviderRun[]): Run {
 function chartableRun(): Run {
 	return run([
 		provider("daytona-vm", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])]),
-		provider("modal-vm", [metric(CLONE, [3, 4]), metric(INSTALL, [50, 52])]),
+		provider("modal-vm-burst", [metric(CLONE, [3, 4]), metric(INSTALL, [50, 52])]),
 	]);
 }
 
@@ -107,7 +107,7 @@ describe("leaderboardFigures", () => {
 			benchmarkDataOf(
 				run([
 					provider("daytona-vm", [metric(CLONE, [1, 2]), metric(INSTALL, [30, 32])]),
-					provider("modal-vm", [metric(CLONE, [3, 4]), metric(INSTALL, [50, 52])]),
+					provider("modal-vm-burst", [metric(CLONE, [3, 4]), metric(INSTALL, [50, 52])]),
 					provider("e2b", [metric(CLONE, [1, 1])]),
 				]),
 			),
@@ -281,7 +281,7 @@ describe("metric figures", () => {
 			provider("daytona-vm", [metric(CPU, [10, 12, 11]), metric(STREAM, [100, 110])], {
 				suitesCovered: ["cpu-node", "memory"],
 			}),
-			provider("modal-vm", [metric(CPU, [5, 6, 7])], { suitesCovered: ["cpu-node"] }),
+			provider("modal-vm-burst", [metric(CPU, [5, 6, 7])], { suitesCovered: ["cpu-node"] }),
 			provider("e2b", [metric(INSTALL, [30, 32])], {
 				suitesCovered: ["realworld-mastra"],
 				gaps: [
@@ -412,7 +412,7 @@ describe("comparison figures", () => {
 	const older = () =>
 		at("111", "2026-08-14T00:00:00.000Z", [
 			provider("daytona-vm", [metric(CLONE, [2, 2]), metric(INSTALL, [40, 40])]),
-			provider("modal-vm", [metric(CLONE, [4, 4]), metric(INSTALL, [60, 60])]),
+			provider("modal-vm-burst", [metric(CLONE, [4, 4]), metric(INSTALL, [60, 60])]),
 		]);
 	const newer = () =>
 		at("222", "2026-09-14T00:00:00.000Z", [
@@ -421,7 +421,11 @@ describe("comparison figures", () => {
 				metric(INSTALL, [30, 30]),
 				metric(TEST, [500]),
 			]),
-			provider("modal-vm", [metric(CLONE, [4, 4]), metric(INSTALL, [66, 66]), metric(TEST, [500])]),
+			provider("modal-vm-burst", [
+				metric(CLONE, [4, 4]),
+				metric(INSTALL, [66, 66]),
+				metric(TEST, [500]),
+			]),
 		]);
 
 	it("labels rows by month, by day when the months coincide, by run id when the days do", () => {
@@ -477,7 +481,7 @@ describe("pipeline cost figures", () => {
 	): NonNullable<ProviderRun["costEvidence"]>[number] => ({
 		cell: {
 			runId: "run-1",
-			providerId: "modal-vm",
+			providerId: "modal-vm-burst",
 			suite: "realworld-mastra",
 			replicateIndex: index,
 		},
@@ -497,7 +501,7 @@ describe("pipeline cost figures", () => {
 	const pipeline = () => [metric(CLONE, [1, 2]), metric(INSTALL, [3, 4])];
 	const costRun = () =>
 		run([
-			provider("modal-vm", pipeline(), { costEvidence: [bill(0, 0.3), bill(1, 0.5)] }),
+			provider("modal-vm-burst", pipeline(), { costEvidence: [bill(0, 0.3), bill(1, 0.5)] }),
 			provider("daytona-vm", pipeline()),
 			provider("brezel", pipeline()),
 		]);
@@ -512,7 +516,7 @@ describe("pipeline cost figures", () => {
 		expect(figure?.id).toBe("pipeline-cost-realworld-mastra");
 		expect(figure?.rows.map((row) => [row.provider, row.badge])).toEqual([
 			["daytona-vm", "estimated"],
-			["modal-vm", "billed"],
+			["modal-vm-burst", "billed"],
 		]);
 		expect(figure?.rows[0]?.value).toBeCloseTo((RATE * 5) / 3600, 12);
 		// Only replicate 0 completed the pipeline, so only its bill is priced: half of $0.30. The other

@@ -9,9 +9,9 @@ Compare sandbox **providers**, not bare-metal hardware. Every provider is asked 
 workloads on the same pinned spec, and the results are normalized into one schema-validated dataset.
 
 Where a vendor exposes more than one **isolation technology**, each is a first-class provider variant
-so the comparison attributes results to the isolation the sandbox actually used: `daytona-vm` (a
-`SandboxClass.LINUX_VM` microVM) vs `daytona-container` (a Sysbox/OCI container), and `modal-gvisor`
-(Modal's default gVisor runtime) vs `modal-vm` (Modal's gVisor-free VM runtime). Each provider's
+so the comparison attributes results to the isolation the sandbox actually used: the `daytona-vm-*`
+variants (a `SandboxClass.LINUX_VM` microVM, below) vs `daytona-container` (a Sysbox/OCI container), and
+`modal-gvisor` (Modal's default gVisor runtime) vs `modal-vm-fixed` and `modal-vm-burst` (Modal's gVisor-free VM runtime, with the CPU pinned or allowed to burst). Each provider's
 declared isolation is the authoritative label and is shown in the leaderboard's **Providers in this
 run** roster. Every suite's setup probe records the detected runtime, boundary class, confidence,
 machine VMM, and container runtime. The system suite repeats the same probe with network evidence
@@ -36,6 +36,38 @@ label `oci-container` from a weak marker plus just one hardening signal; those h
 should be treated as unconfirmed until that provider is remeasured. The new rule requires two
 independent live containment signals before reporting a generic OCI container.
 
+### Daytona v2 variants
+
+Daytona's v2 control plane makes every Linux sandbox a microVM, and the org's catalog exposes only Zen 5
+(amd64, `us-east-ash-1`) and arm64 (`us-east-iad-1`; a CPU-type pin there never starts, so none is set).
+Four first-class variants cross those two architectures with two resource shapes, mirroring how Modal
+separates a fixed request from a bursting one:
+
+| Variant | Arch / region | CPU type | Guaranteed | Ceiling |
+|---|---|---|---|---|
+| `daytona-vm-zen5` (Daytona (VM)) | amd64, `us-east-ash-1` | `zen5` | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
+| `daytona-vm-zen5-burst` (Daytona (VM, burst)) | amd64, `us-east-ash-1` | `zen5` | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap (10 cores, 20 vCPU); memory fixed at 8 GiB |
+| `daytona-vm-arm` (Daytona (VM, arm)) | arm64, `us-east-iad-1` | none | 2 cores (4 vCPU), 8 GiB, 40 GiB | same: cannot burst |
+| `daytona-vm-arm-burst` (Daytona (VM, arm, burst)) | arm64, `us-east-iad-1` | none | 1 core (2 vCPU), 8 GiB, 40 GiB | CPU up to the plan cap; memory fixed at 8 GiB |
+
+A fixed variant must hold `TARGET_SPEC` exactly, so `specMatched` is true by construction. A burst
+variant reserves memory at the spec (Daytona hotplugs memory too slowly to burst it, as Modal's VM
+runtime also reserves it) but guarantees only the smallest CPU Daytona grants beside 8 GiB, so its guest
+sees the burst ceiling rather than 4 vCPU. Like Modal, it is therefore compared on its own terms, not
+as a spec match. The pre-split `daytona-vm` id is retired: committed runs that carry it keep parsing and resolve to `daytona-vm-zen5-burst`, so they render as "Daytona (VM, burst)" (the unqualified "Daytona (VM)" now names the fixed Zen 5 variant) and take its economics. The arm variants
+need an arm64 build of the toolchain image, which does not exist yet, and stay best-effort until it does.
+
+### Modal VM variants
+
+Modal's `runtime: "vm"` sandbox is a cloud-hypervisor microVM. Two first-class variants differ only in the CPU request:
+
+| Variant | CPU | Memory |
+|---|---|---|
+| `modal-vm-fixed` (Modal (VM)) | `cpu` = `cpuLimit` = 4 (the guest sees 4 vCPU): cannot burst | 8 GiB reserved and limited |
+| `modal-vm-burst` (Modal (VM, burst)) | request 0.125 core, no limit: bursts to the account ceiling | 8 GiB reserved and limited |
+
+A fixed variant holds `TARGET_SPEC`; a burst variant is compared on its own terms. The pre-split `modal-vm` id is retired: committed runs that carry it keep parsing and resolve to `modal-vm-burst`, so they render as "Modal (VM, burst)" (the unqualified "Modal (VM)" now names the fixed variant). Both share the toolchain image with `modal-gvisor`, so neither needs its own bake.
+
 ## Target spec
 
 Every provider is created at one pinned [`TARGET_SPEC`](../packages/schema/src/target-spec.ts): **4 vCPU,
@@ -52,7 +84,7 @@ disk is measured in the guest and disk-gated suites skip honestly when the obser
 
 Daytona container-class sandboxes in this org reject disk above 10 GB (`Disk request 40GB exceeds
 maximum allowed per sandbox (10GB)`, toolchain bake 43780173359). `daytona-container` is therefore
-baked and prepared at 10 GiB disk — not the 40 GiB `TARGET_SPEC` that `daytona-vm` and the other
+baked and prepared at 10 GiB disk — not the 40 GiB `TARGET_SPEC` that the `daytona-vm-*` variants and the other
 providers use. CPU and memory stay at 4 vCPU / 8 GiB (`specMatched` still judges only that pair).
 Observed disk is recorded on the Run; suites whose `minDiskGb` exceeds what the guest has free
 (notably `realworld-mastra` at 30 GiB and `realworld-openclaw` at 25 GiB) skip with an Insufficient
@@ -241,10 +273,11 @@ its public usage API is organization-wide cumulative usage and is not called or 
 one sandbox.
 
 Daytona's daytona-container cell (v0) records `provider_reported` USD from the analytics API
-(allocation × wall clock, no burst). daytona-vm (v2, `DAYTONA_V2_BURST`, Zen 5) records
+(allocation × wall clock, no burst). The daytona-vm-* variants (v2) record
 `calculated_from_provider_usage`: each usage-history minute is priced at max(measured, guarantee) at
-the dated list rates, Zen 5 cores at $0.235/core-hr. A bill not settled within the hook budget is
-recorded `missing`, never zero.
+the dated list rates, Zen 5 cores at $0.235/core-hr and arm64 cores at the lowest tier,
+$0.101/core-hr (the CPU generation an unpinned arm64 sandbox receives is unconfirmed, so that rate is
+unverified). A bill not settled within the hook budget is recorded `missing`, never zero.
 
 ### Measured cost on the board
 

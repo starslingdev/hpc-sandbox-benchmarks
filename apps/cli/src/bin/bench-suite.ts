@@ -96,7 +96,7 @@ function cellTitle(suite: string, provider: string): string {
 	return `${suite} / ${provider}`;
 }
 
-/** Agent-facing usage; bare invocation keeps the daytona-vm/cpu-node local-dev default. Every provider
+/** Agent-facing usage; bare invocation keeps the daytona-vm-zen5/cpu-node local-dev default. Every provider
  *  named here is a canonical {@link ProviderId} — the positional argument is matched against the
  *  registry exactly, so a copied example that said "daytona" or "modal" would fail as unknown. */
 export const HELP = `bench-suite — run a benchmark suite on a provider sandbox and normalize it into a Run document.
@@ -104,7 +104,7 @@ export const HELP = `bench-suite — run a benchmark suite on a provider sandbox
 usage: bench-suite [provider] [suite] [runId]
        bench-suite [--help] [--list-providers] [--list-suites] [--json]
 
-  provider                Provider to run on (default: daytona-vm). See --list-providers.
+  provider                Provider to run on (default: daytona-vm-zen5). See --list-providers.
   suite                   Suite to run (default: cpu-node). See --list-suites.
   runId                   Run identifier for the data/ tree (default: local-<timestamp>).
   --replicates <indices>  Drive the whole replicate fan-out from THIS process: a JSON array
@@ -131,8 +131,8 @@ Missing provider credentials are recorded as a skip (the provider stays "pending
 runnable without secrets. Writes the shard Run(s) under data/runs/ and updates data/index.json.
 
 examples:
-  bench-suite daytona-vm cpu-node                 # one suite locally, auto runId
-  bench-suite modal-vm memory ci-1234             # a specific cell + runId
+  bench-suite daytona-vm-zen5 cpu-node                 # one suite locally, auto runId
+  bench-suite modal-vm-burst memory ci-1234             # a specific cell + runId
   bench-suite e2b memory --require e2b            # fail (don't skip) if E2B_API_KEY is absent
   bench-suite e2b system spike-1                  # every provider runs through its DriverModule
   bench-suite e2b memory ci-1 --replicates 0,1,2  # 3 replicate sandboxes from this one process
@@ -430,9 +430,9 @@ if (import.meta.main) {
 	}
 
 	// Filter flags out before positional resolution so a trailing/misplaced flag (e.g.
-	// `bench-suite daytona-vm cpu-node --json`) never gets captured as the runId. The VALUE_FLAGS above
+	// `bench-suite daytona-vm-zen5 cpu-node --json`) never gets captured as the runId. The VALUE_FLAGS above
 	// are the ones that take a separate operand, so consume that operand too — otherwise
-	// `--require daytona-vm` would leave `daytona-vm` behind to be read as the runId.
+	// `--require daytona-vm-zen5` would leave `daytona-vm-zen5` behind to be read as the runId.
 	const positionals: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
@@ -446,7 +446,7 @@ if (import.meta.main) {
 		if (arg.startsWith("-")) continue;
 		positionals.push(arg);
 	}
-	const provider = positionals[0] ?? "daytona-vm";
+	const provider = positionals[0] ?? "daytona-vm-zen5";
 	const suite = positionals[1] ?? "cpu-node";
 	const runId = positionals[2] ?? `local-${Date.now()}`;
 	const sha = process.env.GITHUB_SHA ?? "local";
