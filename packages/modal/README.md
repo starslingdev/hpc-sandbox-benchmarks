@@ -8,7 +8,7 @@ Run `bun run --filter @sandbox-benchmarks/modal test` or `typecheck` from the re
 
 ## Benchmark App
 
-Both `modal-gvisor` and `modal-vm` use the existing `sandbox-benchmarks` App for sandbox
+`modal-gvisor` uses the `sandbox-benchmarks` App; `modal-vm-fixed` and `modal-vm-burst` share the `sandbox-benchmarks-vm` App for sandbox
 creation and ownership. Admission reconciles sandboxes owned by that App; active sandboxes
 in other Apps are reported as foreign and neither block admission nor become cleanup targets.
 Both variants still share account capacity and the benchmark account queue. See

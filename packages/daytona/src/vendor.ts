@@ -343,7 +343,7 @@ const SPEC_CORES = TARGET_SPEC.vcpus / 2;
 
 /**
  * Fixed: guarantee and ceiling are both the benchmark spec, so the sandbox cannot burst.
- * Burst (mirrors modal-vm): the smallest CPU guarantee Daytona grants beside 8 GiB of reserved memory
+ * Burst (mirrors modal-vm-burst): the smallest CPU guarantee Daytona grants beside 8 GiB of reserved memory
  * (1 core; a 0.125-core request is raised to it, probe 2026-11-20) with no CPU ceiling below the plan
  * cap (10 cores = 20 vCPU), and memory reserved at the spec. Memory is reserved rather than burstable because the VM boots with
  * about the guarantee + 1 GiB as MemTotal and hotplugs the rest too slowly: a 0.5 GiB guarantee had

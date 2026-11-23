@@ -16,7 +16,8 @@ export interface DriverModuleMap {
 	blaxel: typeof import("@sandbox-benchmarks/blaxel").default;
 	"microsandbox-cloud": typeof import("@sandbox-benchmarks/microsandbox-cloud").default;
 	"modal-gvisor": typeof import("@sandbox-benchmarks/modal/gvisor").default;
-	"modal-vm": typeof import("@sandbox-benchmarks/modal/vm").default;
+	"modal-vm-fixed": typeof import("@sandbox-benchmarks/modal/vm-fixed").default;
+	"modal-vm-burst": typeof import("@sandbox-benchmarks/modal/vm-burst").default;
 	novita: typeof import("@sandbox-benchmarks/novita").default;
 	namespace: typeof import("@sandbox-benchmarks/namespace").default;
 	vercel: typeof import("@sandbox-benchmarks/vercel").default;
@@ -61,7 +62,10 @@ export const DRIVERS: {
 	"microsandbox-cloud": () =>
 		import("@sandbox-benchmarks/microsandbox-cloud").then((module) => module.default),
 	"modal-gvisor": () => import("@sandbox-benchmarks/modal/gvisor").then((module) => module.default),
-	"modal-vm": () => import("@sandbox-benchmarks/modal/vm").then((module) => module.default),
+	"modal-vm-fixed": () =>
+		import("@sandbox-benchmarks/modal/vm-fixed").then((module) => module.default),
+	"modal-vm-burst": () =>
+		import("@sandbox-benchmarks/modal/vm-burst").then((module) => module.default),
 	novita: () => import("@sandbox-benchmarks/novita").then((module) => module.default),
 	namespace: () => import("@sandbox-benchmarks/namespace").then((module) => module.default),
 	vercel: () => import("@sandbox-benchmarks/vercel").then((module) => module.default),

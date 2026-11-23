@@ -42,7 +42,8 @@ test("all current allocating workflows share account queues across variants and 
 	expect(bake).toEndWith(" || matrix.provider }}");
 	for (const provider of [
 		"modal-gvisor",
-		"modal-vm",
+		"modal-vm-fixed",
+		"modal-vm-burst",
 		"daytona-vm-zen5",
 		"daytona-container",
 	] as const)

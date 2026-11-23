@@ -24,11 +24,11 @@ import { ClientError, Status } from "nice-grpc";
 export const MODAL_APP_NAME = "sandbox-benchmarks";
 export const MODAL_VM_APP_NAME = "sandbox-benchmarks-vm";
 
-export type ModalProviderId = "modal-gvisor" | "modal-vm";
+export type ModalProviderId = "modal-gvisor" | "modal-vm-fixed" | "modal-vm-burst";
 
 /** Separate Apps keep each runtime's inventory, cleanup and billing ownership disjoint. */
 export function modalAppName(provider: ModalProviderId): string {
-	return provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME;
+	return provider === "modal-gvisor" ? MODAL_APP_NAME : MODAL_VM_APP_NAME;
 }
 export const MODAL_CONTROL_TIMEOUT_MS = 5_000;
 /**

@@ -20,7 +20,7 @@ export default defineProviderMeta("daytona-vm-zen5-burst", {
 	maturity: {
 		status: "beta",
 		notes:
-			"Zen 5 with CPU bursting above a minimal guarantee, comparable to modal-vm. Successor to the pre-split daytona-vm runs (see LEGACY_PROVIDER_ALIASES).",
+			"Zen 5 with CPU bursting above a minimal guarantee, comparable to modal-vm-burst. Successor to the pre-split daytona-vm runs (see LEGACY_PROVIDER_ALIASES).",
 	},
 	specPinning: "settable",
 	transport: daytonaTransport,

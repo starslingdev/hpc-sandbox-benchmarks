@@ -272,6 +272,10 @@ export const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = Obj
 	// branch shows "VM" only because this stack sits on top of that later change — that is the current
 	// adapter config, not the runtime the historical runs were collected under.)
 	modal: "modal-gvisor",
+	// `modal-vm` → the burst variant: every committed `modal-vm` run asked Modal for the 0.125-core
+	// minimum and let the VM burst above it (observed 20 vCPU), which is what the split kept as
+	// `modal-vm-burst`. The unqualified "Modal (VM)" label now belongs to the fixed variant.
+	"modal-vm": "modal-vm-burst",
 	daytona: "daytona-vm-zen5-burst",
 	// `daytona-vm` → the zen5 burst variant: every committed `daytona-vm` run booted the v2 Linux VM on
 	// Zen 5 with a CPU guarantee that could burst above it, which is what the split kept as

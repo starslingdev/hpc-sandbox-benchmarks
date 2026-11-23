@@ -148,7 +148,7 @@ test("Modal variants share one owner and fill all waves together at account capa
 	const plan = workflowExperiment(
 		{
 			...env,
-			BENCH_PROVIDERS: "modal-gvisor,modal-vm",
+			BENCH_PROVIDERS: "modal-gvisor,modal-vm-burst",
 			BENCH_SUITES: "",
 			BENCH_ACCOUNT_CAPACITY: '{"modal":{"sandboxes":75}}',
 		},
@@ -161,13 +161,17 @@ test("Modal variants share one owner and fill all waves together at account capa
 		expect(batch.maxConcurrency).toBe(75);
 		expect(
 			new Set(batch.cells.map((id) => plan.cells.find((cell) => cell.id === id)?.provider)),
-		).toEqual(new Set(["modal-gvisor", "modal-vm"]));
-		expect(workflowBatch(plan, batch.id, "modal", '["modal-vm","modal-gvisor"]')).toBe(batch);
-		for (const providers of ['["modal-vm"]', '["modal-vm","tama"]', '["modal-vm","modal-vm"]']) {
+		).toEqual(new Set(["modal-gvisor", "modal-vm-burst"]));
+		expect(workflowBatch(plan, batch.id, "modal", '["modal-vm-burst","modal-gvisor"]')).toBe(batch);
+		for (const providers of [
+			'["modal-vm-burst"]',
+			'["modal-vm-burst","tama"]',
+			'["modal-vm-burst","modal-vm-burst"]',
+		]) {
 			expect(() => workflowBatch(plan, batch.id, "modal", providers)).toThrow("frozen batch");
 		}
-		expect(() => workflowBatch(plan, batch.id, "tama", '["modal-vm","modal-gvisor"]')).toThrow(
-			"frozen batch",
-		);
+		expect(() =>
+			workflowBatch(plan, batch.id, "tama", '["modal-vm-burst","modal-gvisor"]'),
+		).toThrow("frozen batch");
 	}
 });

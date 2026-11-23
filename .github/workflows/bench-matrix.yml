@@ -7,7 +7,7 @@ on:
         description: 'Comma-separated providers to benchmark (blank = every registered provider).'
         required: false
         type: string
-        default: e2b,daytona-vm-zen5,daytona-vm-zen5-burst,blaxel,microsandbox-cloud,modal-gvisor,modal-vm,novita,namespace,vercel,runcloud,tama,boat,freestyle,digitalocean
+        default: e2b,daytona-vm-zen5,daytona-vm-zen5-burst,blaxel,microsandbox-cloud,modal-gvisor,modal-vm-fixed,modal-vm-burst,novita,namespace,vercel,runcloud,tama,boat,freestyle,digitalocean
       suites:
         description: 'Comma-separated suites to run (blank = every registered suite). E.g. "network" for a targeted pre-merge run.'
         required: false

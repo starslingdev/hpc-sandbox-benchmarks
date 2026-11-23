@@ -15,7 +15,8 @@ export const PROVIDER_IDS = [
 	"blaxel",
 	"microsandbox-cloud",
 	"modal-gvisor",
-	"modal-vm",
+	"modal-vm-fixed",
+	"modal-vm-burst",
 	"novita",
 	"namespace",
 	"vercel",
@@ -37,4 +38,4 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
  * Runs stay published as historical snapshots, so their per-cell evidence must keep parsing; nothing
  * can create a new cell for one.
  */
-export const RETIRED_PROVIDER_IDS = ["runloop", "daytona-vm"] as const;
+export const RETIRED_PROVIDER_IDS = ["runloop", "daytona-vm", "modal-vm"] as const;

@@ -500,8 +500,8 @@ export function renderDriversProvenance(root = REPO_ROOT): Map<string, string> {
 		["E2B", REGISTRY.e2b.sdkPackage, catalogVersion(catalog, REGISTRY.e2b.sdkPackage)],
 		[
 			"MODAL",
-			REGISTRY["modal-vm"].sdkPackage,
-			catalogVersion(catalog, REGISTRY["modal-vm"].sdkPackage),
+			REGISTRY["modal-vm-burst"].sdkPackage,
+			catalogVersion(catalog, REGISTRY["modal-vm-burst"].sdkPackage),
 		],
 		// Cost-evidence consumers retain their explicit native-SDK provenance alias.
 		["MODAL_NATIVE", "modal", catalogVersion(catalog, "modal")],

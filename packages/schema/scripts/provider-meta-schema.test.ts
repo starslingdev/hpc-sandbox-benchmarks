@@ -101,9 +101,9 @@ describe("Tier-3 provider metadata schema", () => {
 		expect(() =>
 			validateProviderModules(meta("daytona-vm-zen5", { quotaDomain: "daytona-vm-zen5" })),
 		).toThrow(/sharing secret DAYTONA_API_KEY must declare one quotaDomain/);
-		expect(() => validateProviderModules(meta("modal-vm", { quotaDomain: "modal vm" }))).toThrow(
-			/quota domain identifier/,
-		);
+		expect(() =>
+			validateProviderModules(meta("modal-vm-burst", { quotaDomain: "modal vm" })),
+		).toThrow(/quota domain identifier/);
 		expect(validateProviderModules(meta("e2b", { quotaDomain: "e2b-benchmark" }))).toBeDefined();
 	});
 
@@ -275,10 +275,12 @@ describe("Tier-3 provider metadata schema", () => {
 	test("requires isolation variants to share pricing by object identity", () => {
 		expect(() =>
 			validateProviderModules(
-				meta("modal-vm", {
-					pricing: structuredClone(REGISTRY["modal-vm"].pricing),
+				meta("modal-vm-burst", {
+					pricing: structuredClone(REGISTRY["modal-vm-burst"].pricing),
 				}),
 			),
-		).toThrow(/modal-gvisor\/modal-vm: isolation variants must share one pricing object/);
+		).toThrow(
+			/modal-gvisor\/modal-vm-fixed\/modal-vm-burst: isolation variants must share one pricing object/,
+		);
 	});
 });

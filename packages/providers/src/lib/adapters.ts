@@ -19,7 +19,8 @@ import type { ProviderAdapter } from "./types.ts";
 export const MIGRATED_DRIVER_IDS = [
 	"e2b",
 	"modal-gvisor",
-	"modal-vm",
+	"modal-vm-fixed",
+	"modal-vm-burst",
 	"tama",
 	"novita",
 	"daytona-vm-zen5",

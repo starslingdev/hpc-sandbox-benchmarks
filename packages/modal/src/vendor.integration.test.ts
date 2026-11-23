@@ -17,10 +17,10 @@ import modalGvisor from "./gvisor.ts";
 import { modalAllocate } from "./shared.ts";
 import type { ModalBackend, ModalControlPlane, ModalControlSandbox } from "./vendor.ts";
 import { MODAL_APP_NAME, MODAL_VM_APP_NAME, modalVendor } from "./vendor.ts";
-import modalVm from "./vm.ts";
+import modalVm from "./vm-burst.ts";
 
 const IMAGE = "registry.example/toolchain:version";
-const context: DriverContext<"modal-vm"> = {
+const context: DriverContext<"modal-vm-burst"> = {
 	env: { MODAL_TOKEN_ID: "test-token", MODAL_TOKEN_SECRET: "test-secret" },
 	artifact: { kind: "image" },
 	resolvedArtifact: { kind: "image", ref: IMAGE },
@@ -190,9 +190,9 @@ vendorContract("modal-gvisor adapter", modalGvisor, () => modalAccount().vendor(
 describe("Modal benchmark resource configuration", () => {
 	it.each([
 		["modal-gvisor", 8, 128, "7516192768"],
-		["modal-vm", 8, 8192, "7516192768"],
+		["modal-vm-burst", 8, 8192, "7516192768"],
 		["modal-gvisor", 16, 16_384, "16106127360"],
-		["modal-vm", 16, 16_384, "16106127360"],
+		["modal-vm-burst", 16, 16_384, "16106127360"],
 	] as const)("%s at %d GiB requests minimum CPU and %d MiB of memory", async (provider, memoryGb, memoryMb, taskMemoryMaxBytes) => {
 		const client = new ModalClient({ tokenId: "test-token", tokenSecret: "test-secret" });
 		const app = new App("ap-prepared", MODAL_APP_NAME);
@@ -233,7 +233,7 @@ describe("Modal benchmark resource configuration", () => {
 			const allocate = createV2;
 			expect(create).not.toHaveBeenCalled();
 			expect(fromName).toHaveBeenCalledWith(
-				provider === "modal-vm" ? MODAL_VM_APP_NAME : MODAL_APP_NAME,
+				provider === "modal-vm-burst" ? MODAL_VM_APP_NAME : MODAL_APP_NAME,
 				{ createIfMissing: true },
 			);
 			expect(allocate).toHaveBeenCalledTimes(1);
@@ -252,7 +252,7 @@ describe("Modal benchmark resource configuration", () => {
 						memoryMb,
 						memoryMbMax: memoryGb * 1024,
 					},
-					runtime: provider === "modal-vm" ? "vm" : "gvisor",
+					runtime: provider === "modal-vm-burst" ? "vm" : "gvisor",
 					experimentalOptionsV2: { performance_sensitive: "true" },
 				},
 			});
@@ -353,7 +353,7 @@ describe("Modal end to end through each variant's module", () => {
 		const account = modalAccount({ diskGb: 30 });
 		await expect(driverOver(account).create(request())).rejects.toMatchObject({
 			code: "invalid-create-request",
-			provider: "modal-vm",
+			provider: "modal-vm-burst",
 		});
 		expect([...account.rows.values()].map((row) => row.exitCode)).toEqual([0]);
 	});

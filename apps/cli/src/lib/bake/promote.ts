@@ -153,7 +153,7 @@ export async function promoteAll(log: Log, options: PromoteOptions = {}): Promis
 		return { reports, ok: false };
 	};
 	// Only a REQUIRED provider gates the release (Option 1): a best-effort variant that shares a required
-	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm ↔ modal-gvisor — runs rather than
+	// variant's credentials — daytona-container ↔ daytona-vm, modal-vm-* ↔ modal-gvisor — runs rather than
 	// skips, so its re-validation or artifact failure is recorded but must NOT abort a full publish.
 	// A scoped backfill is inherently strict: every provider explicitly named is required even if a
 	// direct local caller omitted the redundant `--require` flag.

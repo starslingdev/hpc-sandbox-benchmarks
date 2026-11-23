@@ -22,7 +22,7 @@ const capable = (owned: readonly string[], foreignCount: number): SandboxDriver 
 
 test("benchmark-scoped inventory reports foreign counts without blocking admission", async () => {
 	const rows = await inventoryAccounts(
-		["daytona-vm-zen5", "daytona-container", "novita", "modal-gvisor", "modal-vm"],
+		["daytona-vm-zen5", "daytona-container", "novita", "modal-gvisor", "modal-vm-burst"],
 		async () => ({ driver: capable([], 42) }),
 		String,
 	);
@@ -39,7 +39,7 @@ test("benchmark-scoped inventory reports foreign counts without blocking admissi
 
 test("benchmark-scoped listing failure still blocks admission", async () => {
 	const rows = await inventoryAccounts(
-		["daytona-container", "novita", "modal-gvisor", "modal-vm"],
+		["daytona-container", "novita", "modal-gvisor", "modal-vm-burst"],
 		async () => {
 			throw new Error("inventory unavailable");
 		},
@@ -51,7 +51,7 @@ test("benchmark-scoped listing failure still blocks admission", async () => {
 
 test("reports every account the way admission sees it and never skips a failure", async () => {
 	const rows = await inventoryAccounts(
-		["tama", "e2b", "novita", "modal-vm"],
+		["tama", "e2b", "novita", "modal-vm-burst"],
 		async (id) => {
 			if (id === "tama") return { driver: capable(["machine-a"], 0) };
 			if (id === "e2b") return { driver: capable([], 2) };
@@ -71,7 +71,7 @@ test("reports every account the way admission sees it and never skips a failure"
 		"tama:listed",
 		"e2b:listed",
 		"novita:unsupported",
-		"modal-vm:failed",
+		"modal-vm-burst:failed",
 	]);
 	// Leftovers alone do not block (reconciliation removes them); foreign resources and gaps do.
 	expect(inventoryBlocksAdmission(rows.slice(0, 1))).toBe(false);
@@ -81,5 +81,5 @@ test("reports every account the way admission sees it and never skips a failure"
 	expect(text).toContain("tama (account tama): owned=1 [machine-a] foreign=0");
 	expect(text).toContain("e2b (account e2b): owned=0 [none] foreign=2");
 	expect(text).toContain("novita (account novita): unsupported — driver lacks");
-	expect(text).toContain("modal-vm (account modal): failed — MODAL_TOKEN_ID missing");
+	expect(text).toContain("modal-vm-burst (account modal): failed — MODAL_TOKEN_ID missing");
 });

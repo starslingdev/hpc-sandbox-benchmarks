@@ -381,7 +381,7 @@ describe("buildLeaderboard", () => {
 	it("says a below-target RAM reading is a starting size, not a ceiling", () => {
 		// Modal's bursting VM: 20 schedulable CPUs and a balloon that boots at 1.08 GB.
 		const modalVm = {
-			...provider("modal-vm", [metric("node_web_tooling_runs_per_s", [10])]),
+			...provider("modal-vm-burst", [metric("node_web_tooling_runs_per_s", [10])]),
 			specMatched: false,
 			observedSpecs: { vcpus: 20, memoryGb: 1.08 },
 		};
@@ -1262,15 +1262,17 @@ describe("absent providers (zero-evidence registry rows) and the registered-suit
 		const board = buildLeaderboard(
 			run([
 				provider("daytona-vm-zen5", [metric(HEADLINE, [10, 11])], [], ["cpu-node", "disk"]),
-				provider("modal-vm", []),
+				provider("modal-vm-burst", []),
 			]),
 		);
-		expect(board.coverageGaps.filter((g) => g.providerId === "modal-vm")).toEqual([]);
-		expect(board.absentProviders).toEqual([{ providerId: "modal-vm", displayName: "Modal (VM)" }]);
+		expect(board.coverageGaps.filter((g) => g.providerId === "modal-vm-burst")).toEqual([]);
+		expect(board.absentProviders).toEqual([
+			{ providerId: "modal-vm-burst", displayName: "Modal (VM, burst)" },
+		]);
 		expect(board.roster.map((r) => r.providerId)).toEqual(["daytona-vm-zen5"]);
 		const md = render(board);
 		expect(md).toContain(
-			"_Not present in this run: Modal (VM) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._",
+			"_Not present in this run: Modal (VM, burst) — registered providers that reported no data (not dispatched, or every cell was lost before reporting anything)._",
 		);
 	});
 
@@ -1499,7 +1501,7 @@ describe("the figure dimension: charts above, receipts below", () => {
 		buildLeaderboard(
 			run([
 				provider("daytona-vm-zen5", [metric(TASK, [30, 31])]),
-				provider("modal-vm", [metric(TASK, [50, 52])]),
+				provider("modal-vm-burst", [metric(TASK, [50, 52])]),
 			]),
 		);
 	/** The figure dimension's own section — cut at the next `## ` heading or at the trailing
@@ -1586,7 +1588,11 @@ describe("the metric charts: headline above the collapse, the rest beside their 
 					metric(TRIAD, [100, 110]),
 					metric(ADD, [90, 95]),
 				]),
-				provider("modal-vm", [metric(CPU, [5, 6]), metric(TRIAD, [80, 85]), metric(ADD, [70, 75])]),
+				provider("modal-vm-burst", [
+					metric(CPU, [5, 6]),
+					metric(TRIAD, [80, 85]),
+					metric(ADD, [70, 75]),
+				]),
 			]),
 		);
 	const chart = (over: Partial<LeaderboardMetricFigure>): LeaderboardMetricFigure => ({
@@ -1648,7 +1654,7 @@ describe("the metric charts: headline above the collapse, the rest beside their 
 						measured.map((id) => metric(id, [100, 110])),
 					),
 					provider(
-						"modal-vm",
+						"modal-vm-burst",
 						measured.map((id) => metric(id, [80, 90])),
 					),
 				]),

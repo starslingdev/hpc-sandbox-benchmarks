@@ -11,7 +11,7 @@ workloads on the same pinned spec, and the results are normalized into one schem
 Where a vendor exposes more than one **isolation technology**, each is a first-class provider variant
 so the comparison attributes results to the isolation the sandbox actually used: the `daytona-vm-*`
 variants (a `SandboxClass.LINUX_VM` microVM, below) vs `daytona-container` (a Sysbox/OCI container), and
-`modal-gvisor` (Modal's default gVisor runtime) vs `modal-vm` (Modal's gVisor-free VM runtime). Each provider's
+`modal-gvisor` (Modal's default gVisor runtime) vs `modal-vm-fixed` and `modal-vm-burst` (Modal's gVisor-free VM runtime, with the CPU pinned or allowed to burst). Each provider's
 declared isolation is the authoritative label and is shown in the leaderboard's **Providers in this
 run** roster. Every suite's setup probe records the detected runtime, boundary class, confidence,
 machine VMM, and container runtime. The system suite repeats the same probe with network evidence
@@ -56,6 +56,17 @@ runtime also reserves it) but guarantees only the smallest CPU Daytona grants be
 sees the burst ceiling rather than 4 vCPU. Like Modal, it is therefore compared on its own terms, not
 as a spec match. The pre-split `daytona-vm` id is retired: committed runs that carry it keep parsing and resolve to `daytona-vm-zen5-burst`, so they render as "Daytona (VM, burst)" (the unqualified "Daytona (VM)" now names the fixed Zen 5 variant) and take its economics. The arm variants
 need an arm64 build of the toolchain image, which does not exist yet, and stay best-effort until it does.
+
+### Modal VM variants
+
+Modal's `runtime: "vm"` sandbox is a cloud-hypervisor microVM. Two first-class variants differ only in the CPU request:
+
+| Variant | CPU | Memory |
+|---|---|---|
+| `modal-vm-fixed` (Modal (VM)) | `cpu` = `cpuLimit` = 2 cores (4 vCPU): cannot burst | 8 GiB reserved and limited |
+| `modal-vm-burst` (Modal (VM, burst)) | request 0.125 core, no limit: bursts to the account ceiling | 8 GiB reserved and limited |
+
+A fixed variant holds `TARGET_SPEC`; a burst variant is compared on its own terms. The pre-split `modal-vm` id is retired: committed runs that carry it keep parsing and resolve to `modal-vm-burst`, so they render as "Modal (VM, burst)" (the unqualified "Modal (VM)" now names the fixed variant). Both share the toolchain image with `modal-gvisor`, so neither needs its own bake.
 
 ## Target spec
 
