@@ -14,6 +14,7 @@ import {
 	ptsPinsFromScript,
 	realworldVersionFromBenchSh,
 	runTaskChildren,
+	SUITE_WORKLOAD_INPUTS,
 	suiteBakedPtsProfiles,
 } from "./suite-tasks.ts";
 
@@ -220,9 +221,10 @@ describe("frozen suite image preparation", () => {
 	const frozenCopy = () => {
 		const dir = mkdtempSync(join(tmpdir(), "suite-tasks-"));
 		copies.push(dir);
-		const inputs = [".mise/tasks/benchmark", "lib/bench.sh", "packages/schema/src"];
 		const archive = join(dir, "inputs.tar");
-		execFileSync("git", ["archive", "-o", archive, "HEAD", "--", ...inputs], { cwd: root });
+		execFileSync("git", ["archive", "-o", archive, "HEAD", "--", ...SUITE_WORKLOAD_INPUTS], {
+			cwd: root,
+		});
 		execFileSync("tar", ["-xf", archive, "-C", dir]);
 		rmSync(archive);
 		const git = (...args: string[]) =>

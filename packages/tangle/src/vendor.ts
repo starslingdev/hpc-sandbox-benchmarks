@@ -9,6 +9,7 @@ import {
 	LEAK_EXPIRY_MS,
 	markerSpelling,
 } from "@sandbox-benchmarks/driver/vendor";
+import { PTS_BAKED_ROOT } from "@sandbox-benchmarks/schema";
 import type { Sandbox, SandboxInstance } from "@tangle-network/sandbox";
 import { SandboxError } from "@tangle-network/sandbox";
 
@@ -54,14 +55,12 @@ const PREPARE_PTS = [
 
 /** Stage only the named baked profiles; without a usable selection, stage every baked profile. */
 export function tanglePtsPreflight(profiles?: readonly string[]): string {
-	const root = "/var/lib/phoronix-test-suite/installed-tests/pts";
+	const root = `${PTS_BAKED_ROOT}/installed-tests/pts`;
 	const paths = profiles?.every((name) => /^[a-z0-9][a-z0-9._-]*$/.test(name))
 		? [...new Set(profiles)].map((name) => `${root}/${name}`).join(" ")
 		: `${root}/*`;
 	return `set -- ${paths}\n${PREPARE_PTS}`;
 }
-
-export const TANGLE_PTS_PREFLIGHT = tanglePtsPreflight();
 
 function phaseOf(status: string): Phase {
 	if (status === "running") return "ready";

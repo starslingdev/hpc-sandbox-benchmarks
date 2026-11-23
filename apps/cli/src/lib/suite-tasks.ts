@@ -285,7 +285,7 @@ function joinPins(pins: PtsPin[], key: keyof PtsPin): string {
 export async function describeSuiteTasks(
 	suiteName: string,
 	root: string = process.cwd(),
-	filesOnly = false,
+	{ mise = true }: { mise?: boolean } = {},
 ): Promise<SuiteTaskPlan> {
 	if (!(suiteName in SUITES)) {
 		throw new Error(`unknown suite "${suiteName}" — not in SUITE_NAMES`);
@@ -309,7 +309,7 @@ export async function describeSuiteTasks(
 	const pushTask = async (taskName: string, role: "command" | "leaf"): Promise<void> => {
 		if (seen.has(taskName)) return;
 		seen.add(taskName);
-		const info = filesOnly ? undefined : await miseTaskInfo(taskName, root);
+		const info = mise ? await miseTaskInfo(taskName, root) : undefined;
 		const file = resolveTaskFile(taskName, info?.file, root);
 		const script = file ? readRepoFile(root, file) : undefined;
 		const pins = script ? ptsPinsFromScript(script, { fioProfile, realworldVersion }) : [];
@@ -318,6 +318,7 @@ export async function describeSuiteTasks(
 			// mise's answer wins when it has one; the script's own `#MISE description=` is the fallback
 			// so the summary is identical with or without a mise binary on PATH.
 			description: info?.description || (script ? descriptionFromScript(script) : ""),
+			// Blank when unreadable, so a frozen-suite selection can tell it didn't see the task.
 			file: script ? file : "",
 			role,
 			ptsProfile: joinPins(pins, "ptsProfile"),
@@ -340,33 +341,62 @@ export async function describeSuiteTasks(
 }
 
 type BakedProfiles = readonly string[] | undefined;
+
+/** What `suiteBakedPtsProfiles` reads from the checkout; it must match the frozen revision. */
+export const SUITE_WORKLOAD_INPUTS = [
+	".mise/tasks/benchmark",
+	"lib/bench.sh",
+	"packages/schema/src",
+] as const;
+
+const sourceByRevision = new Map<string, Promise<boolean>>();
 const preparationBySuite = new Map<string, Promise<BakedProfiles>>();
+const PIN = /^(?:pts|local)\/[a-z0-9][a-z0-9._-]*-\d+(?:\.\d+)+$/;
+const PIN_VERSION = /-\d+(?:\.\d+)+$/;
+
+const memo = <T>(cache: Map<string, Promise<T>>, key: string, compute: () => Promise<T>) => {
+	const prior = cache.get(key);
+	if (prior) return prior;
+	const pending = compute();
+	cache.set(key, pending);
+	return pending;
+};
 
 /** Keep generic image preparation for unpinned checkouts or differing workload definitions. */
 async function sourceMatches(root: string, revision: string): Promise<boolean> {
 	try {
-		const inputs = [".mise/tasks/benchmark", "lib/bench.sh", "packages/schema/src"];
-		const opts = { cwd: root, stderr: "ignore" } as const;
-		const diff = Bun.spawn(
-			["git", "diff", "--quiet", "--no-ext-diff", revision, "--", ...inputs],
-			opts,
-		);
-		const untracked = Bun.spawn(
-			["git", "ls-files", "--others", "--exclude-standard", "--", ...inputs],
-			{
-				...opts,
-				stdout: "pipe",
-			},
-		);
-		const [changed, listed, additions] = await Promise.all([
-			diff.exited,
-			untracked.exited,
-			new Response(untracked.stdout).text(),
+		const git = (args: string[]) => Bun.$`git ${args}`.cwd(root).quiet().nothrow();
+		const [diff, untracked] = await Promise.all([
+			git(["diff", "--quiet", "--no-ext-diff", revision, "--", ...SUITE_WORKLOAD_INPUTS]),
+			git(["ls-files", "--others", "--exclude-standard", "--", ...SUITE_WORKLOAD_INPUTS]),
 		]);
-		return changed === 0 && listed === 0 && additions === "";
+		return diff.exitCode === 0 && untracked.exitCode === 0 && untracked.stdout.length === 0;
 	} catch {
 		return false;
 	}
+}
+
+async function resolveBakedPtsProfiles(
+	suite: SuiteName,
+	revision: string,
+	root: string,
+): Promise<BakedProfiles> {
+	const matches = await memo(sourceByRevision, `${root}\0${revision}`, () =>
+		sourceMatches(root, revision),
+	);
+	if (!matches) return undefined;
+	const plan = await describeSuiteTasks(suite, root, { mise: false });
+	if (!plan.commands.every(miseTaskFromCommand) || plan.tasks.some((task) => !task.file))
+		return undefined;
+	const pins = new Set(plan.tasks.flatMap((task) => task.ptsProfile.split(", ").filter(Boolean)));
+	if (!pins.size || ![...pins].every((pin) => PIN.test(pin))) return undefined;
+	const bases = new Set([...pins].map((pin) => pin.replace(PIN_VERSION, "")));
+	if (plan.metrics.some((m) => !m.dimension || (m.ptsTest && !bases.has(m.ptsTest))))
+		return undefined;
+	return [...pins]
+		.filter((pin) => pin.startsWith("pts/"))
+		.map((pin) => pin.slice(4))
+		.sort();
 }
 
 /** A frozen suite's replicates share the same image profile selection. */
@@ -375,37 +405,8 @@ export function suiteBakedPtsProfiles(
 	revision = process.env.BENCH_REPO_REF,
 	root = process.cwd(),
 ): Promise<BakedProfiles> {
-	if (!revision || !/^[a-f0-9]{40}$/.test(revision)) return Promise.resolve(undefined);
-	const key = `${root}\0${revision}\0${suite}`;
-	const prior = preparationBySuite.get(key);
-	if (prior) return prior;
-	const pending = (async (): Promise<BakedProfiles> => {
-		if (!(await sourceMatches(root, revision))) return undefined;
-		const plan = await describeSuiteTasks(suite, root, true);
-		if (
-			!plan.commands.every(miseTaskFromCommand) ||
-			!plan.tasks.length ||
-			plan.tasks.some((task) => !task.file)
-		)
-			return undefined;
-		const pins = new Set(plan.tasks.flatMap((task) => task.ptsProfile.split(", ").filter(Boolean)));
-		const version = /-\d+(?:\.\d+)+$/;
-		const bases = new Set([...pins].map((pin) => pin.replace(version, "")));
-		if (
-			!pins.size ||
-			[...pins].some(
-				(pin) => !/^(?:pts|local)\/[a-z0-9][a-z0-9._-]*$/.test(pin) || !version.test(pin),
-			) ||
-			plan.metrics.some(
-				(metric) => !metric.dimension || (metric.ptsTest && !bases.has(metric.ptsTest)),
-			)
-		)
-			return undefined;
-		return [...pins]
-			.filter((pin) => pin.startsWith("pts/"))
-			.map((pin) => pin.slice(4))
-			.sort();
-	})();
-	preparationBySuite.set(key, pending);
-	return pending;
+	if (!/^[a-f0-9]{40}$/.test(revision ?? "")) return Promise.resolve(undefined);
+	return memo(preparationBySuite, `${root}\0${revision}\0${suite}`, () =>
+		resolveBakedPtsProfiles(suite, revision as string, root),
+	);
 }
