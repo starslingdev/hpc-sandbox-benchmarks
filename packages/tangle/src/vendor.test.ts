@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SandboxInstance } from "@tangle-network/sandbox";
 import { SandboxError } from "@tangle-network/sandbox";
-import { TANGLE_PTS_PREFLIGHT, tangleVendor } from "./vendor.ts";
+import { TANGLE_PTS_PREFLIGHT, tanglePtsPreflight, tangleVendor } from "./vendor.ts";
 
 const vendor = tangleVendor({} as never, { resolvedArtifact: { kind: "image", ref: "image" } });
 const refused = (status: number, disposition?: "not-admitted") =>
@@ -32,4 +32,35 @@ test("the preflight and every command run behind the image toolchain and HOME PT
 	await vendor.data.launch?.(sandbox, "true");
 	expect(commands[0]).toEndWith(TANGLE_PTS_PREFLIGHT);
 	for (const command of commands) expect(command).toStartWith('export PATH="$HOME/.local/pts/bin:');
+});
+
+test("the preflight stages only a frozen suite's profiles and otherwise stages every baked profile", async () => {
+	const prepared = async (
+		resolveBakedPtsProfiles: () => Promise<readonly string[] | undefined>,
+	) => {
+		const commands: string[] = [];
+		const sandbox = {
+			exec: async (command: string) => {
+				commands.push(command);
+				return { exitCode: 0 };
+			},
+		} as unknown as SandboxInstance;
+		const op = { signal: AbortSignal.timeout(1_000), resolveBakedPtsProfiles };
+		await vendor.data.prepare?.({ native: sandbox } as never, { spec: {} } as never, op);
+		return commands[0];
+	};
+	const root = "/var/lib/phoronix-test-suite/installed-tests/pts";
+	expect(await prepared(async () => ["pgbench-1.15.0"])).toEndWith(
+		`set -- ${root}/pgbench-1.15.0\n${TANGLE_PTS_PREFLIGHT.split("\n").slice(1).join("\n")}`,
+	);
+	expect(await prepared(async () => [])).toContain("set -- \n");
+	for (const resolve of [
+		async () => undefined,
+		async () => ["../etc", "iperf-1.2.0"],
+		() => Promise.reject(new Error("task discovery failed")),
+	])
+		expect(await prepared(resolve)).toEndWith(TANGLE_PTS_PREFLIGHT);
+	expect(tanglePtsPreflight(["iperf-1.2.0", "iperf-1.2.0"])).toStartWith(
+		`set -- ${root}/iperf-1.2.0\n`,
+	);
 });

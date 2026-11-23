@@ -52,9 +52,10 @@ const PREPARE_PTS = [
 	'"$bin" version',
 ].join("\n");
 
+/** Stage only the named baked profiles; without a usable selection, stage every baked profile. */
 export function tanglePtsPreflight(profiles?: readonly string[]): string {
 	const root = "/var/lib/phoronix-test-suite/installed-tests/pts";
-	const paths = profiles?.every((name) => /^[a-z0-9]/.test(name) && !/[^a-z0-9._-]/.test(name))
+	const paths = profiles?.every((name) => /^[a-z0-9][a-z0-9._-]*$/.test(name))
 		? [...new Set(profiles)].map((name) => `${root}/${name}`).join(" ")
 		: `${root}/*`;
 	return `set -- ${paths}\n${PREPARE_PTS}`;
@@ -167,12 +168,12 @@ export function tangleVendor(
 								`if [ "$bytes" -lt ${Math.ceil(spec.diskGb * 1024 ** 3)} ]; then echo "requested ${spec.diskGb} GiB workspace, mounted $bytes bytes at $HOME"; exit 78; fi`,
 								"",
 							].join("\n");
+				// Selection is an optimization: a resolver failure falls back to staging every profile.
+				const profiles = await resolveBakedPtsProfiles?.().catch(() => undefined);
 				const { exitCode, stdout, stderr } = await exec(
 					native,
-					workspace + tanglePtsPreflight(await resolveBakedPtsProfiles?.()),
-					{
-						signal,
-					},
+					workspace + tanglePtsPreflight(profiles),
+					{ signal },
 				);
 				if (exitCode === 78 && stdout.startsWith("requested "))
 					return { status: "unsupported", detail: stdout.trim() };
