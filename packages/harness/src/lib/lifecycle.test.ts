@@ -4,7 +4,7 @@ import { HARNESS_METRIC_IDS } from "@sandbox-benchmarks/schema";
 import { GapError } from "./gap-cause.ts";
 import type { LifecycleCompute, LifecycleSandbox } from "./lifecycle.ts";
 import { aggregateLifecycle, measureLifecycle } from "./lifecycle.ts";
-import { cleanupOwnedSandboxes } from "./sandbox-owner.ts";
+import { releaseOwnedSandbox } from "./sandbox-owner.ts";
 
 interface FakeCalls {
 	order: string[];
@@ -37,7 +37,11 @@ function fastClock(): () => number {
 const noDelay = async (): Promise<void> => {};
 
 /** A fake compute that records its call order, so the driver's chain is checkable without a real SDK. */
-function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls: FakeCalls } {
+function fakeCompute(opts: FakeOptions = {}): {
+	compute: LifecycleCompute;
+	calls: FakeCalls;
+	sandbox: LifecycleSandbox;
+} {
 	const calls: FakeCalls = { order: [], deletedSnapshots: [] };
 	let readinessProbes = 0;
 	let remainingDestroyFailures = opts.failDestroy ? 1 : 0;
@@ -79,6 +83,7 @@ function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls
 		async create() {
 			calls.order.push("create");
 			if (opts.failCreate) throw new Error("create boom");
+			created.push(sandbox);
 			return sandbox;
 		},
 	};
@@ -102,11 +107,14 @@ function fakeCompute(opts: FakeOptions = {}): { compute: LifecycleCompute; calls
 			},
 		};
 	}
-	return { compute, calls };
+	return { compute, calls, sandbox };
 }
 
-afterEach(async () => {
-	expect(await cleanupOwnedSandboxes()).toEqual([]);
+// The owner registry is process-wide and `bun test --no-isolate` shares it with other files, so
+// check only the sandboxes this file created: each must have left process ownership.
+const created: LifecycleSandbox[] = [];
+afterEach(() => {
+	expect(created.splice(0).filter((sandbox) => releaseOwnedSandbox(sandbox))).toEqual([]);
 });
 
 /** Map of Metric id → number of Samples that carry it. */
@@ -417,12 +425,14 @@ describe("measureLifecycle", () => {
 	});
 
 	it("records a teardown failure as a failed gap rather than throwing out of finally", async () => {
-		const { compute } = fakeCompute({ failDestroy: true });
+		const { compute, sandbox } = fakeCompute({ failDestroy: true });
 		const { samples, gaps } = await measureLifecycle(compute, { provider: "e2b" });
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.spawn]).toBe(1);
 		expect(countByOp(samples)[HARNESS_METRIC_IDS.teardown]).toBeUndefined();
 		expect(reasonFor(gaps, HARNESS_METRIC_IDS.teardown)).toBe("destroy boom");
 		expect(outcomeFor(gaps, HARNESS_METRIC_IDS.teardown)).toBe("failed");
+		// The sandbox stays owned, so the process-exit drain can retry its teardown.
+		expect(releaseOwnedSandbox(sandbox)).toBe(true);
 	});
 
 	it("records a snapshot-create failure as a failed gap", async () => {
