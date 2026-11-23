@@ -46,12 +46,12 @@ describe("plan-matrix", () => {
 	});
 
 	it("narrows the matrix to the providers a dispatch names, still one line of JSON", () => {
-		const out = planMatrixJson("e2b,daytona-vm");
+		const out = planMatrixJson("e2b,daytona-vm-zen5");
 		expect(out).not.toContain("\n");
 
 		const parsed = JSON.parse(out) as { include: Array<{ provider: string }> };
 		expect(parsed.include.length).toBe(2 * SUITE_NAMES.length);
-		expect([...new Set(parsed.include.map((c) => c.provider))]).toEqual(["e2b", "daytona-vm"]);
+		expect([...new Set(parsed.include.map((c) => c.provider))]).toEqual(["e2b", "daytona-vm-zen5"]);
 	});
 });
 

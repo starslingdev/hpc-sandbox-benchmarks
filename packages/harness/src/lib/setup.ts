@@ -9,7 +9,7 @@
  *   BENCH_REPO_TOKEN  Token for fetching a private repo; never written to the checkout config.
  */
 import type { Suite } from "@sandbox-benchmarks/schema";
-import { PTS_APT_DEPS } from "@sandbox-benchmarks/schema";
+import { PTS_APT_DEPS, PTS_BAKED_ROOT } from "@sandbox-benchmarks/schema";
 import { MIN, shellQuote } from "./execute.ts";
 
 export const REPO_URL =
@@ -205,6 +205,17 @@ export function setupSteps(suite: Suite, sourceRevision?: string): SetupStep[] {
 /** Schedulable CPUs: GNU nproc honours OMP_* hints, which Modal sets to the CPU request, not the limit. */
 export const HOST_VCPUS_PROBE = "env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc";
 
+// PTS may install into a writable workspace separate from the baked profiles. Before setup,
+// the install directory can be absent. Its nearest existing parent is on the intended filesystem.
+const ptsDiskBlocks = [
+	`disk_src="\${PTS_TEST_INSTALL_ROOT_PATH:-\${PTS_USER_PATH_OVERRIDE:-}}"`,
+	`if [ -z "$disk_src" ]; then disk_src=${PTS_BAKED_ROOT}; [ -d "$disk_src" ] || disk_src="$HOME"; fi`,
+	'while [ ! -d "$disk_src" ]; do disk_src=$(dirname -- "$disk_src"); done',
+	'df -Pk -- "$disk_src"',
+].join("\n");
+
+export const PTS_FREE_DISK_KB = `${ptsDiskBlocks} | awk 'NR==2 {print $4}'`;
+
 /**
  * Captures the sandbox's actual specs into benchmark-results/observed-specs.json before the suite
  * runs, so the normalizer reads it with the other results. nproc / /proc/meminfo see the HOST on
@@ -223,15 +234,10 @@ export const OBSERVED_SPECS_SCRIPT = [
 	"if [ -f /sys/fs/cgroup/memory.max ] && grep -qv max /sys/fs/cgroup/memory.max; then",
 	`  memory_gb=$(awk '{ printf "%.2f", $1 / 1073741824 }' /sys/fs/cgroup/memory.max) && limited=1`,
 	"fi",
-	// Report the disk the benchmark actually writes to, not the sandbox root: the PTS data dir when it
-	// exists (on Blaxel that's the mounted 40 GiB volume; on baked-image providers it's on the root fs,
-	// so identical to `/`), else `/` (a stock gVisor root pre-PTS — Modal). Keep this dir in sync with
-	// the harness disk gate and the blaxel volume mount path.
-	`disk_src=/var/lib/phoronix-test-suite; [ -d "$disk_src" ] || disk_src=/`,
 	// gVisor (Modal) reports the root as 2^63 bytes — a "no limit" sentinel, not a size. Emit diskGb only
 	// when df's answer is plausible for a sandbox (positive, < 100 TB); a sentinel, a failed df, or
 	// a non-numeric column all leave it unset as unknown.
-	`disk_gb=$(df -Pk "$disk_src" | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
+	`disk_gb=$(${ptsDiskBlocks} | awk 'NR==2 && $2 + 0 > 0 && $2 / 1048576 < 100000 { printf "%.1f", $2 / 1048576 }')`,
 	`cpu_model=$(LC_ALL=C lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -1 || true)`,
 	"kernel=$(uname -r)",
 	`os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"' || true)`,

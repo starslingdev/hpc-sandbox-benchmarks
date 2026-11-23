@@ -63,10 +63,14 @@ function baseImageUseForArtifact(artifact: ProviderArtifact): BaseImageUse {
  * Canonical provider-side name for a baked artifact. Providers live in separate control-plane
  * namespaces, so only a declared suffix is needed to distinguish variants sharing one account.
  */
-export function bakedArtifactName(id: BakedProviderId, phase: ArtifactPhase): string {
+export function bakedArtifactName(
+	id: BakedProviderId,
+	phase: ArtifactPhase,
+	release: string = TOOLCHAIN_VERSION,
+): string {
 	const artifact = REGISTRY[id].artifact;
 	const suffix = "nameSuffix" in artifact ? (artifact.nameSuffix ?? "") : "";
-	const versionName = `${TOOLCHAIN_IMAGE_NAME}-${TOOLCHAIN_VERSION}${suffix}`;
+	const versionName = `${TOOLCHAIN_IMAGE_NAME}-${release}${suffix}`;
 	return phase === "candidate" ? `${versionName}-candidate` : versionName;
 }
 

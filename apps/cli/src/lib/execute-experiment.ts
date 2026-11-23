@@ -48,6 +48,7 @@ import {
 import type { ExperimentStore } from "./experiment-store.ts";
 import { admissionStoppedDetail, STARTUP_DEADLINE_BEFORE_CREATE } from "./pre-create-stop.ts";
 import { runReplicate } from "./run-replicate.ts";
+import { suiteBakedPtsProfiles } from "./suite-tasks.ts";
 
 export interface BatchExecution {
 	plan: ExperimentPlan;
@@ -288,6 +289,10 @@ export async function executeExperimentBatch(
 						runId: plan.id,
 						replicateIndex: cell.replicate,
 						suiteName: cell.suite as SuiteName,
+						preparation: {
+							resolveBakedPtsProfiles: () =>
+								suiteBakedPtsProfiles(cell.suite as SuiteName, plan.sha),
+						},
 						resultsDir: runOptions.resultsDir,
 						// The remaining finish allowance covers teardown, cleanup observation and cost evidence.
 						managed: {

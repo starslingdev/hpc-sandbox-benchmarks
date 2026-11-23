@@ -66,6 +66,13 @@ function workflowDispatchOptions(file: string, inputName: string): unknown[] {
 	return input.options;
 }
 
+const DAYTONA_VMS = [
+	"daytona-vm-zen5",
+	"daytona-vm-zen5-burst",
+	"daytona-vm-arm",
+	"daytona-vm-arm-burst",
+] as const;
+
 describe("provider wiring projections", () => {
 	test("deduplicates shared inputs without changing their normalized contract", () => {
 		const expected = new Map<string, { input: NormalizedProviderInput; owners: ProviderId[] }>();
@@ -102,15 +109,15 @@ describe("provider wiring projections", () => {
 		// Every provider is charged to exactly one domain; only shared-credential variants share one.
 		expect(bindings.flatMap(({ owners }) => owners)).toEqual([...PROVIDER_IDS]);
 		expect(bindings.filter(({ owners }) => owners.length > 1)).toEqual([
-			{ domain: "daytona", owners: ["daytona-vm", "daytona-container"] },
-			{ domain: "modal", owners: ["modal-gvisor", "modal-vm"] },
+			{ domain: "daytona", owners: [...DAYTONA_VMS, "daytona-container"] },
+			{ domain: "modal", owners: ["modal-gvisor", "modal-vm-fixed", "modal-vm-burst"] },
 		]);
 		// A provider that shares no credential is its own domain — never a stray custom name.
 		expect(
 			bindings.filter(({ domain, owners }) => owners.length === 1 && owners[0] !== domain),
 		).toEqual([]);
 		expect(renderAccountConcurrencyGroup("")).toBe(
-			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm') && 'modal' || matrix.provider }}`,
+			`group: benchmark-account-\${{ (matrix.provider == 'daytona-vm-zen5' || matrix.provider == 'daytona-vm-zen5-burst' || matrix.provider == 'daytona-vm-arm' || matrix.provider == 'daytona-vm-arm-burst' || matrix.provider == 'daytona-container') && 'daytona' || (matrix.provider == 'modal-gvisor' || matrix.provider == 'modal-vm-fixed' || matrix.provider == 'modal-vm-burst') && 'modal' || matrix.provider }}`,
 		);
 	});
 
@@ -120,7 +127,7 @@ describe("provider wiring projections", () => {
 			`E2B_API_KEY: \${{ matrix.provider == 'e2b' && secrets.E2B_API_KEY || '' }}`,
 		);
 		expect(matrix).toContain(
-			`DAYTONA_API_KEY: \${{ (matrix.provider == 'daytona-vm' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}`,
+			`DAYTONA_API_KEY: \${{ (matrix.provider == 'daytona-vm-zen5' || matrix.provider == 'daytona-vm-zen5-burst' || matrix.provider == 'daytona-vm-arm' || matrix.provider == 'daytona-vm-arm-burst' || matrix.provider == 'daytona-container') && secrets.DAYTONA_API_KEY || '' }}`,
 		);
 		expect(matrix).not.toContain("MICROSANDBOX_LOCAL_BENCH");
 		expect(matrix).toContain(`NSC_TOKEN_FILE: \${{ steps.namespace.outputs.token-file }}`);
@@ -137,14 +144,14 @@ describe("provider wiring projections", () => {
 			`RUN_CLOUD_API_KEY: \${{ contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'runcloud') && secrets.RUN_CLOUD_API_KEY || '' }}`,
 		);
 		expect(promote).toContain(
-			"(contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm')) && secrets.MODAL_TOKEN_ID",
+			"(contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-gvisor') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm-fixed') || contains(fromJSON(needs.plan.outputs.matrix).include.*.provider, 'modal-vm-burst')) && secrets.MODAL_TOKEN_ID",
 		);
 	});
 
 	test("a shared batch scopes credentials to every frozen provider without creating separate owners", () => {
 		const batch = renderWorkflowInputs("batch", "");
 		expect(batch).toContain(
-			"(contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm')) && secrets.MODAL_TOKEN_ID",
+			"(contains(fromJSON(inputs.providers), 'modal-gvisor') || contains(fromJSON(inputs.providers), 'modal-vm-fixed') || contains(fromJSON(inputs.providers), 'modal-vm-burst')) && secrets.MODAL_TOKEN_ID",
 		);
 		expect(batch).toContain(
 			"contains(fromJSON(inputs.providers), 'daytona-container') && (env.DAYTONA_CONTAINER_TARGET",
@@ -257,12 +264,16 @@ describe("provider wiring projections", () => {
 		const fleet = driverFleetProjection();
 		expect(fleet.moduleIds).toEqual([
 			"e2b",
-			"daytona-vm",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
 			"daytona-container",
 			"blaxel",
 			"microsandbox-cloud",
 			"modal-gvisor",
-			"modal-vm",
+			"modal-vm-fixed",
+			"modal-vm-burst",
 			"novita",
 			"namespace",
 			"vercel",

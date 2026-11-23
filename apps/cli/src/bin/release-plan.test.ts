@@ -66,12 +66,16 @@ describe("buildReleasePlan matrix", () => {
 		const plan = buildReleasePlan(base);
 		expect(plan.matrix.include.map((c) => c.provider)).toEqual([
 			"e2b",
-			"daytona-vm",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
 			"daytona-container",
 			"blaxel",
 			"microsandbox-cloud",
 			"modal-gvisor",
-			"modal-vm",
+			"modal-vm-fixed",
+			"modal-vm-burst",
 			"novita",
 			"namespace",
 			"vercel",

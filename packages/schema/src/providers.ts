@@ -246,7 +246,7 @@ export const PROVIDERS: readonly ProviderMeta[] = deepFreeze(
 
 /**
  * The vendor account a provider's sandboxes are charged to and queued behind. Isolation variants
- * that share credentials share one domain (daytona-vm and daytona-container → `daytona`); every
+ * that share credentials share one domain (the four daytona-vm-* variants and daytona-container → `daytona`); every
  * other provider is its own. This one lookup names the Actions concurrency group (generated wiring),
  * the account journal branch and the experiment plan's batches, so they cannot disagree.
  */
@@ -272,7 +272,16 @@ export const LEGACY_PROVIDER_ALIASES: Readonly<Record<string, ProviderId>> = Obj
 	// branch shows "VM" only because this stack sits on top of that later change — that is the current
 	// adapter config, not the runtime the historical runs were collected under.)
 	modal: "modal-gvisor",
-	daytona: "daytona-vm",
+	// `modal-vm` → the burst variant: every committed `modal-vm` run asked Modal for the 0.125-core
+	// minimum and let the VM burst above it (observed 20 vCPU), which is what the split kept as
+	// `modal-vm-burst`. The unqualified "Modal (VM)" label now belongs to the fixed variant.
+	"modal-vm": "modal-vm-burst",
+	daytona: "daytona-vm-zen5-burst",
+	// `daytona-vm` → the zen5 burst variant: every committed `daytona-vm` run booted the v2 Linux VM on
+	// Zen 5 with a CPU guarantee that could burst above it, which is what the split kept as
+	// daytona-vm-zen5-burst. Its pre-split guarantee (4 vCPU, ceiling 8) differed from the new burst
+	// floor, so those runs are the closest historical analogue, not the same configuration.
+	"daytona-vm": "daytona-vm-zen5-burst",
 });
 
 /**

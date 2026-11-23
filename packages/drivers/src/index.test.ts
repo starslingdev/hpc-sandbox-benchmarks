@@ -14,12 +14,16 @@ describe("generated driver loader", () => {
 	test("exposes exactly the unwaived provider modules without eager vendor evaluation", () => {
 		expect(Object.keys(DRIVERS)).toEqual([
 			"e2b",
-			"daytona-vm",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
 			"daytona-container",
 			"blaxel",
 			"microsandbox-cloud",
 			"modal-gvisor",
-			"modal-vm",
+			"modal-vm-fixed",
+			"modal-vm-burst",
 			"novita",
 			"namespace",
 			"vercel",

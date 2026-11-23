@@ -46,8 +46,8 @@ test("Daytona artifact release preserves forbidden names and reports destructive
 		sleep: async () => {},
 	} as unknown as DaytonaBuildTransport;
 	const builder = daytonaArtifactBuilder(
-		"daytona-vm",
-		{ sandboxClass: SandboxClass.LINUX_VM, target: (env) => env.DAYTONA_TARGET },
+		"daytona-vm-zen5",
+		{ sandboxClass: SandboxClass.LINUX_VM, target: () => "us-west-2" },
 		transport,
 	);
 	const request = {
@@ -55,7 +55,7 @@ test("Daytona artifact release preserves forbidden names and reports destructive
 		name: "candidate",
 		base: { digestRef: `ghcr.io/toolchain@sha256:${"a".repeat(64)}` },
 		spec: { vcpus: 4, memoryGb: 8, diskGb: 40 },
-		env: { DAYTONA_API_KEY: "test-key", DAYTONA_TARGET: "us-west-2" },
+		env: { DAYTONA_API_KEY: "test-key" },
 		replace: "forbidden" as "forbidden" | "allowed",
 		imagesDir: "unused",
 		dockerConfig: "unused",

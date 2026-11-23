@@ -70,13 +70,17 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"brezel",
 			"createos",
 			"daytona-container",
-			"daytona-vm",
+			"daytona-vm-arm",
+			"daytona-vm-arm-burst",
+			"daytona-vm-zen5",
+			"daytona-vm-zen5-burst",
 			"digitalocean",
 			"e2b",
 			"freestyle",
 			"microsandbox-cloud",
 			"modal-gvisor",
-			"modal-vm",
+			"modal-vm-burst",
+			"modal-vm-fixed",
 			"namespace",
 			"novita",
 			"runcloud",
@@ -107,7 +111,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		expect(Object.isFrozen(PROVIDERS[0]?.artifact)).toBe(true);
 		expect(Object.isFrozen(PROVIDERS[0]?.inputs)).toBe(true);
 		expect(getProvider("modal")?.id).toBe("modal-gvisor");
-		expect(getProvider("daytona")?.id).toBe("daytona-vm");
+		expect(getProvider("daytona")?.id).toBe("daytona-vm-zen5-burst");
 		expect(getProvider("not-a-provider")).toBeUndefined();
 	});
 
@@ -252,14 +256,19 @@ describe("@sandbox-benchmarks/schema providers", () => {
 			"daytona-container": 0.3312,
 			novita: 0.23328,
 			boat: 0.036,
+			// A fixed Daytona v2 variant's guarantee equals its ceiling, so its cost is exact:
+			// 2 cores x $0.235 (Zen 5) or $0.101 (arm, unverified tier) + 8 GiB x $0.0162.
+			"daytona-vm-zen5": 0.5996,
+			"daytona-vm-arm": 0.3316,
 		};
 		for (const [id, cost] of Object.entries(expected)) {
 			expect(hourlyCostAtTargetSpec(getProvider(id) as ProviderMeta)).toBeCloseTo(cost, 12);
 		}
-		expect(getProvider("modal-vm")?.pricing).toBe(getProvider("modal-gvisor")?.pricing);
+		expect(getProvider("modal-vm-burst")?.pricing).toBe(getProvider("modal-gvisor")?.pricing);
 		expect(hourlyCostAtTargetSpec(getProvider("modal-gvisor"))).toBeNull();
-		expect(hourlyCostAtTargetSpec(getProvider("modal-vm"))).toBeNull();
-		expect(hourlyCostAtTargetSpec(getProvider("daytona-vm"))).toBeNull();
+		expect(hourlyCostAtTargetSpec(getProvider("modal-vm-burst"))).toBeNull();
+		expect(hourlyCostAtTargetSpec(getProvider("daytona-vm-zen5-burst"))).toBeNull();
+		expect(hourlyCostAtTargetSpec(getProvider("daytona-vm-arm-burst"))).toBeNull();
 	});
 
 	it("records Daytona storage—not memory—allowance and excludes disk from exact cost", () => {

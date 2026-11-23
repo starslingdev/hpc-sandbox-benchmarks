@@ -44,8 +44,8 @@ describe("HELP", () => {
 	// The documented default has to be the one the code actually takes, or `--help` teaches a provider
 	// that never runs.
 	it("documents the default provider the code falls back to", () => {
-		expect(HELP).toContain("(default: daytona-vm)");
-		expect(providerIds).toContain("daytona-vm");
+		expect(HELP).toContain("(default: daytona-vm-zen5)");
+		expect(providerIds).toContain("daytona-vm-zen5");
 	});
 });
 

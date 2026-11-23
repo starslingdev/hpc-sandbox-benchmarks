@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./gvisor": "./src/gvisor.ts",
-    "./vm": "./src/vm.ts",
+    "./vm-burst": "./src/vm-burst.ts",
+    "./vm-fixed": "./src/vm-fixed.ts",
     "./allocation": "./src/allocation.ts",
     "./package.json": "./package.json",
     "./gpu": "./src/gpu.ts",

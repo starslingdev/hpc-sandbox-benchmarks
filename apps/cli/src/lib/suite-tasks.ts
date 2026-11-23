@@ -285,6 +285,7 @@ function joinPins(pins: PtsPin[], key: keyof PtsPin): string {
 export async function describeSuiteTasks(
 	suiteName: string,
 	root: string = process.cwd(),
+	{ mise = true }: { mise?: boolean } = {},
 ): Promise<SuiteTaskPlan> {
 	if (!(suiteName in SUITES)) {
 		throw new Error(`unknown suite "${suiteName}" — not in SUITE_NAMES`);
@@ -305,10 +306,10 @@ export async function describeSuiteTasks(
 	const tasks: SuiteTask[] = [];
 	const seen = new Set<string>();
 
-	const pushTask = async (taskName: string, role: "command" | "leaf"): Promise<string> => {
-		if (seen.has(taskName)) return "";
+	const pushTask = async (taskName: string, role: "command" | "leaf"): Promise<void> => {
+		if (seen.has(taskName)) return;
 		seen.add(taskName);
-		const info = await miseTaskInfo(taskName, root);
+		const info = mise ? await miseTaskInfo(taskName, root) : undefined;
 		const file = resolveTaskFile(taskName, info?.file, root);
 		const script = file ? readRepoFile(root, file) : undefined;
 		const pins = script ? ptsPinsFromScript(script, { fioProfile, realworldVersion }) : [];
@@ -317,24 +318,18 @@ export async function describeSuiteTasks(
 			// mise's answer wins when it has one; the script's own `#MISE description=` is the fallback
 			// so the summary is identical with or without a mise binary on PATH.
 			description: info?.description || (script ? descriptionFromScript(script) : ""),
-			file,
+			// Blank when unreadable, so a frozen-suite selection can tell it didn't see the task.
+			file: script ? file : "",
 			role,
 			ptsProfile: joinPins(pins, "ptsProfile"),
 			resultsPrefix: joinPins(pins, "resultsPrefix"),
 		});
-		return file;
+		for (const child of runTaskChildren(script ?? "")) await pushTask(child, "leaf");
 	};
 
 	for (const command of commands) {
 		const rootTask = miseTaskFromCommand(command);
-		if (!rootTask) continue;
-		const file = await pushTask(rootTask, "command");
-		if (!file) continue;
-		const script = readRepoFile(root, file);
-		if (!script) continue;
-		for (const child of runTaskChildren(script)) {
-			await pushTask(child, "leaf");
-		}
+		if (rootTask) await pushTask(rootTask, "command");
 	}
 
 	return {
@@ -343,4 +338,80 @@ export async function describeSuiteTasks(
 		tasks,
 		metrics: suiteMetricInfo(suiteName as SuiteName),
 	};
+}
+
+type BakedProfiles = readonly string[] | undefined;
+
+/** What `suiteBakedPtsProfiles` reads from the checkout; it must match the frozen revision. */
+export const SUITE_WORKLOAD_INPUTS = [
+	".mise/tasks/benchmark",
+	"lib/bench.sh",
+	"packages/schema/src",
+] as const;
+
+const GIT_LOCATION_ENV = new Set(["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]);
+const sourceByRevision = new Map<string, Promise<boolean>>();
+const preparationBySuite = new Map<string, Promise<BakedProfiles>>();
+const PIN = /^(?:pts|local)\/[a-z0-9][a-z0-9._-]*-\d+(?:\.\d+)+$/;
+const PIN_VERSION = /-\d+(?:\.\d+)+$/;
+
+const memo = <T>(cache: Map<string, Promise<T>>, key: string, compute: () => Promise<T>) => {
+	const prior = cache.get(key);
+	if (prior) return prior;
+	const pending = compute();
+	cache.set(key, pending);
+	return pending;
+};
+
+/** Keep generic image preparation for unpinned checkouts or differing workload definitions. */
+async function sourceMatches(root: string, revision: string): Promise<boolean> {
+	try {
+		// Inspect `root` itself, even when invoked from a git hook that exports GIT_DIR and friends.
+		const env = Object.fromEntries(
+			Object.entries(process.env).filter(([name]) => !GIT_LOCATION_ENV.has(name)),
+		);
+		const git = (args: string[]) => Bun.$`git ${args}`.cwd(root).env(env).quiet().nothrow();
+		const [diff, untracked] = await Promise.all([
+			git(["diff", "--quiet", "--no-ext-diff", revision, "--", ...SUITE_WORKLOAD_INPUTS]),
+			git(["ls-files", "--others", "--exclude-standard", "--", ...SUITE_WORKLOAD_INPUTS]),
+		]);
+		return diff.exitCode === 0 && untracked.exitCode === 0 && untracked.stdout.length === 0;
+	} catch {
+		return false;
+	}
+}
+
+async function resolveBakedPtsProfiles(
+	suite: SuiteName,
+	revision: string,
+	root: string,
+): Promise<BakedProfiles> {
+	const matches = await memo(sourceByRevision, `${root}\0${revision}`, () =>
+		sourceMatches(root, revision),
+	);
+	if (!matches) return undefined;
+	const plan = await describeSuiteTasks(suite, root, { mise: false });
+	if (!plan.commands.every(miseTaskFromCommand) || plan.tasks.some((task) => !task.file))
+		return undefined;
+	const pins = new Set(plan.tasks.flatMap((task) => task.ptsProfile.split(", ").filter(Boolean)));
+	if (!pins.size || ![...pins].every((pin) => PIN.test(pin))) return undefined;
+	const bases = new Set([...pins].map((pin) => pin.replace(PIN_VERSION, "")));
+	if (plan.metrics.some((m) => !m.dimension || (m.ptsTest && !bases.has(m.ptsTest))))
+		return undefined;
+	return [...pins]
+		.filter((pin) => pin.startsWith("pts/"))
+		.map((pin) => pin.slice(4))
+		.sort();
+}
+
+/** A frozen suite's replicates share the same image profile selection. */
+export function suiteBakedPtsProfiles(
+	suite: SuiteName,
+	revision = process.env.BENCH_REPO_REF,
+	root = process.cwd(),
+): Promise<BakedProfiles> {
+	if (!/^[a-f0-9]{40}$/.test(revision ?? "")) return Promise.resolve(undefined);
+	return memo(preparationBySuite, `${root}\0${revision}\0${suite}`, () =>
+		resolveBakedPtsProfiles(suite, revision as string, root),
+	);
 }
