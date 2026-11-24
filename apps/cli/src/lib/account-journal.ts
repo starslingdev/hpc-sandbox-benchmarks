@@ -33,12 +33,20 @@ export const accountRecordSchema = type.or(
 		planDigest: `'${tangle.planDigest}'`,
 		kind: "'released'",
 		outcome: "'reconciled'",
-		evidence: type({
-			kind: "'tangle-vendor-cleanup'",
-			attemptDigest: `'${tangle.attemptDigest}'`,
-			attestationDigest: `'${tangle.attestationDigest}'`,
-			confirmedAt: "string.date.iso",
-		}).onUndeclaredKey("reject"),
+		evidence: type.or(
+			type({
+				kind: "'tangle-vendor-cleanup'",
+				attemptDigest: `'${tangle.attemptDigest}'`,
+				attestationDigest: `'${tangle.attestationDigest}'`,
+				confirmedAt: "string.date.iso",
+			}).onUndeclaredKey("reject"),
+			type({
+				kind: "'tangle-inventory-clearance'",
+				attemptDigest: `'${tangle.attemptDigest}'`,
+				operator: identity,
+				confirmedAt: "string.date.iso",
+			}).onUndeclaredKey("reject"),
+		),
 	}).onUndeclaredKey("reject"),
 	type({
 		...base,

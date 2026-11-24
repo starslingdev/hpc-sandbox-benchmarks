@@ -16,11 +16,12 @@ const { values, positionals } = parseArgs({
 	options: {
 		"exclusive-account": { type: "boolean", default: false },
 		"vendor-attestation": { type: "string" },
+		"inventory-only": { type: "boolean", default: false },
 	},
 });
 if (!values["exclusive-account"] || positionals.length !== 3)
 	throw new Error(
-		"usage: recover-ambiguous-create-inventory --exclusive-account [--vendor-attestation <private-file>] <provider> <suite> <original-attempt-directory>; stop all local account writers first",
+		"usage: recover-ambiguous-create-inventory --exclusive-account [--vendor-attestation <private-file> | --inventory-only] <provider> <suite> <original-attempt-directory>; stop all local account writers first",
 	);
 const provider = providerIdSchema.assert(positionals[0]);
 const suite = suiteNameSchema.assert(positionals[1]);
@@ -33,8 +34,13 @@ const original = {
 	provider,
 	suite,
 	...(attestation && { vendorAttestation: attestation }),
+	...(values["inventory-only"] && { inventoryOnly: true }),
 };
 verifyAmbiguousCreateInventory(original);
+// The operator is recorded in an inventory-only release: the GitHub actor, never free text.
+const operator = values["inventory-only"]
+	? type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).assert(process.env.GITHUB_ACTOR)
+	: undefined;
 const request = githubGitRequest();
 const workflow = type({ status: "'completed'", head_sha: /^[a-f0-9]{40}$/ });
 const activeRuns = type({ total_count: "number.integer >= 0" });
@@ -46,6 +52,7 @@ const { driver } = await openDriver(
 );
 const attempt = await recoverAmbiguousCreateInventory({
 	...original,
+	...(operator && { operator }),
 	...(tangleKey && {
 		observeTangleCustomer: async () =>
 			(await loadDriverModule("tangle")).observeCustomer(tangleKey),

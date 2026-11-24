@@ -9,7 +9,11 @@ import { type } from "arktype";
 import type { AccountJournal } from "./account-journal.ts";
 import { accountRecordSchema, withinSignal } from "./account-journal.ts";
 import { readExperimentAttempt } from "./experiment-artifacts.ts";
-import { readTangleVendorAttestation, reviewedTangleCleanup } from "./reviewed-tangle-cleanup.ts";
+import {
+	readTangleVendorAttestation,
+	reviewedTangleCleanup,
+	tangleInventoryClearanceEvidence,
+} from "./reviewed-tangle-cleanup.ts";
 
 /**
  * Name-free ambiguous creates cannot be cleared from empty inventory in general (ADR-0019,
@@ -160,6 +164,8 @@ export function verifyAmbiguousCreateInventory(options: {
 	provider: ProviderId;
 	suite: SuiteName;
 	vendorAttestation?: string;
+	/** Reviewed Tangle only: clear on two empty inventories when the vendor receipt is unavailable. */
+	inventoryOnly?: boolean;
 }) {
 	const attempt = readExperimentAttempt(options.directory);
 	const { evidence, execution, cleanup } = attempt;
@@ -211,13 +217,16 @@ export function verifyAmbiguousCreateInventory(options: {
 	if (reviewed.provider === "tangle") {
 		if (evidenceDigest(evidence) !== reviewed.attemptDigest)
 			throw new Error("Tangle attempt differs from the reviewed artifact");
+		if (options.inventoryOnly && options.vendorAttestation)
+			throw new Error("choose the vendor attestation or inventory-only clearance, not both");
+		if (options.inventoryOnly) return { attempt, reviewed };
 		return {
 			attempt,
 			reviewed,
 			attestation: readTangleVendorAttestation(options.vendorAttestation),
 		};
 	}
-	if (options.vendorAttestation)
+	if (options.vendorAttestation || options.inventoryOnly)
 		throw new Error("the vendor attestation only applies to the reviewed Tangle attempt");
 	return { attempt, reviewed };
 }
@@ -231,6 +240,9 @@ export async function recoverAmbiguousCreateInventory(options: {
 	provider: ProviderId;
 	suite: SuiteName;
 	vendorAttestation?: string;
+	inventoryOnly?: boolean;
+	/** Recorded in the inventory-only release; required with `inventoryOnly`. */
+	operator?: string;
 	observeTangleCustomer?: () => Promise<string>;
 	drivers?: readonly { readonly id: ProviderId; readonly driver: SandboxDriver }[];
 	journal?: AccountJournal;
@@ -239,7 +251,9 @@ export async function recoverAmbiguousCreateInventory(options: {
 }): Promise<string> {
 	const { attempt, reviewed, attestation } = verifyAmbiguousCreateInventory(options);
 	const { evidence } = attempt;
-	const { journal, assertQuiescent, signal } = options;
+	const { journal, assertQuiescent, signal, operator } = options;
+	if (options.inventoryOnly && !operator)
+		throw new Error("inventory-only clearance records the operator who confirmed it");
 	const driver = options.drivers?.length === 1 ? options.drivers[0] : undefined;
 	if (!driver || driver.id !== options.provider || !journal || !assertQuiescent || !signal)
 		throw new Error(
@@ -290,14 +304,21 @@ export async function recoverAmbiguousCreateInventory(options: {
 	await assertNothingOwned();
 	await assertQuiescent(evidence.workflowRun, evidence.sha);
 	await assertNothingOwned();
-	if (attestation) await assertQuiescent(evidence.workflowRun, evidence.sha);
+	if (attestation || options.inventoryOnly)
+		await assertQuiescent(evidence.workflowRun, evidence.sha);
 	const unchanged = await readIntent();
 	if (JSON.stringify(unchanged) !== JSON.stringify(intent))
 		throw new Error("journal changed during inventory clearance");
 	signal.throwIfAborted();
+	const confirmedAt = new Date().toISOString();
 	const release = attestation
-		? { outcome: "reconciled", evidence: attestation.releaseEvidence(new Date().toISOString()) }
-		: { outcome: "not-allocated" };
+		? { outcome: "reconciled", evidence: attestation.releaseEvidence(confirmedAt) }
+		: options.inventoryOnly
+			? {
+					outcome: "reconciled",
+					evidence: tangleInventoryClearanceEvidence(operator as string, confirmedAt),
+				}
+			: { outcome: "not-allocated" };
 	await withinSignal(signal, () =>
 		journal.append(accountRecordSchema.assert({ ...intent, kind: "released", ...release })),
 	);

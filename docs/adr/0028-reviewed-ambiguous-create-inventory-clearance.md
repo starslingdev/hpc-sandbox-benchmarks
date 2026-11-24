@@ -88,3 +88,22 @@ direct lookup returns absent, and that the account's complete inventory contains
 benchmark-owned sandboxes. It rechecks workflow quiescence and the intent before appending
 one `released/reconciled` record. The public journal retains the two digests. The original
 failed run contributes zero measurements.
+
+### Addendum: Tangle inventory-only clearance (vendor receipt unavailable)
+
+Tangle cannot supply the private vendor receipt above. The same reviewed attempt may instead be
+released with `--inventory-only`, which replaces the receipt-based resource and customer probes with
+the freestyle and runcloud proof: two complete account inventories, with the quiescence check
+between and after them, hold no benchmark-owned sandbox at all, and the intent is unchanged
+throughout. The pins stay: attempt, plan and source digests, and the attempt-artifact digest. The
+command takes exactly one of `--vendor-attestation` or `--inventory-only`, and the latter applies to
+this attempt only.
+
+The release is `released/reconciled` with `tangle-inventory-clearance` evidence (attempt digest,
+operator, `confirmedAt`). It is never `not-allocated`: the create did reach Tangle's host. The
+operator is the GitHub actor running the command.
+
+Residual risk, accepted on review: an empty inventory proves nothing is allocated now, not that the
+create never billed. Past billing rests on Tangle's earlier statement that its compute and customer
+ledgers show zero charges for the correlated resource, which we cannot independently verify without
+the receipt. A resource that still existed would appear in the inventory and block the release.
