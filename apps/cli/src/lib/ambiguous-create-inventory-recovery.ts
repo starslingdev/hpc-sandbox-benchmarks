@@ -29,7 +29,14 @@ const RUNCLOUD_SETTLE_DETAIL =
 const FREESTYLE_502_DETAIL =
 	"computesdk create failed: Freestyle background request returned HTTP 502; operation outcome is unconfirmed; cleanup failed: freestyle ComputeSDK failed-create recovery cleanup callback failed";
 
-/** Reviewed name-free ambiguous creates from CPU run 43793708054 (ADR-0028). */
+// CPU run 43863642458 retained each pre-POST name, but the name changes nothing about the proof:
+// two complete inventories with no benchmark-owned sandbox cover a landed create under any name.
+const RUNCLOUD_NAMED_TIMEOUT_DETAIL =
+	"run.cloud create failed ambiguously (The operation timed out.) and reconciliation could not establish its outcome (no allocation visible during reconciliation), so it is unknown whether a sandbox was allocated; if one was it carries the name sandbox-benchmarks-eaaaa782-5155-43bd-a97c-26f514a4b238 and manual cleanup may be required; cleanup failed: runcloud ComputeSDK failed-create recovery cleanup callback failed";
+const freestyleNamedDetail = (failure: string, slug: string) =>
+	`computesdk create failed: ${failure}; if a VM was allocated it carries the slug ${slug}; cleanup failed: freestyle ComputeSDK failed-create recovery cleanup callback failed`;
+
+/** Reviewed ambiguous creates from CPU runs 43793708054, 43859473792 and 43863642458 (ADR-0028). */
 export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 	{
 		provider: "runcloud",
@@ -75,6 +82,63 @@ export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 		workflowRun: "43859473792",
 		sourceSha: "987b4cba3eb94e92d52af5c9f45cd07c9f0538d8",
 		detail: "Sandbox creation timed out; allocation ownership unresolved",
+	},
+	{
+		provider: "runcloud",
+		suite: "memory",
+		attemptId: "runcloud-memory-r1-a1-b931f2ad-6b34-495b-bfcb-958a2f95a0be",
+		cellId: "runcloud-memory-r1",
+		workflowRun: "43863642458",
+		sourceSha: "8d58408dc4ca36bfae7d9eb83be4b21963562311",
+		detail: RUNCLOUD_NAMED_TIMEOUT_DETAIL,
+	},
+	{
+		provider: "freestyle",
+		suite: "realworld-mastra",
+		attemptId: "freestyle-realworld-mastra-r0-a1-49a9e56f-2817-4eca-ad21-813e3ce01723",
+		cellId: "freestyle-realworld-mastra-r0",
+		workflowRun: "43863642458",
+		sourceSha: "8d58408dc4ca36bfae7d9eb83be4b21963562311",
+		detail: freestyleNamedDetail(
+			"The operation timed out.",
+			"sandbox-benchmarks-e59efef3-38d3-476b-a984-b6cfa6994be6",
+		),
+	},
+	{
+		provider: "freestyle",
+		suite: "realworld-mastra",
+		attemptId: "freestyle-realworld-mastra-r1-a1-f8dcceaa-d91c-4bb8-bc6e-8d8569b35350",
+		cellId: "freestyle-realworld-mastra-r1",
+		workflowRun: "43863642458",
+		sourceSha: "8d58408dc4ca36bfae7d9eb83be4b21963562311",
+		detail: freestyleNamedDetail(
+			"The operation timed out.",
+			"sandbox-benchmarks-aed6332b-e041-4ec1-90c2-704f07d66b21",
+		),
+	},
+	{
+		provider: "freestyle",
+		suite: "realworld-mastra",
+		attemptId: "freestyle-realworld-mastra-r5-a1-fb1876ee-acc1-402c-b9d0-9575d7674f27",
+		cellId: "freestyle-realworld-mastra-r5",
+		workflowRun: "43863642458",
+		sourceSha: "8d58408dc4ca36bfae7d9eb83be4b21963562311",
+		detail: freestyleNamedDetail(
+			"The operation timed out.",
+			"sandbox-benchmarks-b76a507c-7d60-4438-8a28-ae37e0a939d0",
+		),
+	},
+	{
+		provider: "freestyle",
+		suite: "realworld-mastra",
+		attemptId: "freestyle-realworld-mastra-r7-a1-6c4c6e94-485a-4d99-8646-1bb05c775be6",
+		cellId: "freestyle-realworld-mastra-r7",
+		workflowRun: "43863642458",
+		sourceSha: "8d58408dc4ca36bfae7d9eb83be4b21963562311",
+		detail: freestyleNamedDetail(
+			"Freestyle background request returned HTTP 409; operation outcome is unconfirmed",
+			"sandbox-benchmarks-afe780f1-5f40-48c6-9cc1-e9f331cab7b3",
+		),
 	},
 	reviewedTangleCleanup,
 ] as const);
