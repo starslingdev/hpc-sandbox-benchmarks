@@ -54,6 +54,16 @@ Runcloud and freestyle admission can reopen for later smokes once every reviewed
 account is released. Any other unresolved intent still needs identity-based recovery or its own
 review. Freestyle inventory and r1 teardown still require `FREESTYLE_API_KEY`.
 
+## Named ambiguous creates, run 43863642458
+
+CPU run 43863642458 (source `8d58408dc4ca36bfae7d9eb83be4b21963562311`) left five intents that
+blocked later smokes: runcloud `memory` r1 and freestyle `realworld-mastra` r0, r1, r5 and r7.
+Each create timed out, or for freestyle r7 returned HTTP 409 with an unconfirmed outcome.
+Failed-create cleanup also failed. None retained `allocation.json`. Unlike the earlier cases, each
+diagnostic retained the unique pre-POST name or slug. The same proof clears them: two complete
+inventories with no benchmark-owned sandbox at all cover a landed create under any name. Each
+entry is pinned to its exact marker detail, retained name included.
+
 ## Tangle Better Auth, run 44468887637
 
 The v8 Better Auth create reached Tangle's host. The host reported unconfirmed cleanup,
