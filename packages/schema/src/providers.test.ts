@@ -264,7 +264,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		for (const [id, cost] of Object.entries(expected)) {
 			expect(hourlyCostAtTargetSpec(getProvider(id) as ProviderMeta)).toBeCloseTo(cost, 12);
 		}
-		expect(getProvider("modal-vm-burst")?.pricing).toBe(getProvider("modal-vm-fixed")?.pricing);
+		expect(getProvider("modal-vm-burst")?.pricing).toBe(getProvider("modal-gvisor")?.pricing);
 		expect(hourlyCostAtTargetSpec(getProvider("modal-gvisor"))).toBeNull();
 		expect(hourlyCostAtTargetSpec(getProvider("modal-vm-burst"))).toBeNull();
 		expect(hourlyCostAtTargetSpec(getProvider("daytona-vm-zen5-burst"))).toBeNull();
@@ -284,12 +284,12 @@ describe("@sandbox-benchmarks/schema providers", () => {
 	it("maps Modal's requested capped CPU and memory one-to-one", () => {
 		const cpu = component("modal-gvisor", "cpu");
 		const memory = component("modal-gvisor", "memory");
-		expect(cpu.vendorUnit).toContain("physical core");
+		expect(cpu.vendorUnit).toContain("1 `cpu` unit per guest vCPU");
 		expect(cpu.billingBasis).toBe("max_request_or_usage");
 		expect(cpu.quantityRule).toEqual({
 			kind: "linear",
 			dimension: "vcpus",
-			unitsPerTargetUnit: 0.5,
+			unitsPerTargetUnit: 1,
 		});
 		expect(cpu.usdPerUnitHour).toBeCloseTo(0.00003942 * 3600);
 		expect(cpu.notes).toContain("provider-observed usage");

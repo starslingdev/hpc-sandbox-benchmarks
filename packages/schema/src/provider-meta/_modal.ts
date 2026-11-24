@@ -2,20 +2,22 @@ import type { ProviderPricing } from "../provider-pricing.ts";
 import type { ProviderTransport } from "../providers.ts";
 
 /**
- * `cpuUnitsPerVcpu` is how many billed `cpu` units one target vCPU consumes: 1 on the VM runtime
- * (Modal confirmed 2026-11-23 that a v2 sandbox's 1 vCPU = 1 core), 0.5 for gVisor, which keeps
- * the documented "physical core = 2 vCPU" reading.
+ * One rate card for every Modal variant: 1 billed `cpu` unit per guest vCPU. Modal confirmed
+ * (2026-11-23) that on the VM runtime 1 vCPU = 1 core. gVisor is not confirmed by Modal; we probed
+ * it the same day: `cpu=cpuLimit=2/4/8` billed 2.00/4.00/8.00 units at the core rate with 2/4/8
+ * guest processors.
  */
-const buildModalPricing = (cpuUnitsPerVcpu: number, cpuVendorUnit: string): ProviderPricing => ({
+export const modalPricing: ProviderPricing = {
 	model: "published",
 	components: [
 		{
 			id: "cpu",
 			resource: "cpu",
 			billingBasis: "max_request_or_usage",
-			vendorUnit: cpuVendorUnit,
+			vendorUnit:
+				"core (1 `cpu` unit per guest vCPU; VM confirmed by Modal 2026-11-23, gVisor probed 2026-11-23)",
 			usdPerUnitHour: 0.141912,
-			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: cpuUnitsPerVcpu },
+			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 1 },
 			tier: "on-demand",
 			notes:
 				"$0.00003942/core-s (sandbox rate). The billed max(request, usage) quantity must come from provider-observed usage.",
@@ -49,19 +51,7 @@ const buildModalPricing = (cpuUnitsPerVcpu: number, cpuVendorUnit: string): Prov
 	notes:
 		"On-demand rates: CPU sandboxes are not subject to preemption, so no preemptible discount applies. No exact benchmark cost is inferred without sandbox-scoped billed usage.",
 	sources: [{ label: "Modal pricing", url: "https://modal.com/pricing", checkedAt: "2026-11-16" }],
-});
-
-/** gVisor: `cpu` is documented as physical cores (1 core = 2 vCPU); left as before. */
-export const modalGvisorPricing = buildModalPricing(0.5, "physical core (2 vCPU)");
-
-/**
- * VM runtime: Modal confirmed (2026-11-23) that 1 vCPU = 1 core, so `cpu=N` is N vCPU and N billed
- * cores. Probed: `cpu=cpuLimit=N` bills N units/s at the core rate and the guest sees N processors.
- */
-export const modalVmPricing = buildModalPricing(
-	1,
-	"core (1 vCPU = 1 core on the VM runtime, confirmed by Modal 2026-11-23)",
-);
+};
 
 export const modalTransport: ProviderTransport = {
 	// The native Modal driver runs `sandbox.exec([...])` and waits for the result, with no
