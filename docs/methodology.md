@@ -59,7 +59,7 @@ need an arm64 build of the toolchain image, which does not exist yet, and stay b
 
 ### Shared burst bounds
 
-Every burst variant (`daytona-vm-zen5-burst`, `daytona-vm-arm-burst`, `modal-vm-burst`) is created with the same floor and ceiling, `BURST_BOUNDS` in `packages/schema/src/target-spec.ts`: 2 vCPU to 8 vCPU and 8 GiB to 16 GiB. Daytona's smallest CPU guarantee is 1 core (2 vCPU) and it takes the ceiling as `cpuMax` (cores) and `memoryMax`; Modal takes `cpu`/`cpuLimit` and `memoryMiB`/`memoryLimitMiB`. Probed 2026-11-23: both guests report 8 processors, and under memory pressure MemTotal grows from the floor to about 16 GiB on both (neither VM exposes a cgroup `cpu.max`/`memory.max`, so the guest's processor count and MemTotal are the observable limits).
+Every burst variant (`daytona-vm-zen5-burst`, `daytona-vm-arm-burst`, `modal-vm-burst`) is created with the same floor and ceiling, `BURST_BOUNDS` in `packages/schema/src/target-spec.ts`: 2 vCPU to 8 vCPU and 8 GiB to 16 GiB. Daytona's smallest CPU guarantee is 1 core (2 vCPU) and it takes the ceiling as `cpuMax` (cores) and `memoryMax`; Modal takes `cpu`/`cpuLimit` (vCPU on the VM runtime, 1 vCPU = 1 core, so Modal's 2 to 8 is Daytona's 1 to 4 cores) and `memoryMiB`/`memoryLimitMiB`. Probed 2026-11-23: both guests report 8 processors, and under memory pressure MemTotal grows from the floor to about 16 GiB on both (neither VM exposes a cgroup `cpu.max`/`memory.max`, so the guest's processor count and MemTotal are the observable limits).
 
 ### Modal VM variants
 
@@ -69,6 +69,18 @@ Modal's `runtime: "vm"` sandbox is a cloud-hypervisor microVM. Two first-class v
 |---|---|---|
 | `modal-vm-fixed` (Modal (VM)) | `cpu` = `cpuLimit` = 4 (the guest sees 4 vCPU): cannot burst | 8 GiB reserved and limited |
 | `modal-vm-burst` (Modal (VM, burst)) | `cpu` 2, `cpuLimit` 8 (the shared burst bounds) | request 8 GiB, limit 16 GiB |
+
+#### CPU units and billing on the VM runtime
+
+Modal's docs describe `cpu` as physical cores (1 core = 2 vCPU), but on the VM (v2) runtime **Modal confirmed on 2026-11-23 that 1 vCPU = 1 core**: `cpu=N` is N vCPU and N billed cores, priced at the core rate ($0.00003942 per core-second, $0.141912 per core-hour). Our probe evidence agrees:
+
+- A `runtime: "vm"` sandbox with `cpu` = `cpuLimit` = N shows N guest processors (`env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc`, `grep -c ^processor /proc/cpuinfo`, `lscpu` `CPU(s)`) for N = 2, 4 and 8, with `Thread(s) per core: 1`, `Hypervisor vendor: KVM` and no cgroup `cpu.max`.
+- `SandboxGetTimeRangeStats` billed 2.00, 4.00 and 8.01 core units for those sandboxes over about 145 s idle (billed CPU USD ÷ (lifetime × $0.00003942)), the same with and without `experimentalOptions.performance_sensitive`.
+- The performance-sensitive pool (what both `modal-vm-*` variants request) landed on AMD EPYC 9655P in every probe; the non-performance pool varied (EPYC 9654, Xeon 6975P-C, Xeon Platinum 8375C), so it is not a stable benchmarking pool.
+
+So the catalog prices a target vCPU at one `cpu` unit on the VM variants (`modalVmPricing`: 4 vCPU + 8 GiB = $0.5676 + $0.1921 = $0.7597/hour reserved). `modal-gvisor` keeps its previous rule (0.5 `cpu` unit per vCPU, `modalGvisorPricing`) until it is probed separately. Catalog rates are still metadata only (Modal is usage-dependent, so no economics row is derived from them).
+
+**Burst cost.** Modal bills `max(request, usage)` per second: a `modal-vm-burst` sandbox (`cpu` 2, `cpuLimit` 8, request 8 GiB, limit 16 GiB) pays at least 2 cores + 8 GiB ($0.2838 + $0.1921 = $0.4759/hour) and at most 8 cores + 16 GiB ($1.1353 + $0.3842 = $1.5195/hour), depending on the CPU and memory it actually uses. The benchmark's reported cost is the billed amount from `SandboxGetTimeRangeStats`, not an estimate from these rates.
 
 A fixed variant holds `TARGET_SPEC`; a burst variant is compared on its own terms. The pre-split `modal-vm` id is retired: committed runs that carry it keep parsing and resolve to `modal-vm-burst`, so they render as "Modal (VM, burst)" (the unqualified "Modal (VM)" now names the fixed variant). Both share the toolchain image with `modal-gvisor`, so neither needs its own bake.
 

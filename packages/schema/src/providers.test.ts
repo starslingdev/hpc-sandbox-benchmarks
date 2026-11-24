@@ -264,7 +264,7 @@ describe("@sandbox-benchmarks/schema providers", () => {
 		for (const [id, cost] of Object.entries(expected)) {
 			expect(hourlyCostAtTargetSpec(getProvider(id) as ProviderMeta)).toBeCloseTo(cost, 12);
 		}
-		expect(getProvider("modal-vm-burst")?.pricing).toBe(getProvider("modal-gvisor")?.pricing);
+		expect(getProvider("modal-vm-burst")?.pricing).toBe(getProvider("modal-vm-fixed")?.pricing);
 		expect(hourlyCostAtTargetSpec(getProvider("modal-gvisor"))).toBeNull();
 		expect(hourlyCostAtTargetSpec(getProvider("modal-vm-burst"))).toBeNull();
 		expect(hourlyCostAtTargetSpec(getProvider("daytona-vm-zen5-burst"))).toBeNull();

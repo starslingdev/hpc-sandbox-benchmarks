@@ -1,16 +1,21 @@
 import type { ProviderPricing } from "../provider-pricing.ts";
 import type { ProviderTransport } from "../providers.ts";
 
-export const modalPricing: ProviderPricing = {
+/**
+ * `cpuUnitsPerVcpu` is how many billed `cpu` units one target vCPU consumes: 1 on the VM runtime
+ * (Modal confirmed 2026-11-23 that a v2 sandbox's 1 vCPU = 1 core), 0.5 for gVisor, which keeps
+ * the documented "physical core = 2 vCPU" reading.
+ */
+const buildModalPricing = (cpuUnitsPerVcpu: number, cpuVendorUnit: string): ProviderPricing => ({
 	model: "published",
 	components: [
 		{
 			id: "cpu",
 			resource: "cpu",
 			billingBasis: "max_request_or_usage",
-			vendorUnit: "physical core (2 vCPU)",
+			vendorUnit: cpuVendorUnit,
 			usdPerUnitHour: 0.141912,
-			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: 0.5 },
+			quantityRule: { kind: "linear", dimension: "vcpus", unitsPerTargetUnit: cpuUnitsPerVcpu },
 			tier: "on-demand",
 			notes:
 				"$0.00003942/core-s (sandbox rate). The billed max(request, usage) quantity must come from provider-observed usage.",
@@ -44,7 +49,19 @@ export const modalPricing: ProviderPricing = {
 	notes:
 		"On-demand rates: CPU sandboxes are not subject to preemption, so no preemptible discount applies. No exact benchmark cost is inferred without sandbox-scoped billed usage.",
 	sources: [{ label: "Modal pricing", url: "https://modal.com/pricing", checkedAt: "2026-11-16" }],
-};
+});
+
+/** gVisor: `cpu` is documented as physical cores (1 core = 2 vCPU); left as before. */
+export const modalGvisorPricing = buildModalPricing(0.5, "physical core (2 vCPU)");
+
+/**
+ * VM runtime: Modal confirmed (2026-11-23) that 1 vCPU = 1 core, so `cpu=N` is N vCPU and N billed
+ * cores. Probed: `cpu=cpuLimit=N` bills N units/s at the core rate and the guest sees N processors.
+ */
+export const modalVmPricing = buildModalPricing(
+	1,
+	"core (1 vCPU = 1 core on the VM runtime, confirmed by Modal 2026-11-23)",
+);
 
 export const modalTransport: ProviderTransport = {
 	// The native Modal driver runs `sandbox.exec([...])` and waits for the result, with no

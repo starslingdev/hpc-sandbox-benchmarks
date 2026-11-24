@@ -1,5 +1,5 @@
 import { defineProviderMeta } from "../provider-meta.ts";
-import { modalPricing, modalTransport } from "./_modal.ts";
+import { modalGvisorPricing, modalTransport } from "./_modal.ts";
 
 export default defineProviderMeta("modal-gvisor", {
 	displayName: "Modal (gVisor)",
@@ -16,7 +16,7 @@ export default defineProviderMeta("modal-gvisor", {
 		notes:
 			"Modal's default sandbox runtime. CPU and memory can burst beyond the request. Creates set experimentalOptions.performance_sensitive so Modal schedules onto its low-variance CPU pool (https://modal.com/docs/guide/performance-sensitive-sandboxes).",
 	},
-	pricing: modalPricing,
+	pricing: modalGvisorPricing,
 	maturity: {
 		status: "ga",
 		notes: "V2 backend with bursting and performance-sensitive CPU scheduling.",
