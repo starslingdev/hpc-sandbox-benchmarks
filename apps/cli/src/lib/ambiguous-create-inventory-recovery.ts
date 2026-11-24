@@ -9,7 +9,11 @@ import { type } from "arktype";
 import type { AccountJournal } from "./account-journal.ts";
 import { accountRecordSchema, withinSignal } from "./account-journal.ts";
 import { readExperimentAttempt } from "./experiment-artifacts.ts";
-import { readTangleVendorAttestation, reviewedTangleCleanup } from "./reviewed-tangle-cleanup.ts";
+import {
+	readTangleVendorAttestation,
+	reviewedTangleCleanup,
+	tangleInventoryClearanceEvidence,
+} from "./reviewed-tangle-cleanup.ts";
 
 /**
  * Name-free ambiguous creates cannot be cleared from empty inventory in general (ADR-0019,
@@ -160,6 +164,8 @@ export function verifyAmbiguousCreateInventory(options: {
 	provider: ProviderId;
 	suite: SuiteName;
 	vendorAttestation?: string;
+	/** Reviewed Tangle only: clear on two empty inventories when the vendor receipt is unavailable. */
+	inventoryOnly?: { operator: string };
 }) {
 	const attempt = readExperimentAttempt(options.directory);
 	const { evidence, execution, cleanup } = attempt;
@@ -211,33 +217,46 @@ export function verifyAmbiguousCreateInventory(options: {
 	if (reviewed.provider === "tangle") {
 		if (evidenceDigest(evidence) !== reviewed.attemptDigest)
 			throw new Error("Tangle attempt differs from the reviewed artifact");
-		return {
-			attempt,
-			reviewed,
-			attestation: readTangleVendorAttestation(options.vendorAttestation),
-		};
+		const { inventoryOnly } = options;
+		if (inventoryOnly) {
+			if (options.vendorAttestation)
+				throw new Error("choose the vendor attestation or inventory-only clearance, not both");
+			return {
+				attempt,
+				reviewed,
+				releaseEvidence: (confirmedAt: string) =>
+					tangleInventoryClearanceEvidence(inventoryOnly.operator, confirmedAt),
+			};
+		}
+		const attestation = readTangleVendorAttestation(options.vendorAttestation);
+		return { attempt, reviewed, attestation, releaseEvidence: attestation.releaseEvidence };
 	}
-	if (options.vendorAttestation)
-		throw new Error("the vendor attestation only applies to the reviewed Tangle attempt");
+	if (options.vendorAttestation || options.inventoryOnly)
+		throw new Error(
+			"vendor attestation and inventory-only clearance only apply to the reviewed Tangle attempt",
+		);
 	return { attempt, reviewed };
 }
 
 /**
  * Release one reviewed ADR-0028 intent under exclusive account ownership. A Tangle dispatch
- * receives its vendor reconciliation receipt. Name-free inventory clearances keep their original outcome.
+ * releases as `reconciled` on its vendor receipt or, inventory-only, on the operator's
+ * confirmation. Name-free inventory clearances keep their original outcome.
  */
 export async function recoverAmbiguousCreateInventory(options: {
 	directory: string;
 	provider: ProviderId;
 	suite: SuiteName;
 	vendorAttestation?: string;
+	inventoryOnly?: { operator: string };
 	observeTangleCustomer?: () => Promise<string>;
 	drivers?: readonly { readonly id: ProviderId; readonly driver: SandboxDriver }[];
 	journal?: AccountJournal;
 	assertQuiescent?: (workflowRun: string, sourceSha: string) => Promise<void>;
 	signal?: AbortSignal;
 }): Promise<string> {
-	const { attempt, reviewed, attestation } = verifyAmbiguousCreateInventory(options);
+	const { attempt, reviewed, attestation, releaseEvidence } =
+		verifyAmbiguousCreateInventory(options);
 	const { evidence } = attempt;
 	const { journal, assertQuiescent, signal } = options;
 	const driver = options.drivers?.length === 1 ? options.drivers[0] : undefined;
@@ -290,13 +309,13 @@ export async function recoverAmbiguousCreateInventory(options: {
 	await assertNothingOwned();
 	await assertQuiescent(evidence.workflowRun, evidence.sha);
 	await assertNothingOwned();
-	if (attestation) await assertQuiescent(evidence.workflowRun, evidence.sha);
+	if (releaseEvidence) await assertQuiescent(evidence.workflowRun, evidence.sha);
 	const unchanged = await readIntent();
 	if (JSON.stringify(unchanged) !== JSON.stringify(intent))
 		throw new Error("journal changed during inventory clearance");
 	signal.throwIfAborted();
-	const release = attestation
-		? { outcome: "reconciled", evidence: attestation.releaseEvidence(new Date().toISOString()) }
+	const release = releaseEvidence
+		? { outcome: "reconciled", evidence: releaseEvidence(new Date().toISOString()) }
 		: { outcome: "not-allocated" };
 	await withinSignal(signal, () =>
 		journal.append(accountRecordSchema.assert({ ...intent, kind: "released", ...release })),

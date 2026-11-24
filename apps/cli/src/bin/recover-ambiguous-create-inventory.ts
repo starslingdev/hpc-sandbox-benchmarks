@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { loadDriverModule } from "@sandbox-benchmarks/drivers";
-import { providerIdSchema, suiteNameSchema } from "@sandbox-benchmarks/schema";
+import {
+	evidenceIdentifierSchema,
+	providerIdSchema,
+	suiteNameSchema,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import {
 	recoverAmbiguousCreateInventory,
@@ -16,11 +20,12 @@ const { values, positionals } = parseArgs({
 	options: {
 		"exclusive-account": { type: "boolean", default: false },
 		"vendor-attestation": { type: "string" },
+		"inventory-only": { type: "boolean", default: false },
 	},
 });
 if (!values["exclusive-account"] || positionals.length !== 3)
 	throw new Error(
-		"usage: recover-ambiguous-create-inventory --exclusive-account [--vendor-attestation <private-file>] <provider> <suite> <original-attempt-directory>; stop all local account writers first",
+		"usage: recover-ambiguous-create-inventory --exclusive-account [--vendor-attestation <private-file> | --inventory-only] <provider> <suite> <original-attempt-directory>; stop all local account writers first",
 	);
 const provider = providerIdSchema.assert(positionals[0]);
 const suite = suiteNameSchema.assert(positionals[1]);
@@ -33,6 +38,10 @@ const original = {
 	provider,
 	suite,
 	...(attestation && { vendorAttestation: attestation }),
+	// The operator is recorded in an inventory-only release: the GitHub actor, never free text.
+	...(values["inventory-only"] && {
+		inventoryOnly: { operator: evidenceIdentifierSchema.assert(process.env.GITHUB_ACTOR) },
+	}),
 };
 verifyAmbiguousCreateInventory(original);
 const request = githubGitRequest();

@@ -18,6 +18,20 @@ export const reviewedTangleCleanup = {
 		"computesdk create failed: Provision failed — (container) — The host cannot prove it removed what a failed create made.; cleanup failed: tangle ComputeSDK failed-create recovery cleanup callback failed",
 } as const;
 
+/**
+ * The vendor receipt is unavailable (ADR-0028 addendum). This release rests on two complete,
+ * empty account inventories under exclusive ownership; it records who confirmed it and when, and
+ * it is a `reconciled` release, never `not-allocated`: create did reach the vendor.
+ */
+export function tangleInventoryClearanceEvidence(operator: string, confirmedAt: string) {
+	return {
+		kind: "tangle-inventory-clearance",
+		attemptDigest: reviewedTangleCleanup.attemptDigest,
+		operator,
+		confirmedAt,
+	} as const;
+}
+
 /** Only the evidence supplied for this review can select the resource to probe. */
 export function readTangleVendorAttestation(path: string | undefined) {
 	if (!path) throw new Error("the reviewed Tangle vendor attestation is required");
