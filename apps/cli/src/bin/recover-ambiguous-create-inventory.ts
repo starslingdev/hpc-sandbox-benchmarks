@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { loadDriverModule } from "@sandbox-benchmarks/drivers";
-import { providerIdSchema, suiteNameSchema } from "@sandbox-benchmarks/schema";
+import {
+	evidenceIdentifierSchema,
+	providerIdSchema,
+	suiteNameSchema,
+} from "@sandbox-benchmarks/schema";
 import { type } from "arktype";
 import {
 	recoverAmbiguousCreateInventory,
@@ -34,13 +38,12 @@ const original = {
 	provider,
 	suite,
 	...(attestation && { vendorAttestation: attestation }),
-	...(values["inventory-only"] && { inventoryOnly: true }),
+	// The operator is recorded in an inventory-only release: the GitHub actor, never free text.
+	...(values["inventory-only"] && {
+		inventoryOnly: { operator: evidenceIdentifierSchema.assert(process.env.GITHUB_ACTOR) },
+	}),
 };
 verifyAmbiguousCreateInventory(original);
-// The operator is recorded in an inventory-only release: the GitHub actor, never free text.
-const operator = values["inventory-only"]
-	? type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).assert(process.env.GITHUB_ACTOR)
-	: undefined;
 const request = githubGitRequest();
 const workflow = type({ status: "'completed'", head_sha: /^[a-f0-9]{40}$/ });
 const activeRuns = type({ total_count: "number.integer >= 0" });
@@ -52,7 +55,6 @@ const { driver } = await openDriver(
 );
 const attempt = await recoverAmbiguousCreateInventory({
 	...original,
-	...(operator && { operator }),
 	...(tangleKey && {
 		observeTangleCustomer: async () =>
 			(await loadDriverModule("tangle")).observeCustomer(tangleKey),
