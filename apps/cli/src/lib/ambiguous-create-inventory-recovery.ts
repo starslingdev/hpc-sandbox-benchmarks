@@ -40,7 +40,24 @@ const RUNCLOUD_NAMED_TIMEOUT_DETAIL =
 const freestyleNamedDetail = (failure: string, slug: string) =>
 	`computesdk create failed: ${failure}; if a VM was allocated it carries the slug ${slug}; cleanup failed: freestyle ComputeSDK failed-create recovery cleanup callback failed`;
 
-/** Reviewed ambiguous creates from CPU runs 43793708054, 43859473792 and 43863642458 (ADR-0028). */
+// CPU run 45526033036: Tangle's orchestrator answered 503 to the Idempotency-Key existence check and
+// said no sandbox was created; failed-create cleanup could not confirm it. Each detail names the
+// attempt's project, so every entry is pinned to its exact text.
+const tangleIdempotency503Detail = (project: string) =>
+	`computesdk create failed: The existence check for this Idempotency-Key failed, so no sandbox was created. Retry the same request with the same Idempotency-Key after Retry-After.: orchestrator /projects/${project} returned 503 Service Unavailable; cleanup failed: tangle ComputeSDK failed-create recovery cleanup callback failed`;
+const TANGLE_RUN_45526033036 = [
+	["pgbench", 0, "2a2ce8ca-af28-4d6b-95b5-27e772fec145", "sandbox-2876e5f5497c"],
+	["pgbench", 1, "08e6d51d-2291-4527-ab52-9de760ecdeda", "sandbox-7207b1d4fa2b"],
+	["pgbench", 2, "10a15323-8943-444b-8784-084e8dc69806", "sandbox-9e115ecec270"],
+	["disk", 0, "2f187b4d-6c71-4ec0-8997-e5bcf24b726e", "sandbox-a3e919a3b9c7"],
+	["disk", 1, "000acfef-aeb7-4458-ad06-54fa8c20192c", "sandbox-a398e27315aa"],
+	["disk", 2, "0ef1ccf4-cef0-4174-b563-3db711cc3ad9", "sandbox-d0d88c90bb85"],
+	["network", 0, "2c31a454-fe11-4b07-b3d2-2f2bd0ee91e0", "sandbox-a720d0e8bbac"],
+	["network", 1, "0c52b84e-2c8d-4748-93a8-687a15400968", "sandbox-5a163e0834d0"],
+	["network", 2, "8bab302d-cdfa-4138-8958-f0e8c3879cb1", "sandbox-be8387f9831c"],
+] as const;
+
+/** Reviewed ambiguous creates from CPU runs 43793708054, 43859473792, 43863642458 and 45526033036 (ADR-0028). */
 export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 	{
 		provider: "runcloud",
@@ -144,6 +161,15 @@ export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 			"sandbox-benchmarks-afe780f1-5f40-48c6-9cc1-e9f331cab7b3",
 		),
 	},
+	...TANGLE_RUN_45526033036.map(([suite, replicate, uuid, project]) => ({
+		provider: "tangle" as const,
+		suite,
+		attemptId: `tangle-${suite}-r${replicate}-a1-${uuid}`,
+		cellId: `tangle-${suite}-r${replicate}`,
+		workflowRun: "45526033036",
+		sourceSha: "7967eba72ea58e63696e60faabc0d9a0b34e1def",
+		detail: tangleIdempotency503Detail(project),
+	})),
 	reviewedTangleCleanup,
 ] as const);
 
@@ -214,7 +240,9 @@ export function verifyAmbiguousCreateInventory(options: {
 			evidence.diagnostic?.endsWith(entry.detail),
 	);
 	if (!reviewed) throw new Error(NO_REVIEWED_EVIDENCE);
-	if (reviewed.provider === "tangle") {
+	// Only the reviewed Better Auth attempt carries a vendor receipt path; the run 45526033036
+	// entries clear on the plain two-inventory proof like runcloud and freestyle.
+	if ("attemptDigest" in reviewed) {
 		if (evidenceDigest(evidence) !== reviewed.attemptDigest)
 			throw new Error("Tangle attempt differs from the reviewed artifact");
 		const { inventoryOnly } = options;
