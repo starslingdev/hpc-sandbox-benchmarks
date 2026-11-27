@@ -95,8 +95,19 @@ echo 1 > ~/install-exit-status
 	# no un-frozen fallback: a lockfile that can't install frozen at PIN_SHA must fail HERE, loudly,
 	# not provision warm node_modules from a regenerated (unpinned) package set while every measured
 	# cold_install sample fails against the restored lockfile.
+	# This warm install is unmeasured setup. A registry metadata fetch that times out under pnpm's
+	# trust policy (ERR_PNPM_TRUST_DOWNGRADE "aborted due to timeout", Vercel run 45758423195) fails
+	# the whole cell before any sample, so retry the same frozen install twice before giving up.
+	attempt=1
 	# shellcheck disable=SC2154 # sourced from target.env above.
-	eval "$TASK_CMD_cold_install"
+	until eval "$TASK_CMD_cold_install"; do
+		if [ "$attempt" -ge 3 ]; then
+			exit 1
+		fi
+		echo "install: warm install attempt ${attempt} failed; retrying" >&2
+		attempt=$((attempt + 1))
+		sleep 20
+	done
 )
 
 echo 0 > ~/install-exit-status
