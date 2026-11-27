@@ -449,6 +449,9 @@ const CREATE_RETRY_DELAY_MS = 2 * MIN;
  *  create promise must never be abandoned. */
 export const SUITE_CREATE_ATTEMPT_TIMEOUT_MS = 5 * MIN;
 
+/** Free-disk slack for filesystem metadata on a disk sized exactly at a suite's `minDiskGb`. */
+const FREE_DISK_ROUNDING_GB = 0.01;
+
 /**
  * Prefix on a creation-failure gap marker's reason. The single source of truth for BOTH sides of the
  * contract: {@link createSuiteSandbox} builds the marker reason from it, and bench-suite matches on it
@@ -1019,7 +1022,10 @@ async function runSuiteWork(
 			// Treat non-numeric df output as 0 free (skip) — a NaN comparison would silently pass the check.
 			const freeKb = Number.parseInt((df.stdout || "").trim(), 10);
 			const freeGb = Number.isNaN(freeKb) ? 0 : freeKb / 1024 / 1024;
-			if (freeGb < suite.minDiskGb) {
+			// A disk provisioned at exactly minDiskGb reports a few KiB less free once its filesystem is
+			// mounted (daytona-container's 10 GiB disk: 9.99995 GiB), which skipped a suite that fits.
+			// Allow that metadata rounding, nothing more.
+			if (freeGb < suite.minDiskGb - FREE_DISK_ROUNDING_GB) {
 				const reason = `Insufficient disk: ${freeGb.toFixed(1)} GiB free, suite needs ${suite.minDiskGb} GiB`;
 				console.log(`SKIPPED ${providerName}/${suiteName}: ${reason}`);
 				writeGapMarker(resultsDir, providerName, suiteName, "skipped", reason, {
