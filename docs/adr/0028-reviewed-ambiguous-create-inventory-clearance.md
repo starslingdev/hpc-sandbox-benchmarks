@@ -107,3 +107,19 @@ Residual risk, accepted on review: an empty inventory proves nothing is allocate
 create never billed. Past billing rests on Tangle's earlier statement that its compute and customer
 ledgers show zero charges for the correlated resource, which we cannot independently verify without
 the receipt. A resource that still existed would appear in the inventory and block the release.
+
+## Tangle Idempotency-Key 503s, run 45526033036
+
+CPU run 45526033036 (source `7967eba72ea58e63696e60faabc0d9a0b34e1def`) left nine Tangle intents:
+`pgbench`, `disk` and `network`, r0–r2 each. Every create got a 503 from Tangle's orchestrator on
+the Idempotency-Key existence check, with the message "no sandbox was created". Failed-create
+cleanup also failed, so each attempt recorded `cleanup: unresolved`, and none kept
+`allocation.json`. `recover-not-allocated-intent` correctly refuses them: the attempt does not
+itself prove that create never started. They then blocked all 36 realworld cells in that run.
+
+They clear on the same proof as the runcloud and freestyle entries, with no vendor receipt: two
+complete inventories with no benchmark-owned sandbox, with the quiescence check between and after
+them. Each entry is pinned to its exact attempt, source, run and marker detail (orchestrator project
+included). The release keeps the original `not-allocated` outcome. Run it per attempt without
+`--vendor-attestation` or `--inventory-only`; those still apply only to the Better Auth attempt
+above. The Tangle driver still needs `TANGLE_API_KEY` for the inventory.
