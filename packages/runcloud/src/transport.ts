@@ -2,6 +2,9 @@ import { Client } from "@run-cloud/sdk";
 import type { RuncloudTransport } from "./vendor.ts";
 import { RUNCLOUD_CONTROL_TIMEOUT_MS } from "./vendor.ts";
 
+/** One cost read's bound (see cost.ts): well inside the harness's 30 s cost-hook budget. */
+export const RUNCLOUD_COST_READ_TIMEOUT_MS = 8_000;
+
 /** Every fetch bounded by the control-plane timeout and, for an inventory page, the caller. */
 function boundedFetch(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
 	return Object.assign(
@@ -37,4 +40,19 @@ export function runcloudTransport(
 				`/run-cloud/sandboxes?limit=200${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
 			),
 	};
+}
+
+/**
+ * One sandbox's bill, `GET /run-cloud/sandboxes/{id}/cost`, as the raw body. Bounded by its own
+ * short timeout (inside the control-plane bound) so a hung read leaves the cost hook time to answer.
+ */
+export function readRuncloudSandboxCost(
+	apiKey: string,
+	sandboxId: string,
+	fetchImpl: typeof fetch = fetch,
+): Promise<unknown> {
+	return new Client({
+		apiKey,
+		fetch: boundedFetch(fetchImpl, AbortSignal.timeout(RUNCLOUD_COST_READ_TIMEOUT_MS)),
+	}).request("GET", `/run-cloud/sandboxes/${encodeURIComponent(sandboxId)}/cost`);
 }

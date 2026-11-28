@@ -223,10 +223,8 @@ describe("run.cloud end to end through its module", () => {
 				},
 				{ RUN_CLOUD_API_KEY: "test-key" },
 			);
-		expect(await run({ completed: true, attemptedAt, completedAt: attemptedAt })).toMatchObject({
-			kind: "missing",
-			reason: "not_sandbox_scoped",
-		});
+		// A confirmed teardown reads the live cost API; cost.test.ts covers that path over a fake read.
+		expect(runcloud.costEvidence?.sdk).toEqual(RUNCLOUD_PROVENANCE);
 		expect(await run({ completed: false, attemptedAt })).toMatchObject({
 			kind: "missing",
 			reason: "sandbox_teardown_unconfirmed",

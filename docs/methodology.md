@@ -286,9 +286,11 @@ Modal records `observed`, `provider_reported` USD from `SandboxGetTimeRangeStats
 `app.sandboxes.stats()`), filtered on the sandbox's `sandbox-benchmarks-marker` tag, so the figure is
 exactly that sandbox's billed CPU and memory, burst included. The figure moves for several seconds
 after terminate; the hook waits for it to settle and otherwise records `missing`, never a partial
-figure. run.cloud records `not_sandbox_scoped`:
-its public usage API is organization-wide cumulative usage and is not called or delta-attributed to
-one sandbox.
+figure. run.cloud records `provider_reported` USD from `GET /run-cloud/sandboxes/{id}/cost`: the
+ledger's nanodollar totals for that one sandbox (reserved CPU, memory, and CPU burst above the
+reservation), the amounts it reports to Stripe. The hook records the bill only once it is `final`;
+an `accruing` bill at the capture deadline is `missing`. Its billed wall seconds are the sandbox's
+created-to-destroyed lifetime.
 
 Daytona's daytona-container cell (v0) records `provider_reported` USD from the analytics API
 (allocation × wall clock, no burst). The daytona-vm-* variants (v2) record
