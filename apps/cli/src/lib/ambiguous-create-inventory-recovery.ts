@@ -40,7 +40,7 @@ const RUNCLOUD_NAMED_TIMEOUT_DETAIL =
 const freestyleNamedDetail = (failure: string, slug: string) =>
 	`computesdk create failed: ${failure}; if a VM was allocated it carries the slug ${slug}; cleanup failed: freestyle ComputeSDK failed-create recovery cleanup callback failed`;
 
-/** Reviewed ambiguous creates from CPU runs 43793708054, 43859473792 and 43863642458 (ADR-0028). */
+/** Reviewed ambiguous creates from CPU runs 43793708054, 43859473792, 43863642458 and 45952135262 (ADR-0028). */
 export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 	{
 		provider: "runcloud",
@@ -143,6 +143,17 @@ export const AMBIGUOUS_CREATE_INVENTORY_CLEARANCES = Object.freeze([
 			"Freestyle background request returned HTTP 409; operation outcome is unconfirmed",
 			"sandbox-benchmarks-afe780f1-5f40-48c6-9cc1-e9f331cab7b3",
 		),
+	},
+	{
+		// The v2 image was never baked for this variant, so create was refused before allocation.
+		provider: "daytona-vm-arm",
+		suite: "memory",
+		attemptId: "daytona-vm-arm-memory-r0-a1-492db90a-a65c-44af-86bb-74f21e6f71a7",
+		cellId: "daytona-vm-arm-memory-r0",
+		workflowRun: "45952135262",
+		sourceSha: "f26ecf06029e1224930d8602d8e952fede4c4aa6",
+		detail:
+			"computesdk create failed: image 'sandbox-benchmarks-toolchain-v9-arm' not found; cleanup failed: daytona-vm-arm ComputeSDK failed-create recovery cleanup callback failed",
 	},
 	reviewedTangleCleanup,
 ] as const);
