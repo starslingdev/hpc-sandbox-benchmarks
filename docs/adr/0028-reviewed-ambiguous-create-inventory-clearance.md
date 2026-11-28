@@ -107,3 +107,19 @@ Residual risk, accepted on review: an empty inventory proves nothing is allocate
 create never billed. Past billing rests on Tangle's earlier statement that its compute and customer
 ledgers show zero charges for the correlated resource, which we cannot independently verify without
 the receipt. A resource that still existed would appear in the inventory and block the release.
+
+### Addendum: Daytona VM arm missing image, run 45952135262
+
+CPU run 45952135262 left one Daytona intent, `daytona-vm-arm-memory-r0-a1-492db90a-a65c-44af-86bb-74f21e6f71a7`
+(source `f26ecf06029e1224930d8602d8e952fede4c4aa6`). Its create failed with
+`image 'sandbox-benchmarks-toolchain-v9-arm' not found`, and the failed-create cleanup callback could
+not confirm the outcome, so the attempt carries no sandbox identity and `cleanup: unresolved`. The
+account's v2 image list holds no `-arm` image at all (only the `v9`, `v9-zen5`, `v9-zen5-burst` and
+`v9-container` artifacts in `us-east-ash-1`), so the create was refused before anything was allocated.
+That one unresolved intent stopped admission for the whole `daytona` account and withheld every
+Daytona variant's measurements from the run.
+
+The attempt is pinned like the freestyle and runcloud entries: provider, suite, attempt, cell, run,
+source SHA and the exact failure detail. The proof is unchanged: two complete `daytona-vm-arm`
+inventories, with quiescence checks between and after them, must hold no benchmark-owned sandbox
+before the `not-allocated` release is appended. The failed attempt contributes zero measurements.
